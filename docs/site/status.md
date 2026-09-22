@@ -20,7 +20,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Bitbucket/GitLab repository delivery and expanded model executors.
 - External pilot, evaluations, and release qualification.
 
-The implementation plan is maintained in `docs/plans/`. The maintainer baseline records source-test failures separately from fixes and new tests. A successful local build does not claim GitHub CI or Pages deployment has run.
+See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation planning is maintained outside this repository.
 
 ## Public foundation
 

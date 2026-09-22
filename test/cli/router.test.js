@@ -934,6 +934,32 @@ test('rejects an unknown command', () => {
   );
 });
 
+test('rejects the retired demo command before dispatch or filesystem mutation', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'rivet-retired-demo-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const marker = join(root, 'unexpected-write');
+  const capture = captureOutput();
+  let dispatched = false;
+
+  const exitCode = await main(['demo', 'create', root, '--name=retired-demo'], {
+    output: capture.output,
+    commands: {
+      demo: async () => {
+        dispatched = true;
+        await writeFile(marker, 'unexpected mutation');
+        return EXIT_CODES.SUCCESS;
+      },
+    },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.INVALID_INPUT);
+  assert.equal(dispatched, false);
+  assert.equal(syncFilesystem.existsSync(marker), false);
+  assert.match(capture.readStdout(), /^Usage:/);
+  assert.doesNotMatch(capture.readStdout(), /rivet demo\b/);
+  assert.equal(capture.readStderr(), '');
+});
+
 test('rejects positional arguments for a legacy command', () => {
   assert.throws(
     () => parseArgs(['install', 'unexpected']),

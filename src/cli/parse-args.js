@@ -1,5 +1,4 @@
 const COMMANDS = new Set([
-  'demo',
   'doctor',
   'evidence',
   'feature',
@@ -17,7 +16,7 @@ const COMMANDS = new Set([
 ]);
 
 const LEGACY_COMMANDS = new Set(['init', 'install', 'uninstall']);
-const NESTED_COMMANDS = new Set(['demo', 'feature', 'goals', 'models', 'orchestrate', 'protocols', 'worktrees']);
+const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'worktrees']);
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
@@ -37,10 +36,6 @@ const STRICT_OPTIONS = {
   models: {
     boolean: new Set(['json']),
     valued: new Set(['profile']),
-  },
-  demo: {
-    boolean: new Set(['git-init']),
-    valued: new Set(['name']),
   },
   doctor: {
     boolean: new Set(['json']),
@@ -176,17 +171,6 @@ export function parseArgs(argv) {
   }
   if (command === 'status' && positionals.length !== 1) {
     throw new ArgumentError("Command 'status' requires exactly one instance ID");
-  }
-  if (command === 'demo') {
-    if (positionals[0] !== 'create') {
-      throw new ArgumentError("Command 'demo' supports only the 'create' subcommand");
-    }
-    if (positionals.length !== 2) {
-      throw new ArgumentError("Command 'demo create' requires exactly one target directory");
-    }
-    if (typeof flags.name !== 'string') {
-      throw new ArgumentError("Command 'demo create' requires '--name=<project-id>'");
-    }
   }
   if (NESTED_COMMANDS.has(command) && positionals.length === 0) {
     throw new ArgumentError(`Command '${command}' requires a subcommand`);

@@ -15,6 +15,7 @@ try {
   const files = packed.files.map(file => file.path);
   assert(files.includes('bin/cli.js'));
   assert(files.includes('src/models/registry.js'));
+  assert(!files.some(path => /(?:^|\/)(?:demo|conference-planner|plans)(?:\/|$)/.test(path)), 'Retired demo/planning assets must not ship');
   assert(!files.some(path => path.startsWith('test/') || path.startsWith('node_modules/')));
   npm(['install', '--prefix', scratch, '--ignore-scripts', '--no-audit', '--no-fund',
     '--registry=https://registry.npmjs.org', join(scratch, packed.filename)]);

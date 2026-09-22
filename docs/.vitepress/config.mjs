@@ -20,6 +20,7 @@ export default defineConfig({
         { text: 'Overview', link: '/' },
         { text: 'Install and explore', link: '/getting-started' },
         { text: 'Architecture', link: '/architecture' },
+        { text: 'Runtime reference', link: '/runtime-reference' },
       ] },
       { text: 'Capabilities', items: [
         { text: 'Model providers', link: '/models' },
@@ -28,6 +29,7 @@ export default defineConfig({
       ] },
       { text: 'Project', items: [
         { text: 'Implementation status', link: '/status' },
+        { text: 'Roadmap', link: '/roadmap' },
         { text: 'Troubleshooting', link: '/troubleshooting' },
         { text: 'Contributing', link: '/contributing' },
       ] },
