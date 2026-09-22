@@ -115,7 +115,7 @@ export function inspectCommandReadiness(projectRoot, config, options = {}) {
     const manager = runnerManager(step.argv[0]);
     let status = 'ready';
     if (!rootSafe) status = 'unsafe-directory';
-    else if (manager !== expectedManager) status = 'manager-mismatch';
+    else if (config.project.schemaVersion === 2 && manager !== expectedManager) status = 'manager-mismatch';
     else if (tools[manager]?.present !== true || tools[manager]?.supported !== true
       || tools[manager]?.runtimeResolved === false) status = 'tool-unavailable';
     else {

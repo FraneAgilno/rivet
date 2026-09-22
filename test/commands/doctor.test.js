@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -203,4 +203,45 @@ test('rejects resolver overrides that are directories or non-executable files', 
       assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
     });
   }
+});
+
+test('accepts a schema-version-1 quality command that uses a runner distinct from the stack manager', async () => {
+  const root = await configuredProject();
+  const projectConfig = join(root, '.rivet', 'project.yaml');
+  await writeFile(projectConfig, (await readFile(projectConfig, 'utf8'))
+    .replace('build: [npm, run, build]', 'build: [yarn, run, build]'));
+  const executables = {};
+  for (const manager of ['npm', 'yarn']) {
+    const path = join(root, `${manager}-runner`);
+    await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    await chmod(path, 0o700);
+    executables[manager] = await realpath(path);
+  }
+  const discovered = [];
+  const resolved = [];
+  const result = capture();
+  const exitCode = await doctor({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async ({ packageManager }) => {
+      discovered.push(packageManager);
+      return {
+        node: { present: true, version: '22.1.0', supported: true },
+        [packageManager]: { present: true, version: '1.0.0', supported: true },
+        git: { present: true, version: '2.45.0', supported: true },
+      };
+    },
+    resolveCommandExecutable: async manager => {
+      resolved.push(manager);
+      return executables[manager];
+    },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.deepEqual(discovered, ['npm', 'yarn']);
+  assert.deepEqual(resolved, ['npm', 'yarn']);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.checks.tools.npm.runtimeResolved, true);
+  assert.equal(payload.checks.tools.yarn.runtimeResolved, true);
+  assert.equal(payload.checks.commands.steps.find(step => step.logicalId === 'build').status, 'ready');
 });

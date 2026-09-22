@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
 import { inspectCommandReadiness } from '../config/command-readiness.js';
+import { compileQualitySteps } from '../config/commands.js';
 import { loadProjectConfig, providerCredentialStatus } from '../config/load.js';
 import { discoverTools } from '../discovery/tools.js';
 import { verifyCommandExecutable } from '../policy/commands.js';
@@ -85,20 +86,32 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
   }
   const environment = dependencies.env ?? process.env;
   const packageManager = config.project.stack.packageManager;
-  let tools = await (dependencies.toolDiscovery ?? discoverTools)({ packageManager }, {
+  const managers = [...new Set([
+    packageManager,
+    ...compileQualitySteps(config).map(step => step.argv[0].toLowerCase().replace(/\.(?:cmd|exe)$/, '')),
+  ])];
+  const toolDiscovery = dependencies.toolDiscovery ?? discoverTools;
+  const reports = await Promise.all(managers.map(manager => toolDiscovery({ packageManager: manager }, {
     cwd: projectRoot,
     runner: dependencies.runner,
+  })));
+  let tools = Object.freeze({
+    ...reports[0],
+    ...Object.fromEntries(managers.map((manager, index) => [manager, reports[index]?.[manager] ?? {}])),
   });
   if (typeof dependencies.resolveCommandExecutable === 'function') {
-    let runtimeResolved = false;
-    try {
-      const executable = await dependencies.resolveCommandExecutable(packageManager);
-      await verifyCommandExecutable(executable);
-      runtimeResolved = true;
-    } catch {}
+    const resolutions = await Promise.all(managers.map(async manager => {
+      let runtimeResolved = false;
+      try {
+        const executable = await dependencies.resolveCommandExecutable(manager);
+        await verifyCommandExecutable(executable);
+        runtimeResolved = true;
+      } catch {}
+      return [manager, Object.freeze({ ...(tools[manager] ?? {}), runtimeResolved })];
+    }));
     tools = Object.freeze({
       ...tools,
-      [packageManager]: Object.freeze({ ...(tools[packageManager] ?? {}), runtimeResolved }),
+      ...Object.fromEntries(resolutions),
     });
   }
   const credentials = providerCredentialStatus(config, environment);
@@ -111,8 +124,7 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
   const missingCredentials = credentials.filter(item => item.required && !item.present);
   const unavailableProviders = providers.filter(item => ['unavailable', 'timeout', 'error'].includes(item.connectivity));
   const toolsReady = requiredToolReady(tools.node)
-    && requiredToolReady(tools[packageManager])
-    && tools[packageManager].runtimeResolved !== false
+    && managers.every(manager => requiredToolReady(tools[manager]) && tools[manager].runtimeResolved !== false)
     && requiredToolReady(tools.git);
   const failed = missingCredentials.length > 0 || unavailableProviders.length > 0 || !toolsReady || !commands.ready;
   const exitCode = missingCredentials.length > 0 || unavailableProviders.length > 0
