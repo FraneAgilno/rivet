@@ -2,7 +2,7 @@
 
 Rivet is a team development framework operated through a coding harness or a CLI. It brings together project procedures, workflow state, verification, and integrations so developers can follow the same process across sessions.
 
-**Development alpha.** This repository contains the standalone foundation. Minimal setup is available from the GitHub source branch. Active-harness workflows, shared memory, broad model execution, and repository delivery are still under implementation. See the [status page](./status.md) for what works today.
+**Development alpha.** This repository contains the standalone foundation. Minimal setup, active-harness workflows, and project protocols are available from the GitHub source branch. Shared memory, broad model execution, and repository delivery are still under implementation. See the [status page](./status.md) for what works today.
 
 ## Start here
 

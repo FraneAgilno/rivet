@@ -18,7 +18,9 @@ npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=. --writ
 
 Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.
 
-Guided discovery currently requires a `package.json` with real `build` and `test` scripts. Missing scripts are reported for review rather than treated as passing checks. Other project types can install only the harness instructions using `install --minimal`; automatic setup for them is still planned.
+When the root `package.json` has no `build` or `test` script, setup still connects the project and reports one warning for each missing check. Rivet writes conservative `npm run build` and `npm run test` defaults; add the root scripts before relying on those required gates. In a repository with applications such as `frontend` and `backend`, the root scripts should run the checks required across those applications. Setup never treats a missing script as a passing check.
+
+Other project types can install only the harness instructions using `install --minimal`; automatic setup for them is still planned.
 
 ## Check the connection
 

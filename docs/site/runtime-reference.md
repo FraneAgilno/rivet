@@ -1,6 +1,6 @@
 # Runtime reference
 
-This describes the current lower-level alpha runtime. The simpler active-harness workflow is still on the [roadmap](./roadmap.md).
+This describes the current alpha runtime, including the active-harness workflow available through the `rivet work` commands.
 
 ## Project policy and diagnostics
 
