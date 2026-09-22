@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Orchestration status</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Local control room</p>
+        <h1>Orchestration status</h1>
+      </div>
+      <div class="connection"><span id="connection-dot"></span><span id="connection">Connecting</span></div>
+    </header>
+    <main>
+      <section class="hero panel" aria-labelledby="goal-heading">
+        <div><p class="eyebrow">Active goal</p><h2 id="goal-heading">Loading…</h2><p id="stage"></p></div>
+        <div id="metrics" class="metrics"></div>
+      </section>
+      <section class="layout">
+        <article class="panel span-two"><h2>Goal graph</h2><div id="graph" class="graph"></div></article>
+        <article class="panel"><h2>Agents</h2><div id="agents" class="stack"></div></article>
+        <article class="panel"><h2>Owned worktrees</h2><div id="worktrees" class="stack"></div></article>
+        <article class="panel"><h2>Human gates</h2><div id="gates" class="stack"></div></article>
+        <article class="panel"><h2>Corrective work</h2><div id="corrective" class="stack"></div></article>
+        <article class="panel"><h2>Evidence</h2><div id="evidence" class="stack"></div></article>
+        <article class="panel"><h2>Decisions</h2><div id="decisions" class="stack"></div></article>
+        <article class="panel span-two"><h2>Recent events</h2><div id="events" class="timeline"></div></article>
+      </section>
+    </main>
+    <noscript>This local status view requires JavaScript.</noscript>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "sourceId": "12345",
+  "sourceUrl": "https://confluence.example.test/wiki/spaces/DEMO/pages/12345",
+  "fetchedAt": "2029-01-01T00:00:00.000Z",
+  "raw": {
+    "id": "12345",
+    "title": "Conference requirements",
+    "body": { "storage": { "value": "Sanitized requirements", "representation": "storage" } },
+    "version": { "number": 7 },
+    "ancestors": [{ "id": "100" }],
+    "_links": { "webui": "/spaces/DEMO/pages/12345" }
+  }
+}

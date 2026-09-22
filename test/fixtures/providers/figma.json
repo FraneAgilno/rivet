@@ -1,0 +1,14 @@
+{
+  "sourceId": "conference-file",
+  "sourceUrl": "https://www.figma.com/file/conference-file",
+  "fetchedAt": "2029-01-01T00:00:00.000Z",
+  "raw": {
+    "name": "Conference planner",
+    "version": "42",
+    "document": { "id": "0:0", "name": "Document", "type": "DOCUMENT", "children": [] },
+    "components": {},
+    "styles": {},
+    "variables": {},
+    "renderedReferences": [{ "nodeId": "1:2", "url": "https://images.example.test/render.png" }]
+  }
+}

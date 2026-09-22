@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "scenario": "focus-restoration-controlled-correction",
+  "simulated": true,
+  "scripts": [
+    {
+      "version": 1,
+      "kind": "retry",
+      "output": {
+        "summary": "Controlled focus-restoration check requires one corrective attempt.",
+        "evidence": []
+      },
+      "usage": { "tokens": 100, "costUsd": 0 }
+    },
+    {
+      "version": 1,
+      "kind": "success",
+      "output": {
+        "summary": "Focus restoration correction passed the bounded local journey.",
+        "evidence": ["focus-commit", "focus-test", "focus-journey"]
+      },
+      "usage": { "tokens": 200, "costUsd": 0 }
+    }
+  ]
+}
+

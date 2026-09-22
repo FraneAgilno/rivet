@@ -1,0 +1,42 @@
+schemaVersion: 1
+enabled: false
+maxDelegationDepth: 3
+roles:
+  - id: conference-boss
+    kind: boss
+    capacity: 1
+    canDelegate: true
+    delegatesTo: [manager]
+    providerRefs: [local-git]
+    authorityScopes: [plan, implement, delegate, verify]
+    permissions: {externalWrites: false, merge: false, deploy: false}
+    budget: {timeMinutes: 480, tokenLimit: 500000, costUsd: 100, taskLimit: 100}
+    completionProfile: delivery
+  - id: engineering-manager
+    kind: manager
+    capacity: 4
+    canDelegate: true
+    delegatesTo: [worker]
+    providerRefs: [local-git]
+    authorityScopes: [implement, delegate, verify]
+    permissions: {externalWrites: false, merge: false, deploy: false}
+    budget: {timeMinutes: 240, tokenLimit: 250000, costUsd: 50, taskLimit: 40}
+    completionProfile: engineering
+  - id: bounded-worker
+    kind: worker
+    capacity: 1
+    canDelegate: false
+    delegatesTo: []
+    providerRefs: [local-git]
+    authorityScopes: [implement, verify]
+    permissions: {externalWrites: false, merge: false, deploy: false}
+    budget: {timeMinutes: 120, tokenLimit: 100000, costUsd: 20, taskLimit: 10}
+    completionProfile: engineering
+approvalGates: [activation, external-write, final-delivery]
+completionProfiles:
+  - id: engineering
+    requiredEvidence: [commit, test]
+    requiredApprovals: [manager]
+  - id: delivery
+    requiredEvidence: [commit, test, journey, screenshot, review, human-approval]
+    requiredApprovals: [manager, quality, human]

@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/quality.schema.json",
+  "title": "Agilno tracked quality policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "providerRefs", "completionProfileRefs", "commandGates", "expectations", "evidence"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "providerRefs": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "completionProfileRefs": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "commandGates": { "type": "array", "minItems": 2, "maxItems": 32, "items": { "$ref": "#/$defs/commandGate" } },
+    "expectations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storybook", "playwright", "accessibility", "security", "visual"],
+      "properties": {
+        "storybook": { "enum": ["optional", "required"] },
+        "playwright": { "enum": ["optional", "required"] },
+        "accessibility": { "enum": ["none", "wcag-a", "wcag-aa"] },
+        "security": { "enum": ["required", "not-applicable-with-approval"] },
+        "visual": { "enum": ["none", "automated", "human-baseline"] }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiredTypes", "requireHumanBaseline", "requireHumanFinal"],
+      "properties": {
+        "requiredTypes": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/evidenceType" } },
+        "requireHumanBaseline": { "type": "boolean" },
+        "requireHumanFinal": { "type": "boolean", "const": true }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "evidenceType": { "enum": ["commit", "test", "journey", "screenshot", "report", "review", "human-approval", "external-update"] },
+    "commandGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "required"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "command": { "enum": ["build", "test", "lint", "typecheck", "dev"] },
+        "required": { "type": "boolean" }
+      }
+    }
+  }
+}

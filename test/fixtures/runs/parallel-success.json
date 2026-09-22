@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "scripts": [
+    { "version": 1, "kind": "success", "output": { "summary": "api complete", "evidence": ["api-commit", "api-test"] }, "usage": { "tokens": 25, "costUsd": 0.1 } },
+    { "version": 1, "kind": "success", "output": { "summary": "design complete", "evidence": ["design-commit", "design-test"] }, "usage": { "tokens": 20, "costUsd": 0.1 } },
+    { "version": 1, "kind": "success", "output": { "summary": "integration complete", "evidence": ["integration-commit", "integration-test", "integration-journey"] }, "usage": { "tokens": 30, "costUsd": 0.2 } }
+  ]
+}

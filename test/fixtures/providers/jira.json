@@ -1,0 +1,15 @@
+{
+  "sourceId": "DEMO-42",
+  "sourceUrl": "https://jira.example.test/browse/DEMO-42",
+  "fetchedAt": "2029-01-01T00:00:00.000Z",
+  "raw": {
+    "key": "DEMO-42",
+    "fields": {
+      "summary": "Conference agenda",
+      "status": { "name": "In Progress" },
+      "description": "AC1: attendee can filter sessions",
+      "issuelinks": [],
+      "comment": { "comments": [{ "id": "100", "body": "Sanitized fixture comment" }] }
+    }
+  }
+}

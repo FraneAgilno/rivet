@@ -1,0 +1,32 @@
+# Architecture
+
+Rivet packages a repeatable team workflow. Coding harnesses already provide editing, terminals, MCP clients, and agent tools; Rivet should reuse those capabilities and add deterministic operations where shared configuration, state, verification, or recovery needs them.
+
+```text
+User -> coding harness -> Rivet protocols -> Rivet CLI -> workflow service
+Terminal user ----------------------------> Rivet CLI
+
+Workflow service -> private run state and evidence
+                 -> project checks and Git worktrees
+                 -> configurable memory and tool providers
+                 -> optional delegated model execution
+```
+
+## Independent identity
+
+- Command: `rivet`.
+- Project policy: `.rivet`.
+- Runtime environment: `RIVET_*` variables.
+- Private state: Rivet-owned directories under the repository's Git common directory.
+- Harness skills: `rivet-` prefix.
+- Package, Git history, releases, and documentation: independent of AI Engineering.
+
+## Harnesses and models are different
+
+A harness provides tools and an execution environment. An API or local text model does not automatically have those tools. Model adapters must declare capabilities and their actual execution status. The framework must not require a second model process simply because the active harness calls its CLI.
+
+The imported feature bridge currently selects Claude or Codex and launches that client. Refactoring it to support the active harness and provider-independent delegation is planned work; the foundation registry does not bypass that boundary.
+
+## Evidence
+
+A model's success message is not a passing test. Rivet retains the imported verification and authority machinery so outcomes can be tied to repository changes and actual checks. External delivery is separate from local verification.

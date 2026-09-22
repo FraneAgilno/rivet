@@ -1,0 +1,6 @@
+schemaVersion: 1
+providers:
+  - id: local-git
+    kind: git-ci
+    mode: disabled
+    capabilities: [repository-read]

@@ -1,0 +1,22 @@
+{
+  "name": "nextjs-example",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "next lint",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "storybook": "storybook dev -p 6006",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "15.4.0",
+    "react": "19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.54.0",
+    "@storybook/nextjs": "9.0.0",
+    "typescript": "5.8.0"
+  }
+}

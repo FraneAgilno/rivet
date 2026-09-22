@@ -1,0 +1,14 @@
+schemaVersion: 1
+id: local-project
+name: Local Project
+stack:
+  framework: other
+  language: javascript
+  packageManager: npm
+repository:
+  defaultBranch: main
+  branchPattern: feature/{slug}
+  sensitivePaths: [.env]
+commands:
+  build: [npm, run, build]
+  test: [npm, run, test]

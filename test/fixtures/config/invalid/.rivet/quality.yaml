@@ -1,0 +1,20 @@
+schemaVersion: 1
+providerRefs: [jira-main]
+completionProfileRefs: [delivery]
+commandGates:
+  - id: build
+    command: build
+    required: true
+  - id: test
+    command: test
+    required: true
+expectations:
+  storybook: optional
+  playwright: optional
+  accessibility: wcag-aa
+  security: required
+  visual: none
+evidence:
+  requiredTypes: [test, human-approval]
+  requireHumanBaseline: false
+  requireHumanFinal: true

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "scripts": [
+    { "version": 1, "kind": "retry", "output": { "summary": "transient failure", "evidence": [] }, "usage": { "tokens": 2, "costUsd": 0 } },
+    { "version": 1, "kind": "success", "output": { "summary": "recovered", "evidence": ["api-commit", "api-test"] }, "usage": { "tokens": 10, "costUsd": 0.1 } }
+  ]
+}

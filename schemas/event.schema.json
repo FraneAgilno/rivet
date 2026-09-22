@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/event.schema.json",
+  "title": "Agilno append-only runtime event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "graphId", "sequence", "timestamp", "actor", "type"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "eventId": { "$ref": "#/$defs/id" },
+    "graphId": { "$ref": "#/$defs/id" },
+    "nodeId": { "$ref": "#/$defs/id" },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "timestamp": { "$ref": "#/$defs/timestamp" },
+    "actor": { "$ref": "#/$defs/actor" },
+    "type": { "enum": ["graph-created", "state-transition", "retry", "authority-adjusted", "budget-adjusted", "evidence-recorded", "approval-recorded", "heartbeat", "cancelled"] },
+    "priorState": { "$ref": "#/$defs/state" },
+    "newState": { "$ref": "#/$defs/state" },
+    "retryReason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "authorityDelta": { "$ref": "#/$defs/authorityDelta" },
+    "budgetDelta": { "$ref": "#/$defs/budgetDelta" },
+    "evidenceRefs": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "instanceId": { "$ref": "#/$defs/id" },
+    "leaseId": { "$ref": "#/$defs/id" },
+    "heartbeatSequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "heartbeatIntervalMs": { "type": "integer", "minimum": 100, "maximum": 3600000 },
+    "approvalReceiptId": { "$ref": "#/$defs/id" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "state-transition" } } }, "then": { "properties": { "priorState": {}, "newState": {} }, "required": ["priorState", "newState"] } },
+    { "if": { "properties": { "type": { "const": "retry" } } }, "then": { "properties": { "retryReason": {} }, "required": ["retryReason"] } },
+    { "if": { "properties": { "type": { "const": "authority-adjusted" } } }, "then": { "properties": { "authorityDelta": {} }, "required": ["authorityDelta"] } },
+    { "if": { "properties": { "type": { "const": "budget-adjusted" } } }, "then": { "properties": { "budgetDelta": {} }, "required": ["budgetDelta"] } },
+    { "if": { "properties": { "type": { "enum": ["evidence-recorded", "approval-recorded"] } } }, "then": { "properties": { "evidenceRefs": {} }, "required": ["evidenceRefs"] } },
+    { "if": { "properties": { "type": { "const": "heartbeat" } } }, "then": { "properties": { "nodeId": {}, "instanceId": {}, "leaseId": {}, "heartbeatSequence": {}, "heartbeatIntervalMs": {} }, "required": ["nodeId", "instanceId", "leaseId", "heartbeatSequence", "heartbeatIntervalMs"] } },
+    { "if": { "properties": { "type": { "const": "approval-recorded" } } }, "then": { "properties": { "actor": { "type": "object", "properties": { "role": { "const": "human" } } }, "approvalReceiptId": {} }, "required": ["approvalReceiptId"] } },
+    { "if": { "properties": { "type": { "not": { "const": "state-transition" } } } }, "then": { "not": { "properties": { "priorState": {} }, "required": ["priorState"] } } },
+    { "if": { "properties": { "type": { "not": { "const": "state-transition" } } } }, "then": { "not": { "properties": { "newState": {} }, "required": ["newState"] } } },
+    { "if": { "properties": { "type": { "not": { "const": "retry" } } } }, "then": { "not": { "properties": { "retryReason": {} }, "required": ["retryReason"] } } },
+    { "if": { "properties": { "type": { "not": { "const": "authority-adjusted" } } } }, "then": { "not": { "properties": { "authorityDelta": {} }, "required": ["authorityDelta"] } } },
+    { "if": { "properties": { "type": { "not": { "const": "budget-adjusted" } } } }, "then": { "not": { "properties": { "budgetDelta": {} }, "required": ["budgetDelta"] } } },
+    { "if": { "properties": { "type": { "not": { "enum": ["evidence-recorded", "approval-recorded"] } } } }, "then": { "not": { "properties": { "evidenceRefs": {} }, "required": ["evidenceRefs"] } } },
+    { "if": { "properties": { "type": { "not": { "const": "heartbeat" } } } }, "then": { "not": { "anyOf": [
+      { "required": ["instanceId"] },
+      { "required": ["leaseId"] },
+      { "required": ["heartbeatSequence"] },
+      { "required": ["heartbeatIntervalMs"] }
+    ] } } },
+    { "if": { "properties": { "type": { "not": { "const": "approval-recorded" } } } }, "then": { "not": { "properties": { "approvalReceiptId": {} }, "required": ["approvalReceiptId"] } } }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "externalRef": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "timestamp": { "type": "string", "minLength": 20, "maxLength": 35, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$" },
+    "state": { "enum": ["proposed", "approved", "ready", "reserved", "running", "verifying", "corrective", "blocked", "failed", "completed", "archived", "cancelled"] },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "id"],
+      "properties": {
+        "role": { "enum": ["human", "boss", "manager", "worker", "system"] },
+        "id": { "$ref": "#/$defs/externalRef" }
+      }
+    },
+    "authorityDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "removed"],
+      "properties": {
+        "added": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "removed": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "budgetDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "timeMinutes": { "type": "integer", "minimum": -10080, "maximum": 10080 },
+        "tokenLimit": { "type": "integer", "minimum": -10000000, "maximum": 10000000 },
+        "costUsd": { "type": "number", "minimum": -10000, "maximum": 10000 },
+        "taskLimit": { "type": "integer", "minimum": -1000, "maximum": 1000 }
+      }
+    }
+  }
+}

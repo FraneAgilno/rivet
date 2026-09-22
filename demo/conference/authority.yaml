@@ -1,0 +1,36 @@
+schemaVersion: 1
+enabled: false
+maxDelegationDepth: 3
+approvalGates: [activation, external-write, final-delivery]
+roles:
+  - id: conference-boss
+    kind: boss
+    canDelegate: true
+    delegatesTo: [manager]
+    authorityScopes: [plan, implement, delegate, verify]
+    permissions: { externalWrites: false, merge: false, deploy: false }
+  - id: product-manager
+    kind: manager
+    canDelegate: true
+    delegatesTo: [worker]
+    authorityScopes: [plan, delegate, verify]
+    permissions: { externalWrites: false, merge: false, deploy: false }
+  - id: delivery-manager
+    kind: manager
+    canDelegate: true
+    delegatesTo: [worker]
+    authorityScopes: [implement, delegate, verify]
+    permissions: { externalWrites: false, merge: false, deploy: false }
+  - id: quality-manager
+    kind: manager
+    canDelegate: true
+    delegatesTo: [worker]
+    authorityScopes: [implement, delegate, verify]
+    permissions: { externalWrites: false, merge: false, deploy: false }
+  - id: conference-workers
+    kind: worker
+    canDelegate: false
+    delegatesTo: []
+    authorityScopes: [implement, verify]
+    permissions: { externalWrites: false, merge: false, deploy: false }
+

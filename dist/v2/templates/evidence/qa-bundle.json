@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "runId": "replace-with-run-id",
+  "status": "complete",
+  "createdAt": "2029-01-01T00:00:00.000Z",
+  "commitSha": "0000000000000000000000000000000000000000",
+  "preapprovalContentHash": "58593ca456661a554b18dab61a3839c8cab6a4743dec803251a7b8ddba166f68",
+  "gates": [
+    {
+      "id": "test",
+      "required": true,
+      "status": "passed",
+      "commitSha": "0000000000000000000000000000000000000000",
+      "startedAt": "2029-01-01T00:00:00.000Z",
+      "endedAt": "2029-01-01T00:00:01.000Z",
+      "cwd": ".",
+      "command": {
+        "executable": "/absolute/path/to/configured-executable",
+        "args": []
+      },
+      "exitCode": 0,
+      "executionStatus": "success",
+      "output": {
+        "stdout": "",
+        "stderr": "",
+        "redacted": false,
+        "suppressed": false,
+        "truncated": {
+          "stdout": false,
+          "stderr": false,
+          "combined": false
+        }
+      },
+      "artifacts": [
+        {
+          "path": "artifacts/home-source.png",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "bytes": 0
+        },
+        {
+          "path": "artifacts/playwright-source.json",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "bytes": 0
+        }
+      ]
+    }
+  ],
+  "traceability": {
+    "valid": true,
+    "coverage": [
+      {
+        "acceptanceCriterion": "DEMO-1-AC1",
+        "method": "test",
+        "evidenceId": "test-id",
+        "gateId": "test",
+        "resultPath": "artifacts/playwright-source.json",
+        "resultSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "outOfScope": [],
+    "errors": []
+  },
+  "contexts": [
+    {
+      "testId": "test-id",
+      "route": "/",
+      "persona": "attendee",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "figmaVersion": "replace-with-figma-version",
+      "previewUrl": "https://preview.example.test/commit"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "screenshot",
+      "type": "screenshot",
+      "mediaType": "image/png",
+      "testId": "test-id",
+      "sourcePath": "artifacts/home-source.png",
+      "path": "artifacts/screenshot.png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 0
+    },
+    {
+      "id": "playwright-report",
+      "type": "playwright-report",
+      "testId": "test-id",
+      "sourcePath": "artifacts/playwright-source.json",
+      "path": "artifacts/playwright-report.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 0
+    }
+  ],
+  "reviews": [
+    {
+      "id": "manager-review",
+      "reviewerId": "quality-manager",
+      "status": "approved",
+      "required": true,
+      "approvalReceiptId": "review-approval-receipt",
+      "approverPrincipal": "agent",
+      "contentHash": "e30bc76e29567edc8777d96e699aadafb960f58e2c3c486f50f1ae146e32fd90"
+    }
+  ],
+  "finalApproval": {
+    "approvalReceiptId": "approval-receipt",
+    "approverId": "human-owner",
+    "approverPrincipal": "human",
+    "decision": "approved",
+    "contentHash": "58593ca456661a554b18dab61a3839c8cab6a4743dec803251a7b8ddba166f68"
+  },
+  "evidence": {
+    "schemaVersion": 1,
+    "id": "replace-with-run-id",
+    "graphId": "replace-with-graph-id",
+    "approvalState": "approved",
+    "publicationState": "draft",
+    "items": [
+      {
+        "id": "commit",
+        "type": "commit",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "system", "id": "quality-runner"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved"
+      },
+      {
+        "id": "test-id",
+        "type": "test",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "system", "id": "quality-runner"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved",
+        "details": {"command": "test", "status": "passed"}
+      },
+      {
+        "id": "screenshot",
+        "type": "screenshot",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "system", "id": "quality-runner"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved",
+        "location": "artifacts/screenshot.png",
+        "checksum": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "id": "playwright-report",
+        "type": "report",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "system", "id": "quality-runner"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved",
+        "location": "artifacts/playwright-report.json",
+        "checksum": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "id": "manager-review",
+        "type": "review",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "manager", "id": "quality-manager"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved"
+      },
+      {
+        "id": "approval-receipt",
+        "type": "human-approval",
+        "requirementRefs": ["DEMO-1-AC1"],
+        "source": {"commit": "0000000000000000000000000000000000000000"},
+        "producer": {"role": "human", "id": "human-owner"},
+        "timestamp": "2029-01-01T00:00:00.000Z",
+        "classification": "internal-redacted",
+        "approvalState": "approved",
+        "approval": {"actorId": "human-owner", "decision": "approved"}
+      }
+    ]
+  },
+  "publication": {
+    "status": "local-only"
+  },
+  "durablyPublished": false
+}

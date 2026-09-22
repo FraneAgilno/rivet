@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  --ink: #f6f8ff;
+  --muted: #9ba7bd;
+  --panel: rgba(17, 25, 42, 0.9);
+  --line: rgba(173, 192, 229, 0.15);
+  --accent: #79e2c5;
+  --blue: #7eb6ff;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: radial-gradient(circle at 12% 0%, #17365b 0, transparent 38rem), #070c16;
+}
+.masthead, main { width: min(1800px, calc(100% - 48px)); margin-inline: auto; }
+.masthead { display: flex; align-items: center; justify-content: space-between; padding: 30px 0 18px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: clamp(1.8rem, 3vw, 3.2rem); letter-spacing: -0.04em; }
+h2 { margin-bottom: 18px; font-size: 1.05rem; }
+.eyebrow { color: var(--accent); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.connection { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+#connection-dot { width: 10px; height: 10px; border-radius: 50%; background: #f0b35c; box-shadow: 0 0 18px currentColor; }
+#connection-dot.connected { background: var(--accent); }
+.panel { padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); backdrop-filter: blur(16px); }
+.hero { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 16px; }
+.hero h2 { margin: 7px 0; font-size: clamp(1.5rem, 2.3vw, 2.6rem); }
+#stage { color: var(--muted); }
+.metrics { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 10px; }
+.metric { min-width: 105px; padding: 12px; border-left: 2px solid var(--blue); background: rgba(255,255,255,0.03); }
+.metric span, .row small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 0.72rem; }
+.layout { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding-bottom: 32px; }
+.span-two { grid-column: span 2; }
+.stack, .graph, .timeline { display: grid; gap: 9px; max-height: 420px; overflow: auto; }
+.graph { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,0.025); }
+.row > div { min-width: 0; }
+.row strong, .row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { flex: none; padding: 4px 8px; border-radius: 999px; color: var(--blue); background: rgba(126,182,255,0.1); font-size: 0.68rem; text-transform: uppercase; }
+.status-completed, .status-approved, .status-alive { color: var(--accent); background: rgba(121,226,197,0.1); }
+.status-failed, .status-blocked, .status-corrective { color: #ff9ca5; background: rgba(255,91,110,0.1); }
+.evidence-link { color: var(--accent); font-size: 0.75rem; }
+.muted { color: var(--muted); }
+
+/* Presentation resolution keeps every operational lane visible on a single 16:9 screen. */
+@media (max-width: 1200px) { .layout { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hero { align-items: stretch; flex-direction: column; } }
+@media (max-width: 720px) { .masthead, main { width: min(100% - 24px, 1800px); } .layout, .graph, .metrics { grid-template-columns: 1fr; } .span-two { grid-column: span 1; } }

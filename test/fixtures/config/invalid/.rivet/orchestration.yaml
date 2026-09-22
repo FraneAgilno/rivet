@@ -1,0 +1,26 @@
+schemaVersion: 1
+enabled: false
+maxDelegationDepth: 1
+roles:
+  - id: portfolio-boss
+    kind: boss
+    capacity: 1
+    canDelegate: false
+    delegatesTo: []
+    providerRefs: [jira-main]
+    authorityScopes: [plan]
+    permissions:
+      externalWrites: false
+      merge: false
+      deploy: false
+    budget:
+      timeMinutes: 60
+      tokenLimit: 1000
+      costUsd: 1
+      taskLimit: 1
+    completionProfile: delivery
+approvalGates: [activation, external-write, final-delivery]
+completionProfiles:
+  - id: delivery
+    requiredEvidence: [human-approval]
+    requiredApprovals: [human]

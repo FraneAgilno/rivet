@@ -1,0 +1,16 @@
+# PR Summary Template
+
+## What changed
+- ...
+
+## Why
+- ...
+
+## How to test
+- ...
+
+## Notes / Risks
+- ...
+
+## Screenshots / recordings (if UI)
+- ...

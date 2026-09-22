@@ -1,0 +1,8 @@
+schemaVersion: 1
+providers:
+  - id: git-ci-main
+    kind: git-ci
+    mode: disabled
+    capabilities: [repository-read]
+    credentials:
+      tokenEnv: GITHUB_TOKEN

@@ -1,0 +1,14 @@
+schemaVersion: 1
+id: conference-planner
+name: Conference Planner
+stack:
+  framework: nextjs
+  language: typescript
+  packageManager: npm
+repository:
+  defaultBranch: main
+  branchPattern: feature/{slug}
+  sensitivePaths: [.env]
+commands:
+  build: [npm, run, build]
+  test: [npm, run, test]

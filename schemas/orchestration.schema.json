@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/orchestration.schema.json",
+  "title": "Agilno tracked orchestration policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "maxDelegationDepth", "roles", "approvalGates", "completionProfiles"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "enabled": { "type": "boolean", "const": false, "default": false },
+    "maxDelegationDepth": { "type": "integer", "minimum": 1, "maximum": 8 },
+    "roles": { "type": "array", "minItems": 3, "maxItems": 128, "items": { "$ref": "#/$defs/role" } },
+    "approvalGates": { "type": "array", "minItems": 3, "maxItems": 16, "uniqueItems": true, "items": { "enum": ["activation", "scope-change", "external-write", "visual-baseline", "merge", "deploy", "publication", "final-delivery"] } },
+    "completionProfiles": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/completionProfile" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeMinutes", "tokenLimit", "costUsd", "taskLimit"],
+      "properties": {
+        "timeMinutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+        "tokenLimit": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "costUsd": { "type": "number", "exclusiveMinimum": 0, "maximum": 10000 },
+        "taskLimit": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["externalWrites", "merge", "deploy"],
+      "properties": {
+        "externalWrites": { "type": "boolean" },
+        "merge": { "type": "boolean" },
+        "deploy": { "type": "boolean" }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "capacity", "canDelegate", "delegatesTo", "providerRefs", "authorityScopes", "permissions", "budget", "completionProfile"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["boss", "manager", "worker"] },
+        "capacity": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "canDelegate": { "type": "boolean" },
+        "delegatesTo": { "type": "array", "maxItems": 3, "uniqueItems": true, "items": { "enum": ["boss", "manager", "worker"] } },
+        "providerRefs": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "authorityScopes": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "permissions": { "$ref": "#/$defs/permissions" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "completionProfile": { "$ref": "#/$defs/id" }
+      }
+    },
+    "completionProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "requiredEvidence", "requiredApprovals"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "requiredEvidence": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/evidenceType" } },
+        "requiredApprovals": { "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": { "enum": ["manager", "quality", "security", "human"] } }
+      }
+    },
+    "evidenceType": { "enum": ["commit", "test", "journey", "screenshot", "report", "review", "human-approval", "external-update"] }
+  }
+}

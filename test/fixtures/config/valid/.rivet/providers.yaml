@@ -1,0 +1,30 @@
+schemaVersion: 1
+providers:
+  - id: jira-main
+    kind: jira
+    mode: read-write-with-approval
+    capabilities: [issues-read, issues-write]
+    resourceIds: [AGILNO]
+    credentials:
+      apiTokenEnv: ATLASSIAN_API_TOKEN
+  - id: confluence-main
+    kind: confluence
+    mode: read-write-with-approval
+    capabilities: [pages-read, pages-write]
+    resourceIds: [SPACE]
+    credentials:
+      apiTokenEnv: ATLASSIAN_API_TOKEN
+  - id: figma-main
+    kind: figma
+    mode: read-only
+    capabilities: [files-read]
+    resourceIds: [DEMO_FILE]
+    credentials:
+      accessTokenEnv: FIGMA_ACCESS_TOKEN
+  - id: git-ci-main
+    kind: git-ci
+    mode: read-write-with-approval
+    capabilities: [repository-read, pull-request-write, checks-read]
+    resourceIds: [agilno/conference-planner]
+    credentials:
+      tokenEnv: GITHUB_TOKEN

@@ -1,0 +1,8 @@
+schemaVersion: 1
+providers:
+  - id: jira-main
+    kind: jira
+    mode: read-only
+    capabilities: [issues-read]
+    credentials:
+      apiToken: placeholder-credential-value-do-not-use

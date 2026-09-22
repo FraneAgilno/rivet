@@ -1,0 +1,19 @@
+{
+  "sourceId": "agilno/conference-planner",
+  "sourceUrl": "https://github.com/agilno/conference-planner",
+  "fetchedAt": "2029-01-01T00:00:00.000Z",
+  "raw": {
+    "repository": {
+      "id": 42,
+      "fullName": "agilno/conference-planner",
+      "defaultBranch": "main",
+      "private": true,
+      "url": "https://github.com/agilno/conference-planner"
+    },
+    "branch": { "name": "main", "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "protected": true },
+    "pullRequest": { "number": 7, "state": "open", "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "baseBranch": "main" },
+    "checks": [{ "id": 9, "name": "test", "status": "completed", "conclusion": "success" }],
+    "reviews": [{ "id": 10, "state": "APPROVED", "reviewer": "fixture-reviewer" }],
+    "artifacts": [{ "id": 11, "name": "qa-bundle", "expired": false, "url": "https://api.github.com/artifacts/11" }]
+  }
+}

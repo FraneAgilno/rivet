@@ -1,0 +1,29 @@
+image: node:22.18.0-bookworm
+
+definitions:
+  caches:
+    npm: ~/.npm
+  steps:
+    - step: &verify
+        name: Verify generated conference starter
+        max-time: 30
+        caches:
+          - npm
+        script:
+          - npm ci
+          - npm audit --audit-level=high
+          - npm run check
+          - npx playwright install --with-deps chromium
+          - npm run test:storybook
+          - npm run test:e2e
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *verify
+  branches:
+    main:
+      - step: *verify
+  custom:
+    verify:
+      - step: *verify

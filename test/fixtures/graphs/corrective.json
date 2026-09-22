@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "corrective-loop",
+  "goal": "Correct a failed journey before delivery",
+  "providerRefs": ["git-ci-main"],
+  "maxDelegationDepth": 2,
+  "status": "running",
+  "nodes": [
+    {
+      "id": "boss-plan",
+      "objective": "Own the corrective delivery goal",
+      "owner": { "role": "boss", "id": "portfolio-boss" },
+      "dependencies": [],
+      "authorityScopes": ["plan", "implement", "delegate", "verify"],
+      "budget": { "timeMinutes": 240, "tokenLimit": 200000, "costUsd": 40, "taskLimit": 40 },
+      "completionProfile": "delivery",
+      "requiredEvidenceTypes": ["commit", "test", "review", "human-approval"],
+      "evidenceRefs": ["boss-commit", "boss-test", "boss-review", "boss-approval"],
+      "status": "completed"
+    },
+    {
+      "id": "manager-plan",
+      "parentId": "boss-plan",
+      "objective": "Coordinate the corrective task",
+      "owner": { "role": "manager", "id": "engineering-manager" },
+      "dependencies": ["boss-plan"],
+      "authorityScopes": ["implement", "delegate", "verify"],
+      "budget": { "timeMinutes": 180, "tokenLimit": 150000, "costUsd": 30, "taskLimit": 30 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test"],
+      "evidenceRefs": ["manager-commit", "manager-test"],
+      "status": "completed"
+    },
+    {
+      "id": "fix-journey",
+      "parentId": "manager-plan",
+      "objective": "Correct the journey regression",
+      "owner": { "role": "worker", "id": "quality-worker" },
+      "dependencies": ["manager-plan"],
+      "authorityScopes": ["implement", "verify"],
+      "budget": { "timeMinutes": 90, "tokenLimit": 50000, "costUsd": 10, "taskLimit": 8 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test", "journey"],
+      "evidenceRefs": ["fix-commit", "fix-test", "fix-journey-result"],
+      "status": "corrective"
+    },
+    {
+      "id": "human-final",
+      "parentId": "boss-plan",
+      "objective": "Approve corrected delivery",
+      "owner": { "role": "boss", "id": "portfolio-boss" },
+      "dependencies": ["fix-journey"],
+      "authorityScopes": ["verify"],
+      "budget": { "timeMinutes": 30, "tokenLimit": 1000, "costUsd": 1, "taskLimit": 1 },
+      "completionProfile": "delivery",
+      "requiredEvidenceTypes": ["commit", "test", "review", "human-approval"],
+      "evidenceRefs": ["final-commit", "final-test", "final-review", "final-approval"],
+      "status": "ready",
+      "approvalGate": "final-delivery"
+    }
+  ]
+}

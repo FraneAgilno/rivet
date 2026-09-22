@@ -1,0 +1,43 @@
+{
+  "name": "@agilno/rivet",
+  "version": "0.1.0-alpha.0",
+  "type": "module",
+  "description": "A portable team development framework for coding harnesses and multiple LLM providers",
+  "bin": {
+    "rivet": "./bin/cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node test/run-tests.cjs",
+    "test:unit": "node --test \"test/core/*.test.js\" \"test/runtime/*.test.js\" \"test/adapters/*.test.js\"",
+    "check": "npm run build && npm test",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "docs:dev": "vitepress docs",
+    "package:smoke": "node scripts/package-smoke.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "src/",
+    "schemas/",
+    "protocols/",
+    "templates/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@inquirer/checkbox": "^3.0.0",
+    "ajv": "^8.20.0",
+    "yaml": "^2.9.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  },
+  "license": "UNLICENSED",
+  "overrides": {
+    "vite": "6.4.3"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/project.schema.json",
+  "title": "Agilno tracked project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "stack", "repository", "commands"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "stack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["framework", "language", "packageManager"],
+      "properties": {
+        "framework": { "$ref": "#/$defs/name" },
+        "language": { "$ref": "#/$defs/name" },
+        "packageManager": { "enum": ["npm", "pnpm", "yarn", "bun", "pip", "poetry", "uv", "cargo", "go", "other"] }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultBranch", "branchPattern"],
+      "properties": {
+        "defaultBranch": { "$ref": "#/$defs/refName" },
+        "branchPattern": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._/{\\}-]+$" },
+        "sensitivePaths": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/relativePath" } }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "test"],
+      "properties": {
+        "build": { "$ref": "#/$defs/command" },
+        "test": { "$ref": "#/$defs/command" },
+        "lint": { "$ref": "#/$defs/command" },
+        "typecheck": { "$ref": "#/$defs/command" },
+        "dev": { "$ref": "#/$defs/command" }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$" },
+    "refName": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+    "relativePath": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*[\\\\/]{2})(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))(?!.*(?:^|[\\\\/])\\.(?:[\\\\/]|$))(?!.+[\\\\/]$)[^\\u0000\\r\\n]+$" },
+    "command": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": [
+        { "enum": ["npm", "npm.cmd", "pnpm", "pnpm.cmd", "yarn", "yarn.cmd", "bun"] },
+        { "const": "run" },
+        { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._-]*$" }
+      ],
+      "additionalItems": false
+    }
+  }
+}

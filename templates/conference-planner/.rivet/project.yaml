@@ -1,0 +1,17 @@
+schemaVersion: 1
+id: __PROJECT_NAME__
+name: __PROJECT_NAME__
+stack:
+  framework: nextjs
+  language: typescript
+  packageManager: npm
+repository:
+  defaultBranch: main
+  branchPattern: feature/{slug}
+  sensitivePaths: [.env, .env.local]
+commands:
+  build: [npm, run, build]
+  test: [npm, run, test]
+  lint: [npm, run, lint]
+  typecheck: [npm, run, typecheck]
+  dev: [npm, run, dev]

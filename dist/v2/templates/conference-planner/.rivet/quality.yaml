@@ -1,0 +1,18 @@
+schemaVersion: 1
+providerRefs: [local-git]
+completionProfileRefs: [engineering, delivery]
+commandGates:
+  - {id: build, command: build, required: true}
+  - {id: test, command: test, required: true}
+  - {id: lint, command: lint, required: true}
+  - {id: typecheck, command: typecheck, required: true}
+expectations:
+  storybook: required
+  playwright: required
+  accessibility: wcag-aa
+  security: required
+  visual: human-baseline
+evidence:
+  requiredTypes: [commit, test, journey, screenshot, report, review, human-approval]
+  requireHumanBaseline: true
+  requireHumanFinal: true

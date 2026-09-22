@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/evidence.schema.json",
+  "title": "Agilno evidence bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "graphId", "approvalState", "publicationState", "items"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "graphId": { "$ref": "#/$defs/id" },
+    "approvalState": { "$ref": "#/$defs/approvalState" },
+    "publicationState": { "enum": ["draft", "approved", "rejected"] },
+    "items": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/$defs/item" } }
+  },
+  "allOf": [
+    { "if": { "properties": { "publicationState": { "const": "approved" } } }, "then": { "properties": { "approvalState": { "const": "approved" } } } },
+    { "if": { "properties": { "publicationState": { "const": "rejected" } } }, "then": { "properties": { "approvalState": { "const": "rejected" } } } }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "externalRef": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "timestamp": { "type": "string", "minLength": 20, "maxLength": 35, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$" },
+    "approvalState": { "enum": ["pending", "approved", "rejected"] },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "id"],
+      "properties": {
+        "role": { "enum": ["human", "boss", "manager", "worker", "system"] },
+        "id": { "$ref": "#/$defs/externalRef" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+        "providerRef": { "$ref": "#/$defs/id" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[^\\u0000\\r\\n]+$" }
+      }
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "status"],
+      "properties": {
+        "command": { "enum": ["build", "test", "lint", "typecheck", "dev"] },
+        "status": { "enum": ["passed", "failed", "blocked"] }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorId", "decision"],
+      "properties": {
+        "actorId": { "$ref": "#/$defs/externalRef" },
+        "decision": { "enum": ["approved", "rejected"] },
+        "note": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "requirementRefs", "source", "producer", "timestamp", "classification", "approvalState"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/evidenceType" },
+        "requirementRefs": { "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/externalRef" } },
+        "source": { "$ref": "#/$defs/source" },
+        "producer": { "$ref": "#/$defs/producer" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "classification": { "enum": ["public", "internal-redacted", "confidential-redacted"] },
+        "approvalState": { "$ref": "#/$defs/approvalState" },
+        "checksum": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "location": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^[^\\u0000\\r\\n]+$" },
+        "details": { "$ref": "#/$defs/details" },
+        "approval": { "$ref": "#/$defs/approval" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "commit" } } }, "then": { "properties": { "source": { "type": "object", "additionalProperties": false, "properties": { "commit": {}, "providerRef": {}, "resourceId": {} }, "required": ["commit"] } } } },
+        { "if": { "properties": { "type": { "enum": ["test", "journey"] } } }, "then": { "properties": { "details": {} }, "required": ["details"] } },
+        { "if": { "properties": { "type": { "enum": ["screenshot", "report"] } } }, "then": { "properties": { "location": {}, "checksum": {} }, "required": ["location", "checksum"] } },
+        { "if": { "properties": { "type": { "const": "human-approval" } } }, "then": { "properties": { "approval": {} }, "required": ["approval"] } },
+        { "if": { "properties": { "type": { "not": { "enum": ["test", "journey"] } } } }, "then": { "not": { "properties": { "details": {} }, "required": ["details"] } } },
+        { "if": { "properties": { "type": { "not": { "enum": ["screenshot", "report"] } } } }, "then": { "not": { "properties": { "location": {} }, "required": ["location"] } } },
+        { "if": { "properties": { "type": { "not": { "enum": ["screenshot", "report"] } } } }, "then": { "not": { "properties": { "checksum": {} }, "required": ["checksum"] } } },
+        { "if": { "properties": { "type": { "not": { "const": "human-approval" } } } }, "then": { "not": { "properties": { "approval": {} }, "required": ["approval"] } } }
+      ]
+    },
+    "evidenceType": { "enum": ["commit", "test", "journey", "screenshot", "report", "review", "human-approval", "external-update"] }
+  }
+}

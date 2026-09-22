@@ -1,0 +1,23 @@
+schemaVersion: 1
+providerRefs: [figma-main, git-ci-main]
+completionProfileRefs: [engineering, delivery]
+commandGates:
+  - id: build
+    command: build
+    required: true
+  - id: test
+    command: test
+    required: true
+  - id: lint
+    command: lint
+    required: true
+expectations:
+  storybook: required
+  playwright: required
+  accessibility: wcag-aa
+  security: required
+  visual: human-baseline
+evidence:
+  requiredTypes: [commit, test, journey, screenshot, report, review, human-approval]
+  requireHumanBaseline: true
+  requireHumanFinal: true

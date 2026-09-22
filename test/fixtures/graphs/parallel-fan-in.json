@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "parallel-fan-in",
+  "goal": "Deliver a dependency-aware conference demo",
+  "providerRefs": ["git-ci-main"],
+  "maxDelegationDepth": 3,
+  "status": "approved",
+  "nodes": [
+    {
+      "id": "boss-plan",
+      "objective": "Own the approved delivery goal",
+      "owner": { "role": "boss", "id": "portfolio-boss" },
+      "dependencies": [],
+      "authorityScopes": ["plan", "implement", "delegate", "verify"],
+      "budget": { "timeMinutes": 480, "tokenLimit": 500000, "costUsd": 100, "taskLimit": 100 },
+      "completionProfile": "delivery",
+      "requiredEvidenceTypes": ["commit", "test", "review", "human-approval"],
+      "evidenceRefs": ["boss-commit", "boss-test", "boss-review", "boss-approval"],
+      "status": "completed"
+    },
+    {
+      "id": "manager-plan",
+      "parentId": "boss-plan",
+      "objective": "Coordinate implementation",
+      "owner": { "role": "manager", "id": "engineering-manager" },
+      "dependencies": ["boss-plan"],
+      "authorityScopes": ["implement", "delegate", "verify"],
+      "budget": { "timeMinutes": 240, "tokenLimit": 250000, "costUsd": 50, "taskLimit": 40 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test"],
+      "evidenceRefs": ["manager-commit", "manager-test"],
+      "status": "completed"
+    },
+    {
+      "id": "api-contract",
+      "parentId": "manager-plan",
+      "objective": "Define the completed API contract",
+      "owner": { "role": "worker", "id": "api-contract-worker" },
+      "dependencies": ["manager-plan"],
+      "authorityScopes": ["implement", "verify"],
+      "budget": { "timeMinutes": 60, "tokenLimit": 30000, "costUsd": 6, "taskLimit": 5 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test"],
+      "evidenceRefs": ["contract-commit", "contract-test"],
+      "status": "completed"
+    },
+    {
+      "id": "design",
+      "parentId": "manager-plan",
+      "objective": "Implement approved component states",
+      "owner": { "role": "worker", "id": "design-worker" },
+      "dependencies": ["manager-plan"],
+      "authorityScopes": ["implement", "verify"],
+      "budget": { "timeMinutes": 90, "tokenLimit": 50000, "costUsd": 10, "taskLimit": 8 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test"],
+      "evidenceRefs": ["design-commit", "design-test"],
+      "status": "ready"
+    },
+    {
+      "id": "api",
+      "parentId": "manager-plan",
+      "objective": "Implement the agenda API",
+      "owner": { "role": "worker", "id": "api-worker" },
+      "dependencies": ["api-contract"],
+      "authorityScopes": ["implement", "verify"],
+      "budget": { "timeMinutes": 120, "tokenLimit": 60000, "costUsd": 12, "taskLimit": 10 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test"],
+      "evidenceRefs": ["api-commit", "api-test"],
+      "status": "ready"
+    },
+    {
+      "id": "integration",
+      "parentId": "manager-plan",
+      "objective": "Integrate UI and API journeys",
+      "owner": { "role": "worker", "id": "integration-worker" },
+      "dependencies": ["design", "api"],
+      "authorityScopes": ["implement", "verify"],
+      "budget": { "timeMinutes": 120, "tokenLimit": 70000, "costUsd": 14, "taskLimit": 12 },
+      "completionProfile": "engineering",
+      "requiredEvidenceTypes": ["commit", "test", "journey"],
+      "evidenceRefs": ["integration-commit", "integration-test", "integration-journey"],
+      "status": "ready"
+    },
+    {
+      "id": "human-final",
+      "parentId": "boss-plan",
+      "objective": "Approve final delivery",
+      "owner": { "role": "boss", "id": "portfolio-boss" },
+      "dependencies": ["integration"],
+      "authorityScopes": ["verify"],
+      "budget": { "timeMinutes": 30, "tokenLimit": 1000, "costUsd": 1, "taskLimit": 1 },
+      "completionProfile": "delivery",
+      "requiredEvidenceTypes": ["commit", "test", "review", "human-approval"],
+      "evidenceRefs": ["final-commit", "final-test", "final-review", "final-approval"],
+      "status": "ready",
+      "approvalGate": "final-delivery"
+    }
+  ]
+}
