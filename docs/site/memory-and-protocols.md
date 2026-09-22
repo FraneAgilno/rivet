@@ -1,6 +1,6 @@
 # Memory and project protocols
 
-These are separate capabilities, both under implementation.
+These are separate capabilities. Project protocols are implemented; shared memory remains planned.
 
 ## Shared memory
 

@@ -39,7 +39,7 @@ No public package has been published. The package namespace is provisional, publ
 - Imported workflow, Git worktree, provider, and verification modules.
 - CI and searchable documentation source.
 
-The additional API/local model executors, active-harness workflow, shared Obsidian memory, project-protocol commands, and expanded repository delivery are **planned**, not completed. A provider appearing in the registry is not a claim of live model execution.
+Additional API/local model executors, shared Obsidian memory, and expanded repository delivery are **planned**, not completed. A provider appearing in the registry is not a claim of live model execution.
 
 ## Documentation
 

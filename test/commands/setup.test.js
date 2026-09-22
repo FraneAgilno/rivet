@@ -325,17 +325,21 @@ test('late install failure reports partial setup while retaining valid configura
   assert.equal(await readFile(join(root, '.agents', 'skills', 'rivet', 'SKILL.md'), 'utf8'), 'partially installed\n');
 });
 
-test('missing build and test scripts block writes with actionable preview guidance', async t => {
+test('missing build and test scripts remain visible but do not block first-time setup', async t => {
   const root = await createProject(t, { scripts: {} });
   const result = await runSetup(t, root, { write: true });
 
-  assert.equal(result.code, EXIT_CODES.FAILED_GATE);
-  assert.equal(result.result.status, 'blocked');
-  assert.match(result.result.blockers.join('\n'), /build/);
-  assert.match(result.result.blockers.join('\n'), /test/);
+  assert.equal(result.code, EXIT_CODES.SUCCESS);
+  assert.equal(result.result.status, 'configured');
+  assert.deepEqual(result.result.blockers, []);
+  assert.equal(result.result.warnings.length, 2);
+  assert.match(result.result.warnings.join('\n'), /'build'/);
+  assert.match(result.result.warnings.join('\n'), /'test'/);
+  assert.doesNotMatch(result.result.warnings.join('\n'), /build\[|test\[/);
   assert.match(result.result.nextSteps.join('\n'), /build|test/);
-  assert.equal(result.calls.install.length, 0);
-  await assert.rejects(() => lstat(join(root, '.rivet')));
+  assert.equal(result.calls.install.length, 1);
+  await loadProjectConfig(root);
+  assert.equal(await readFile(join(root, '.agents', 'skills', 'rivet', 'SKILL.md'), 'utf8'), 'minimal Rivet setup skill\n');
 });
 
 test('parser accepts minimal project-scoped install/uninstall and rejects invalid combinations', () => {

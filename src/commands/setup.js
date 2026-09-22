@@ -83,19 +83,22 @@ export async function setupCommand(parsed, dependencies) {
   }
   const missingScripts = preview ? Object.entries(preview.value.proposal.provenance)
     .filter(([key, value]) => key.startsWith('project.commands.') && value.source.startsWith('safe-default'))
-    .map(([key]) => key.split('.')[2]).filter((value, index, all) => all.indexOf(value) === index) : [];
+    .map(([key]) => key.slice('project.commands.'.length).replace(/\[.*$/, ''))
+    .filter((value, index, all) => all.indexOf(value) === index) : [];
   const tools = preview?.value.discovery.tools;
   const missingTools = tools ? ['node', 'git', ...Object.keys(tools).filter(key => ['npm', 'pnpm', 'yarn', 'bun'].includes(key))]
     .filter(name => !tools[name]?.present || (name === 'node' && Number.parseInt(tools.node.version, 10) < 22)) : [];
   const blockers = [
-    ...missingScripts.map(name => `Add a real '${name}' project script or configure its check explicitly with rivet init before setup.`),
     ...missingTools.map(name => `Install ${name === 'node' ? 'Node.js 22 or newer' : name} and make it available on PATH.`),
   ];
+  const warnings = missingScripts
+    .map(name => `No root '${name}' package script was detected. Add one before relying on this required check.`);
   const result = {
     ok: true, status: 'preview', scope: flags.global ? 'global' : 'project', target,
-    configuration, installation, blockers,
+    configuration, installation, blockers, warnings,
     message: 'Setup preview: no files were written.',
-    nextSteps: blockers.length ? blockers : [
+    nextSteps: blockers.length ? [...blockers, ...warnings] : [
+      ...warnings,
       ...(!flags.global && preview ? [
         `Project configuration: ${CONFIG_FILES.map(name => join(root, '.rivet', name)).join(', ')}`,
         `Detected build check: ${(preview.value.discovery?.proposal?.commands?.build ?? preview.value.discovery?.commands?.build ?? []).join(' ') || 'unavailable'}`,
@@ -129,6 +132,7 @@ export async function setupCommand(parsed, dependencies) {
       ...result, status: 'configured', configuration, installation: installed.value,
       message: flags.global ? 'Minimal Rivet harness instructions installed globally.' : 'Project configuration and minimal Rivet harness instructions are ready.',
       nextSteps: [
+        ...warnings,
         'Reload your harness so it discovers the Rivet skill.',
         'Ask your harness: "Read the Rivet skill and report this project\'s configured checks."',
         ...(flags.global ? ['Run rivet setup --project=<path> to configure each project.'] : ['Run rivet doctor --project=<path> to inspect configured readiness.']),

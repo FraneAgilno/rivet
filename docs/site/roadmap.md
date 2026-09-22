@@ -2,14 +2,17 @@
 
 The next release should let a new developer install Rivet, connect a project, and complete a small task through their existing coding harness using only the quickstart.
 
-## MVP priorities
+## Delivered MVP foundations
 
-1. **Simple installation:** global and project scopes, useful environment diagnostics, and a clear uninstall path.
-2. **Guided project setup:** discover project tools and checks while preserving existing configuration.
-3. **Active-harness workflow:** let the agent already in use invoke Rivet without requiring a second model process.
-4. **Project protocols:** add and discover reviewed project procedures through the CLI.
-5. **First-task experience:** verify changes, present evidence for human review, and make recovery understandable.
-6. **Fresh-user validation:** test the published installation and quickstart before wider rollout.
+1. **Simple installation:** global and project scopes, environment diagnostics, setup preview/apply, and a clear uninstall path.
+2. **Active-harness workflow:** the agent already in use can plan and execute sealed Rivet work without requiring a second model process.
+3. **Project protocols:** teams can add, import, validate, publish, revise, and discover reviewed project procedures through the CLI.
+
+## Next MVP priorities
+
+1. **Broader guided setup:** discover more project layouts and checks while preserving existing configuration.
+2. **First-task experience:** verify changes, present evidence for human review, and make recovery understandable.
+3. **Fresh-user validation:** test the published installation and quickstart before wider rollout.
 
 The repository is being kept focused on the reusable framework. Retired conference demos and internal implementation plans do not belong in the distributed product.
 
