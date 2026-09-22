@@ -585,3 +585,11 @@ Do not duplicate the quickstart across Pages and Wiki. The README links to the d
 Repository access verified: the isolated `~/.config/gh-rivet` configuration authenticates as `FraneAgilno` with admin/push access. The other project’s default account remains unchanged. Keep the other project's active account unchanged. Authenticate Rivet separately (for example with a dedicated GH_CONFIG_DIR), verify the authenticated identity and repository permissions, and scope subsequent gh and Git HTTPS credentials to Rivet operations. An explicit repository URL alone does not select the correct credentials. Never put tokens in source files or remote URLs.
 
 No remote content, Wiki pages, or Pages deployment was changed during this planning update.
+
+## 13. Public foundation publication
+
+The owner explicitly approved publishing the sanitized snapshot `1fe4c62`, including implementation, tests, synthetic fixtures, templates and documentation. It is now on `FraneAgilno/rivet` main; earlier local history is not reachable from that public root. Pages is deployed at https://franeagilno.github.io/rivet/ and its homepage plus eight linked documentation pages returned HTTP 200.
+
+The first CI run passed macOS on Node 22 and 24. Linux exposed three fixture portability issues (a Homebrew-specific Git path, late attachment of a rejection assertion, and mock providers closing before accepting stdin). Correct those fixtures and require the complete matrix to pass. Production validation, timeouts and locking remain unchanged.
+
+Next implementation remains MVP installation/setup, active-harness operation and project protocols. Source publication and documentation hosting do not complete those milestones.

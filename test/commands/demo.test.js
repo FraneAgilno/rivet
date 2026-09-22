@@ -639,10 +639,16 @@ test('code-zero Git completion rejects target mutations and preserves only chang
 
   await t.test('real Git with a changed generated package manifest', async () => {
     const target = await emptyTarget('agilno-demo-real-git-mutation-');
-    const creation = createDemo({ target, name: PROJECT_NAME, gitInit: true });
-    await writeFile(join(target, 'package.json'), '{"changed":"concurrently"}\n');
     await assert.rejects(
-      () => creation,
+      () => createDemo({ target, name: PROJECT_NAME, gitInit: true }, {
+        runGit: async (command, args, options) => {
+          // Mutate after real Git completes, before publication verifies ownership.
+          // Register assert.rejects before starting work, including on fast runners.
+          await execFile(command, args, options);
+          await writeFile(join(target, 'package.json'), '{"changed":"concurrently"}\n');
+          return { code: 0 };
+        },
+      }),
       error => error?.code === 'REPOSITORY_CONFLICT' && /concurrent|changed|residue/i.test(error.message),
     );
     assert.equal(await readFile(join(target, 'package.json'), 'utf8'), '{"changed":"concurrently"}\n');

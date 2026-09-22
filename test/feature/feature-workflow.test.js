@@ -129,7 +129,8 @@ providers:
 
 test('runs equivalent Markdown/Jira/Linear requests through one resumable local-only feature lifecycle', async () => {
   const target = await fixture();
-  const gitClient = await createGitClient({ gitExecutable: await realpath('/opt/homebrew/bin/git') });
+  const { stdout: gitPath } = await execFile('which', ['git']);
+  const gitClient = await createGitClient({ gitExecutable: await realpath(gitPath.trim()) });
   const requestBody = await readFile(REQUEST, 'utf8');
   const adapters = {
     jira: trackerAdapter('jira', 'DEMO-42', requestBody),

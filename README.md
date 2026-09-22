@@ -31,6 +31,8 @@ The additional API/local model executors, active-harness workflow, shared Obsidi
 
 ## Documentation
 
+[Read the documentation](https://franeagilno.github.io/rivet/) · [CI results](https://github.com/FraneAgilno/rivet/actions/workflows/ci.yml)
+
 - [Get started](docs/site/getting-started.md)
 - [Architecture](docs/site/architecture.md)
 - [Model providers](docs/site/models.md)

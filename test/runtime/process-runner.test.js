@@ -219,7 +219,8 @@ test('classifies malformed, multiple, oversized and non-UTF8 provider output saf
     ["printf '\\377'", 'ERR_AGENT_OUTPUT_INVALID'],
   ];
   for (const [body, code] of cases) {
-    const f = await fixture(t, body);
+    // Output classification requires a provider that first accepts its input.
+    const f = await fixture(t, `cat >/dev/null\n${body}`);
     const runner = await createProcessRunner({ executable: f.executable, interpreter: f.interpreter, worktree: f.worktree, maxOutputBytes: 1024 });
     const launchPayload = await payload(f);
     await assert.rejects(() => runner.run({ args: [], cwd: '.', payload: launchPayload }), error => error.code === code);

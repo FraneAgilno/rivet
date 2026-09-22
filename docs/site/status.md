@@ -21,3 +21,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - External pilot, evaluations, and release qualification.
 
 The implementation plan is maintained in `docs/plans/`. The maintainer baseline records source-test failures separately from fixes and new tests. A successful local build does not claim GitHub CI or Pages deployment has run.
+
+## Public foundation
+
+The source is published at [FraneAgilno/rivet](https://github.com/FraneAgilno/rivet) and this documentation is deployed to GitHub Pages. [CI results](https://github.com/FraneAgilno/rivet/actions/workflows/ci.yml) record the macOS/Linux and Node 22/24 matrix. CI tests fixtures and package behavior; it does not qualify live model or MCP accounts.
