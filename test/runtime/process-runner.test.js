@@ -24,11 +24,14 @@ function envelope(status = 'success') {
   return JSON.stringify({ version: 1, status, output: { summary: 'done', evidence: ['tests'] }, usage: { tokens: 10, costUsd: 0.01 } });
 }
 
-async function payload(f) {
+async function payload(f, { large = false } = {}) {
   const metadata = await lstat(f.worktree, { bigint: true });
   return buildLaunchContract({
     nodeId: 'worker-one', parentId: 'manager-one', objective: 'Test the provider.',
-    ownedPaths: ['src/provider.js'], authority: { actions: ['code.write'], providers: [] },
+    ownedPaths: large
+      ? Array.from({ length: 200 }, (_, index) => `src/${index}-${'x'.repeat(470)}.js`)
+      : ['src/provider.js'],
+    authority: { actions: ['code.write'], providers: [] },
     commands: ['test.unit'], evidence: ['test-results'],
     budget: { maxTokens: 1000, maxRuntimeMs: 30000, maxCostUsd: 1 },
     worktree: { path: f.worktree, dev: metadata.dev.toString(), ino: metadata.ino.toString(), reservationId: 'lease-one' },
@@ -248,9 +251,11 @@ test('bounds runtime, handles abort and spawn/identity failures without leaking 
   await link(slow.executable, hardlinkPath);
   await assert.rejects(() => createProcessRunner({ executable: hardlinkPath, interpreter: slow.interpreter, worktree: slow.worktree }), error => error.code === 'ERR_AGENT_EXECUTABLE_UNSAFE');
   await rm(hardlinkPath);
-  const exitCase = await fixture(t, 'exit 23');
+  // Close stdin first so the parent observes EPIPE before the already-spawned
+  // provider exits. That race must still be classified as provider execution.
+  const exitCase = await fixture(t, 'exec 0<&-\nsleep 0.05\nexit 23');
   const exitRunner = await createProcessRunner({ executable: exitCase.executable, interpreter: exitCase.interpreter, worktree: exitCase.worktree });
-  const exitPayload = await payload(exitCase);
+  const exitPayload = await payload(exitCase, { large: true });
   await assert.rejects(() => exitRunner.run({ args: [], cwd: '.', payload: exitPayload }), error => (
     error.code === 'ERR_AGENT_PROVIDER_UNAVAILABLE' && !error.message.includes(exitCase.root)
   ));
