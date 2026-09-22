@@ -260,35 +260,6 @@ test('feature workflow skill routes natural-language requests through one govern
   assert.match(content, /never (?:push|merge|deploy|publish)|no push, merge, deploy/i);
 });
 
-test('live feature runtime documentation covers setup, both clients, recovery, and the short Conference walkthrough', async () => {
-  const names = [
-    'PROJECT-ONBOARDING.md', 'OPERATOR-QUICKSTART.md', 'CONFERENCE-DEMO.md',
-    'KNOWN-LIMITATIONS.md', 'SECURITY-MODEL.md',
-  ];
-  const documents = Object.fromEntries(await Promise.all(names.map(async name => [
-    name, await readFile(join(REPOSITORY_ROOT, 'docs', 'v2', name), 'utf8'),
-  ])));
-  const combined = Object.values(documents).join('\n');
-
-  for (const name of [
-    'RIVET_CLAUDE_EXECUTABLE', 'RIVET_CODEX_EXECUTABLE',
-    'RIVET_CLAUDE_INTERPRETER', 'RIVET_CODEX_INTERPRETER',
-    'RIVET_NPM_EXECUTABLE',
-  ]) assert.match(combined, new RegExp(name));
-  assert.match(combined, /Claude.*Read,? ?Glob,? ?Grep.*acceptEdits/is);
-  assert.match(combined, /Codex.*read-only.*workspace-write/is);
-  assert.match(combined, /same selected client/i);
-  assert.match(combined, /\.rivet-worktrees/);
-  assert.match(combined, /maxActiveNodes.?[:= ]+1|one Worker at a time/i);
-  assert.match(combined, /Markdown.*Jira.*Linear/is);
-  assert.match(combined, /awaiting-final-approval/);
-  assert.match(combined, /never (?:push|merge|deploy|publish)|no push, merge, deploy/i);
-  assert.match(combined, /10[–-]15 minute/i);
-  assert.match(documents['CONFERENCE-DEMO.md'], /setup.*proposal.*activation.*Worker.*quality.*final/is);
-  assert.match(documents['OPERATOR-QUICKSTART.md'], /blocked.*status.*resume/is);
-  assert.doesNotMatch(documents['KNOWN-LIMITATIONS.md'], /no approved planning\/worker adapter configuration yet/i);
-});
-
 test('normative protocol transition tables exactly match the graph reducer and reject invented lifecycle states', async () => {
   const schema = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'schemas', 'goal-graph.schema.json'), 'utf8'));
   assert.deepEqual(schema.$defs.status.enum, GRAPH_STATUSES);

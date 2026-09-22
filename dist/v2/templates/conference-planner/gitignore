@@ -1,9 +1,0 @@
-.next/
-node_modules/
-storybook-static/
-test-results/
-playwright-report/
-coverage/
-.env*
-!.env.example
-*.tsbuildinfo

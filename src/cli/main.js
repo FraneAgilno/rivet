@@ -17,7 +17,6 @@ import {
 } from '../commands/install.js';
 import { doctor } from '../commands/doctor.js';
 import { modelsCommand } from '../commands/models.js';
-import { demoCommand } from '../commands/demo.js';
 import { init } from '../commands/init.js';
 import { preflight } from '../commands/preflight.js';
 import { uninstall } from '../commands/uninstall.js';
@@ -72,7 +71,6 @@ const USAGE = `Usage:
   rivet init --project <path> --write [--overwrite]
   rivet doctor [--project <path>] [--json]
   rivet preflight [--project <path>] [--json]
-  rivet demo create <target> --name=<project-id> [--git-init]
   rivet verify [--json]
   rivet evidence [--json]
   rivet feature propose --project=<path> (--request=<file>|--request-text=<text>|--ticket=<id>) [--tracker=jira|linear] [--client=claude|codex] [--json]
@@ -143,7 +141,6 @@ function resolveDependencies(overrides = {}) {
     status: overrides.status,
     runGit: overrides.runGit,
     commands: {
-      demo: demoCommand,
       doctor,
       evidence: evidenceCommand,
       feature: featureCommand,

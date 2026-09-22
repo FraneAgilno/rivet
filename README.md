@@ -38,6 +38,6 @@ The additional API/local model executors, active-harness workflow, shared Obsidi
 - [Model providers](docs/site/models.md)
 - [Implementation status](docs/site/status.md)
 - [Contributing](CONTRIBUTING.md)
-- [Import provenance](docs/maintainers/migration.md)
+- [Source provenance](docs/PROVENANCE.md)
 
 The documentation site is built from `docs/site/` using VitePress. The public repository is [FraneAgilno/rivet](https://github.com/FraneAgilno/rivet). GitHub Pages publishing uses the repository’s documentation workflow.
