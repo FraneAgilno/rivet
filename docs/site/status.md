@@ -5,7 +5,8 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 ## Implemented in the foundation
 
 - Independent repository, package identity, CLI, configuration, and private-state namespace.
-- Namespaced harness skills that preserve other frameworks' same-named skills.
+- Minimal project/global harness installation with ownership tracking, plus the legacy capability packs.
+- Setup preview/apply that discovers package scripts and preserves valid existing project configuration.
 - Extensible model registry and local profile validation.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
@@ -14,7 +15,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 ## Still required
 
 - License selection and final package namespace.
-- Guided one-command installation and active-harness service integration.
+- Versioned package distribution, broader project discovery and active-harness service integration.
 - Project-protocol commands and shared Obsidian memory.
 - MCP capability registry and live provider qualification.
 - Bitbucket/GitLab repository delivery and expanded model executors.

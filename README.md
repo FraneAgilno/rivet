@@ -4,7 +4,17 @@ A shared development workflow for teams and their coding agents.
 
 Rivet is a **standalone development alpha** with its own CLI, configuration, state, and releases. It uses a reviewed Agilno source import and has no runtime dependency on AI Engineering.
 
-## Try the foundation
+## Connect a project
+
+With Node.js 22 or 24, npm and Git installed, run from your project:
+
+```sh
+npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=.
+```
+
+Review the preview, then repeat with `--write`. This configures project policy and minimal harness instructions; it does not run project scripts or configure model authentication. [Quickstart](https://franeagilno.github.io/rivet/getting-started.html).
+
+## Contributor checkout
 
 Use Node.js 22 or 24 and Git. From this source checkout:
 

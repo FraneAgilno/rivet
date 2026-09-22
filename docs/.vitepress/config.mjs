@@ -18,7 +18,8 @@ export default defineConfig({
     sidebar: [
       { text: 'Getting started', items: [
         { text: 'Overview', link: '/' },
-        { text: 'Install and explore', link: '/getting-started' },
+        { text: 'Get started', link: '/getting-started' },
+        { text: 'Installation', link: '/installation' },
         { text: 'Architecture', link: '/architecture' },
         { text: 'Runtime reference', link: '/runtime-reference' },
       ] },

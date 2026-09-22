@@ -1,53 +1,31 @@
-# Install and explore
+# Get started
 
-## Current alpha setup
+Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. These commands install from the public GitHub source branch.
 
-Use Node.js 22 or 24 and Git. The CI matrix targets macOS and Linux; remote CI results are not available until the GitHub repository is created. Native Windows support is not qualified yet.
+## Connect a project
 
-Clone the public source repository:
-
-```sh
-git clone https://github.com/FraneAgilno/rivet.git
-cd rivet
-npm ci
-npm run build
-node bin/cli.js --help
-node bin/cli.js models list
-```
-
-To install the `rivet` command locally from this checkout:
+From your project directory, preview the setup:
 
 ```sh
-npm install --global .
-rivet --help
+npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=.
 ```
 
-The package name is provisional and publication is disabled. There is no public `npx` installation command yet. The one-command installer is a planned milestone.
-
-## Optional harness skills
-
-Run from the consumer project:
+Review the detected checks and planned files, then apply:
 
 ```sh
-rivet install --all --target=both
+npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=. --write
 ```
 
-Use `--target=claude` or `--target=codex` to choose one, or add `--global` for machine-wide skills. Installed skills use `rivet-` names so they coexist with other frameworks. Reload your harness if it does not discover newly installed skills immediately.
+Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.
 
-These imported skills still describe the earlier bounded workflow. They are not proof that the new active-harness workflow or additional harness installers are finished. Review the [implementation status](./status.md) before using them.
+Guided discovery currently requires a `package.json` with real `build` and `test` scripts. Missing scripts are reported for review rather than treated as passing checks. Other project types can install only the harness instructions using `install --minimal`; automatic setup for them is still planned.
 
-## Project configuration
+## Check the connection
 
-```sh
-rivet init --project=/absolute/path/to/project
-```
+Reload your coding harness if necessary, then ask:
 
-This previews configuration. Add `--write` to create the reviewed `.rivet` policy files. Credentials and private run state belong outside tracked project configuration. The CLI deliberately does not consume `.agilno` configuration or `AI_ENGINEERING_*` environment variables.
+> Read the Rivet skill and report this project's configured checks.
 
-## Remove installed skills
+This verifies instruction discovery, not model authentication or autonomous task execution. The simplified active-harness workflow is the next milestone. See [status](./status.md) for current limits.
 
-```sh
-rivet uninstall --all --target=both
-```
-
-Use the same project/global scope used during installation. Other frameworks' unprefixed skills are preserved.
+For global installation, updates, removal and contributor setup, see [installation details](./installation.md).

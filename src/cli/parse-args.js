@@ -10,6 +10,7 @@ const COMMANDS = new Set([
   'preflight',
   'protocols',
   'status',
+  'setup',
   'uninstall',
   'verify',
   'worktrees',
@@ -24,15 +25,19 @@ const LEGACY_OPTIONS = {
     valued: new Set(['project']),
   },
   install: {
-    boolean: new Set(['all', 'claude', 'codex', 'global', 'json']),
-    valued: new Set(['target']),
+    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal']),
+    valued: new Set(['target', 'project']),
   },
   uninstall: {
-    boolean: new Set(['all', 'claude', 'codex', 'global', 'json']),
-    valued: new Set(['target']),
+    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal']),
+    valued: new Set(['target', 'project']),
   },
 };
 const STRICT_OPTIONS = {
+  setup: {
+    boolean: new Set(['global', 'write', 'json']),
+    valued: new Set(['project', 'target']),
+  },
   models: {
     boolean: new Set(['json']),
     valued: new Set(['profile']),
@@ -56,7 +61,7 @@ const STRICT_OPTIONS = {
     valued: new Set(['fixture', 'port']),
   },
 };
-const NO_POSITIONAL_COMMANDS = new Set(['doctor', 'init', 'install', 'preflight', 'uninstall']);
+const NO_POSITIONAL_COMMANDS = new Set(['doctor', 'init', 'install', 'preflight', 'setup', 'uninstall']);
 
 function targetSet(target) {
   const normalized = typeof target === 'string' ? target.toLowerCase() : target;
@@ -70,7 +75,7 @@ function sameSet(left, right) {
 }
 
 function validateTargetSelectors(command, flags) {
-  if (command !== 'install' && command !== 'uninstall') return;
+  if (!['install', 'uninstall', 'setup'].includes(command)) return;
   const aliases = new Set();
   if (flags.claude) aliases.add('claude');
   if (flags.codex) aliases.add('codex');
@@ -139,7 +144,7 @@ export function parseArgs(argv) {
           throw new ArgumentError(`Flag '--${name}' does not take a value`);
         }
         if (commandOptions.valued.has(name) && value === true) {
-          if (command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
+          if (command === 'setup' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
             const next = tokens[index + 1];
             if (typeof next === 'string' && next.length > 0 && !next.startsWith('-')) {
               value = next;
@@ -161,6 +166,13 @@ export function parseArgs(argv) {
   }
 
   validateTargetSelectors(command, flags);
+  if (['install', 'uninstall', 'setup'].includes(command) && flags.global && flags.project !== undefined) {
+    throw new ArgumentError('--global and --project cannot be combined');
+  }
+  if (['install', 'uninstall'].includes(command)) {
+    if (flags.project !== undefined && !flags.minimal) throw new ArgumentError('--project requires --minimal');
+    if (flags.minimal && flags.all) throw new ArgumentError('--minimal and --all cannot be combined');
+  }
 
   if (command === 'init' && flags.overwrite && !flags.write) {
     throw new ArgumentError("Flag '--overwrite' requires '--write'");

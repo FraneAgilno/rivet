@@ -17,6 +17,7 @@ import {
 } from '../commands/install.js';
 import { doctor } from '../commands/doctor.js';
 import { modelsCommand } from '../commands/models.js';
+import { setupCommand } from '../commands/setup.js';
 import { init } from '../commands/init.js';
 import { preflight } from '../commands/preflight.js';
 import { uninstall } from '../commands/uninstall.js';
@@ -52,6 +53,9 @@ const USAGE = `Usage:
   rivet models check --profile=<file> [--json]  Validate a model profile without calling a model
   rivet install                    Interactive — pick which skills to install (project)
   rivet install --all              Install all skills (project)
+  rivet setup [--project=<path>|--global] [--target=claude|codex|both] [--write] [--json]
+  rivet install --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
+  rivet uninstall --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet install --global           Interactive — pick which skills to install (global)
   rivet install --all --global     Install all skills globally
   rivet install --target=codex     Install for Codex only
@@ -140,6 +144,7 @@ function resolveDependencies(overrides = {}) {
     feature: overrides.feature,
     status: overrides.status,
     runGit: overrides.runGit,
+    setup: overrides.setup,
     commands: {
       doctor,
       evidence: evidenceCommand,
@@ -148,6 +153,7 @@ function resolveDependencies(overrides = {}) {
       init,
       install,
       models: modelsCommand,
+      setup: setupCommand,
       orchestrate: orchestrateCommand,
       preflight,
       status: statusCommand,
@@ -353,7 +359,7 @@ export async function main(argv, overrides = {}) {
     if (!handler) {
       throw new CliError(`Command '${parsed.command}' is not implemented.`, 'INVALID_INPUT');
     }
-    if (parsed.flags.json && LEGACY_COMMANDS.has(parsed.command)) {
+    if (parsed.flags.json && LEGACY_COMMANDS.has(parsed.command) && parsed.flags.minimal !== true) {
       throw new CliError(
         `JSON output is not available for legacy command '${parsed.command}'.`,
         'INVALID_INPUT',
