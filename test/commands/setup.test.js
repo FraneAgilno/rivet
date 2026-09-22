@@ -162,7 +162,7 @@ test('human setup preview explains that no files were written', async t => {
   await assert.rejects(() => lstat(join(root, '.rivet')));
 });
 
-test('Vowlify setup previews exact child steps and warnings without writes or script execution', async t => {
+test('monorepo setup previews exact child steps and warnings without writes or script execution', async t => {
   const root = await createProject(t, { scripts: {} });
   await mkdir(join(root, 'backend'));
   await mkdir(join(root, 'frontend'));
@@ -213,7 +213,7 @@ test('Vowlify setup previews exact child steps and warnings without writes or sc
   await assert.rejects(() => lstat(join(root, '.agents')));
 });
 
-test('Vowlify setup writes schema-version-2 child groups only after explicit --write', async t => {
+test('monorepo setup writes schema-version-2 child groups only after explicit --write', async t => {
   const root = await createProject(t, { scripts: {} });
   await mkdir(join(root, 'backend'));
   await mkdir(join(root, 'frontend'));

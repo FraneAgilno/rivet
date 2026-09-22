@@ -17,9 +17,9 @@ async function packageJson(root, relative, value) {
   await writeFile(join(directory, 'package.json'), JSON.stringify(value));
 }
 
-async function vowlifyFixture() {
-  const root = await mkdtemp(join(tmpdir(), 'rivet-vowlify-'));
-  await packageJson(root, '.', { name: 'vowlify' });
+async function monorepoFixture() {
+  const root = await mkdtemp(join(tmpdir(), 'rivet-monorepo-'));
+  await packageJson(root, '.', { name: 'monorepo-root' });
   await packageJson(root, 'backend', {
     name: 'backend',
     scripts: { build: 'nest build', test: 'jest' },
@@ -31,8 +31,8 @@ async function vowlifyFixture() {
   return root;
 }
 
-test('discovers the exact Vowlify command groups with provenance and a frontend test warning', async () => {
-  const root = await vowlifyFixture();
+test('discovers the exact monorepo command groups with provenance and a frontend test warning', async () => {
+  const root = await monorepoFixture();
 
   const result = await discoverProject(root);
 
@@ -57,7 +57,7 @@ test('discovers the exact Vowlify command groups with provenance and a frontend 
 });
 
 test('root scripts take precedence per logical command without duplicate child execution', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   rootManifest.scripts = { build: 'run all builds' };
   await writeFile(join(root, 'package.json'), JSON.stringify(rootManifest));
@@ -99,7 +99,7 @@ test('inherits one root package manager across child steps for npm, pnpm, yarn, 
     ['bun', 'bun.lockb'],
   ]) {
     await t.test(manager, async () => {
-      const root = await vowlifyFixture();
+      const root = await monorepoFixture();
       await writeFile(join(root, lockfile), Buffer.alloc(300_000));
       const result = await discoverProject(root);
       assert.equal(result.proposal.stack.packageManager, manager);
@@ -109,7 +109,7 @@ test('inherits one root package manager across child steps for npm, pnpm, yarn, 
 });
 
 test('reports conflicting package-manager evidence instead of silently selecting one', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   await writeFile(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9');
   await writeFile(join(root, 'frontend', 'yarn.lock'), '# yarn');
 
@@ -120,7 +120,7 @@ test('reports conflicting package-manager evidence instead of silently selecting
 });
 
 test('uses a recognized packageManager declaration when no lockfile is present', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   manifest.packageManager = 'pnpm@9.15.0';
   await writeFile(join(root, 'package.json'), JSON.stringify(manifest));
@@ -133,7 +133,7 @@ test('uses a recognized packageManager declaration when no lockfile is present',
 });
 
 test('blocks conflicting manifest declarations and child lockfiles', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   manifest.packageManager = 'pnpm@9.15.0';
   await writeFile(join(root, 'package.json'), JSON.stringify(manifest));
@@ -146,7 +146,7 @@ test('blocks conflicting manifest declarations and child lockfiles', async () =>
 });
 
 test('never follows child symlinks and ignores hidden, dependency, and generated directories', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   const external = await mkdtemp(join(tmpdir(), 'rivet-external-package-'));
   await packageJson(external, '.', { scripts: { build: 'external' } });
   await symlink(external, join(root, 'linked'), 'dir');
@@ -161,7 +161,7 @@ test('never follows child symlinks and ignores hidden, dependency, and generated
 });
 
 test('does not emit option-like child paths that runtime execution rejects', async () => {
-  const root = await vowlifyFixture();
+  const root = await monorepoFixture();
   await packageJson(root, '-frontend', { scripts: { build: 'unsafe-path-build' } });
 
   const result = await discoverProject(root);
