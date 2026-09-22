@@ -159,6 +159,88 @@ test('human setup preview explains that no files were written', async t => {
   await assert.rejects(() => lstat(join(root, '.rivet')));
 });
 
+test('Vowlify setup previews exact child steps and warnings without writes or script execution', async t => {
+  const root = await createProject(t, { scripts: {} });
+  await mkdir(join(root, 'backend'));
+  await mkdir(join(root, 'frontend'));
+  await writeFile(join(root, 'backend', 'package.json'), JSON.stringify({
+    name: 'backend', scripts: { build: 'nest build', test: 'jest' },
+  }));
+  await writeFile(join(root, 'frontend', 'package.json'), JSON.stringify({
+    name: 'frontend', scripts: { build: 'next build', 'type-check': 'tsc --noEmit' },
+  }));
+  let scriptExecutions = 0;
+
+  const preview = await runSetup(t, root, {}, {
+    init: (parsed, dependencies) => init(parsed, {
+      ...dependencies,
+      runner: async () => { scriptExecutions += 1; throw new Error('preview must not execute project scripts'); },
+      gitDiscovery: async () => ({ repository: false, defaultBranch: 'main' }),
+      toolDiscovery: async () => ({
+        node: { present: true, version: '22.0.0', supported: true },
+        npm: { present: true, version: '10.0.0', supported: true },
+        git: { present: true, version: '2.45.0', supported: true },
+      }),
+    }),
+  });
+
+  assert.equal(preview.code, EXIT_CODES.SUCCESS);
+  assert.equal(scriptExecutions, 0);
+  assert.equal(preview.result.configuration.checksExecuted, false);
+  assert.deepEqual(preview.result.configuration.proposal.commands.build.steps, [
+    { cwd: 'backend', argv: ['npm', 'run', 'build'] },
+    { cwd: 'frontend', argv: ['npm', 'run', 'build'] },
+  ]);
+  assert.deepEqual(preview.result.configuration.proposal.commands.test.steps, [
+    { cwd: 'backend', argv: ['npm', 'run', 'test'] },
+  ]);
+  assert.deepEqual(preview.result.configuration.proposal.commands.typecheck.steps, [
+    { cwd: 'frontend', argv: ['npm', 'run', 'type-check'] },
+  ]);
+  assert.ok(preview.result.warnings.some(message => /frontend.*no test script/i.test(message)));
+  assert.ok(preview.result.nextSteps.some(message => /backend.*npm run build/i.test(message)));
+  assert.ok(preview.result.nextSteps.some(message => /checks have not run/i.test(message)));
+  assert.ok(!preview.result.nextSteps.some(message => /Detected .* unavailable/i.test(message)));
+  await assert.rejects(() => lstat(join(root, '.rivet')));
+  await assert.rejects(() => lstat(join(root, '.agents')));
+});
+
+test('Vowlify setup writes schema-version-2 child groups only after explicit --write', async t => {
+  const root = await createProject(t, { scripts: {} });
+  await mkdir(join(root, 'backend'));
+  await mkdir(join(root, 'frontend'));
+  await writeFile(join(root, 'backend', 'package.json'), JSON.stringify({
+    scripts: { build: 'nest build', test: 'jest' },
+  }));
+  await writeFile(join(root, 'frontend', 'package.json'), JSON.stringify({
+    scripts: { build: 'next build', 'type-check': 'tsc --noEmit' },
+  }));
+
+  const written = await runSetup(t, root, { write: true });
+
+  assert.equal(written.code, EXIT_CODES.SUCCESS);
+  const config = await loadProjectConfig(root);
+  assert.equal(config.project.schemaVersion, 2);
+  assert.deepEqual(config.project.commands.build.steps.map(step => step.cwd), ['backend', 'frontend']);
+  assert.equal(config.quality.commandGates.some(gate => gate.command === 'dev'), false);
+});
+
+test('setup reports conflicting package-manager evidence without selecting a runner', async t => {
+  const root = await createProject(t, { scripts: {} });
+  await writeFile(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+  await mkdir(join(root, 'frontend'));
+  await writeFile(join(root, 'frontend', 'package.json'), JSON.stringify({ scripts: { build: 'x', test: 'x' } }));
+  await writeFile(join(root, 'frontend', 'yarn.lock'), '# yarn\n');
+
+  const preview = await runSetup(t, root);
+
+  assert.equal(preview.code, EXIT_CODES.REPOSITORY_CONFLICT);
+  assert.equal(preview.result.status, 'blocked');
+  assert.equal(preview.result.configuration.discovery.code, 'PACKAGE_MANAGER_CONFLICT');
+  assert.deepEqual(preview.result.configuration.discovery.managers, ['pnpm', 'yarn']);
+  await assert.rejects(() => lstat(join(root, '.rivet')));
+});
+
 test('setup --write creates a valid project configuration and one minimal harness entry', async t => {
   const root = await createProject(t);
   const result = await runSetup(t, root, { write: true });

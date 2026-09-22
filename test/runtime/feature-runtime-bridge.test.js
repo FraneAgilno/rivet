@@ -12,9 +12,11 @@ import { loadProjectConfig } from '../../src/config/load.js';
 import { featurePlanDigest } from '../../src/feature/plan-contract.js';
 import { createFeaturePlanner } from '../../src/feature/planner.js';
 import {
+  configuredFeatureGates,
   createFeatureExecutor,
   createFeatureRuntimeControls,
   createFeatureRuntimeState,
+  featureQualityAuthority,
 } from '../../src/feature/runtime-bridge.js';
 import { createGitClient } from '../../src/git/client.js';
 import { createReservationStore } from '../../src/git/reservations.js';
@@ -28,6 +30,41 @@ const BASELINE = '0123456789abcdef0123456789abcdef01234567';
 const NOW = '2029-01-01T00:00:00.000Z';
 const NOW_MS = Date.parse(NOW);
 const execFile = promisify(execFileCallback);
+
+test('compiles schema-v2 logical gates and quality authority from the same ordered step list', async () => {
+  const config = {
+    project: {
+      schemaVersion: 2,
+      commands: {
+        build: { steps: [
+          { cwd: 'backend', argv: ['npm', 'run', 'build'] },
+          { cwd: 'frontend', argv: ['npm', 'run', 'build'] },
+        ] },
+        test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+      },
+    },
+    quality: { commandGates: [
+      { id: 'build', command: 'build', required: true },
+      { id: 'test', command: 'test', required: true },
+    ] },
+  };
+  const resolved = [];
+
+  const gates = await configuredFeatureGates(config, async runner => {
+    resolved.push(runner);
+    return `/safe/${runner}`;
+  });
+  const authority = featureQualityAuthority(config);
+
+  assert.deepEqual(gates.map(gate => ({ id: gate.id, cwd: gate.cwd, args: gate.args })), [
+    { id: 'build-1', cwd: 'backend', args: ['run', 'build'] },
+    { id: 'build-2', cwd: 'frontend', args: ['run', 'build'] },
+    { id: 'test', cwd: 'backend', args: ['run', 'test'] },
+  ]);
+  assert.deepEqual(resolved, ['npm', 'npm', 'npm']);
+  assert.deepEqual(authority.commands, ['build-1', 'build-2', 'test']);
+  assert.deepEqual(authority.actions, ['command.build-1', 'command.build-2', 'command.test']);
+});
 
 async function gitExecutable() {
   for (const candidate of ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git']) {

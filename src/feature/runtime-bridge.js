@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path';
 
 import { immutableJson } from '../clients/contract.js';
 import { loadProjectConfig } from '../config/load.js';
+import { compileQualitySteps } from '../config/commands.js';
 import { validateProjectConfiguration } from '../config/validate.js';
 import { prepareIntegrationWorktree } from '../git/integration-worktree.js';
 import { reconcileWorktree } from '../git/reconcile.js';
@@ -447,13 +448,12 @@ export function createFeatureLaunchInput(node, intent, planNode, run) {
 
 export async function configuredFeatureGates(config, resolveCommandExecutable) {
   const gates = [];
-  for (const configured of config.quality.commandGates) {
-    const command = config.project.commands[configured.command];
+  for (const configured of compileQualitySteps(config)) {
     gates.push(Object.freeze({
       id: configured.id,
-      executable: await resolveCommandExecutable(command[0]),
-      args: Object.freeze(command.slice(1)),
-      cwd: '.',
+      executable: await resolveCommandExecutable(configured.argv[0]),
+      args: Object.freeze(configured.argv.slice(1)),
+      cwd: configured.cwd,
       required: configured.required,
       artifactPaths: Object.freeze([]),
       tests: Object.freeze([]),
@@ -463,7 +463,7 @@ export async function configuredFeatureGates(config, resolveCommandExecutable) {
 }
 
 export function featureQualityAuthority(config) {
-  const commandIds = config.quality.commandGates.map(gate => gate.id);
+  const commandIds = compileQualitySteps(config).map(step => step.id);
   return createAuthorityEnvelope({
     actorId: 'quality-worker',
     principal: 'agent',

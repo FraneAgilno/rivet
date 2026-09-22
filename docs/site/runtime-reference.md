@@ -6,7 +6,23 @@ This describes the current alpha runtime, including the active-harness workflow 
 
 Run `rivet --help` for command syntax. `rivet init --project=<path>` previews project policy; `--write` creates reviewed `.rivet` configuration. `rivet preflight --project=<path>` and `rivet doctor --project=<path>` report project readiness.
 
-Rivet supports two execution styles. Host mode lets the active coding harness plan and perform each sealed action without launching another model process. This is the portable path for Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and future harnesses. Spawned mode can still launch the selected Claude or Codex client. For spawned mode, configure `RIVET_CLAUDE_EXECUTABLE` or `RIVET_CODEX_EXECUTABLE` to the canonical installed executable. Script entrypoints also need the appropriate interpreter variable. Project checks using npm require `RIVET_NPM_EXECUTABLE`.
+Root-only project configuration remains schema version 1, where each logical command is one three-token package-manager invocation. Setup uses project schema version 2 only when a logical command needs structured steps:
+
+```yaml
+schemaVersion: 2
+commands:
+  build:
+    steps:
+      - {cwd: backend, argv: [npm, run, build]}
+      - {cwd: frontend, argv: [npm, run, build]}
+  test:
+    steps:
+      - {cwd: backend, argv: [npm, run, test]}
+```
+
+Supported logical checks are `build`, `test`, `lint`, and `typecheck`; `typecheck` may invoke a package script named `typecheck` or `type-check`. Every required step must pass. Doctor and preflight verify the exact bounded directory, `package.json`, script, package manager, and local tool without executing project scripts. Runtime verification executes steps sequentially relative to the isolated integration worktree through the existing shell-free package-manager policy. `dev` is not a quality gate.
+
+Rivet supports two execution styles. Host mode lets the active coding harness plan and perform each sealed action without launching another model process. This is the portable path for Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and future harnesses. Spawned mode can still launch the selected Claude or Codex client. For spawned mode, configure `RIVET_CLAUDE_EXECUTABLE` or `RIVET_CODEX_EXECUTABLE` to the canonical installed executable. Script entrypoints also need the appropriate interpreter variable. Project checks use the configured npm, pnpm, yarn, or bun runner. The selected runtime integration must resolve that package-manager executable; setup does not install it or project dependencies.
 
 ## Feature lifecycle
 

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "name", "stack", "repository", "commands"],
   "properties": {
-    "schemaVersion": { "type": "integer", "const": 1 },
+    "schemaVersion": { "type": "integer", "enum": [1, 2] },
     "id": { "$ref": "#/$defs/id" },
     "name": { "type": "string", "minLength": 1, "maxLength": 120 },
     "stack": {
@@ -29,19 +29,15 @@
         "sensitivePaths": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/relativePath" } }
       }
     },
-    "commands": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["build", "test"],
-      "properties": {
-        "build": { "$ref": "#/$defs/command" },
-        "test": { "$ref": "#/$defs/command" },
-        "lint": { "$ref": "#/$defs/command" },
-        "typecheck": { "$ref": "#/$defs/command" },
-        "dev": { "$ref": "#/$defs/command" }
-      }
-    }
+    "commands": {}
   },
+  "allOf": [
+    {
+      "if": { "properties": { "schemaVersion": { "const": 1 } } },
+      "then": { "properties": { "commands": { "$ref": "#/$defs/commandsV1" } } },
+      "else": { "properties": { "commands": { "$ref": "#/$defs/commandsV2" } } }
+    }
+  ],
   "$defs": {
     "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
     "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$" },
@@ -57,6 +53,57 @@
         { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._-]*$" }
       ],
       "additionalItems": false
+    },
+    "commandStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "argv"],
+      "properties": {
+        "cwd": {
+          "oneOf": [
+            { "const": "." },
+            { "$ref": "#/$defs/relativePath" }
+          ]
+        },
+        "argv": { "$ref": "#/$defs/command" }
+      }
+    },
+    "commandGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/commandStep" }
+        }
+      }
+    },
+    "commandsV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "test"],
+      "properties": {
+        "build": { "$ref": "#/$defs/command" },
+        "test": { "$ref": "#/$defs/command" },
+        "lint": { "$ref": "#/$defs/command" },
+        "typecheck": { "$ref": "#/$defs/command" },
+        "dev": { "$ref": "#/$defs/command" }
+      }
+    },
+    "commandsV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "test"],
+      "properties": {
+        "build": { "$ref": "#/$defs/commandGroup" },
+        "test": { "$ref": "#/$defs/commandGroup" },
+        "lint": { "$ref": "#/$defs/commandGroup" },
+        "typecheck": { "$ref": "#/$defs/commandGroup" }
+      }
     }
   }
 }

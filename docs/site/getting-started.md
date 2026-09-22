@@ -18,7 +18,11 @@ npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=. --writ
 
 Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.
 
-When the root `package.json` has no `build` or `test` script, setup still connects the project and reports one warning for each missing check. Rivet writes conservative `npm run build` and `npm run test` defaults; add the root scripts before relying on those required gates. In a repository with applications such as `frontend` and `backend`, the root scripts should run the checks required across those applications. Setup never treats a missing script as a passing check.
+Setup inspects the root package and bounded immediate child package directories. A root script takes precedence for its logical check. Otherwise, Rivet proposes the matching child scripts in stable path order. For example, a root with no scripts, a `backend` with `build` and `test`, and a `frontend` with `build` and `type-check` produces two ordered build steps, one backend test step, and an optional frontend typecheck step. Preview shows every exact `cwd` and `argv`, its provenance, unresolved required checks, and package-level coverage warnings. The checks have not run at preview time; `--write` is the explicit confirmation to store generated child steps.
+
+When no `build` or `test` script exists in the supported root/immediate-child scope, setup still connects the project and reports an unresolved warning. The conservative placeholder remains non-executable until that exact package script exists: `doctor` and `preflight` fail readiness rather than treating it as available. Setup never runs scripts or installs dependencies.
+
+This milestone does not interpret workspace globs or dependency graphs, search nested package trees, run checks in parallel, or accept arbitrary executables and environment overrides. Add root scripts when the repository needs ordering beyond the bounded immediate-child model.
 
 Other project types can install only the harness instructions using `install --minimal`; automatic setup for them is still planned.
 

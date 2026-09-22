@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
+import { inspectCommandReadiness } from '../config/command-readiness.js';
 import { loadProjectConfig, providerCredentialStatus } from '../config/load.js';
 import { discoverTools } from '../discovery/tools.js';
 
@@ -93,12 +94,13 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
     dependencies.providerProbe,
     dependencies.providerProbeTimeoutMs,
   );
+  const commands = inspectCommandReadiness(projectRoot, config, { fs: dependencies.fs, tools });
   const missingCredentials = credentials.filter(item => item.required && !item.present);
   const unavailableProviders = providers.filter(item => ['unavailable', 'timeout', 'error'].includes(item.connectivity));
   const toolsReady = requiredToolReady(tools.node)
     && requiredToolReady(tools[packageManager])
     && requiredToolReady(tools.git);
-  const failed = missingCredentials.length > 0 || unavailableProviders.length > 0 || !toolsReady;
+  const failed = missingCredentials.length > 0 || unavailableProviders.length > 0 || !toolsReady || !commands.ready;
   const exitCode = missingCredentials.length > 0 || unavailableProviders.length > 0
     ? EXIT_CODES.PROVIDER_UNAVAILABLE
     : failed ? EXIT_CODES.FAILED_GATE : EXIT_CODES.SUCCESS;
@@ -111,6 +113,7 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
       tools,
       credentials,
       providers,
+      commands,
     },
     summary: failed ? 'One or more readiness checks failed.' : 'Configuration and local readiness checks completed.',
   };

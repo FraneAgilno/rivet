@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp } from 'node:fs/promises';
+import { cp, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,9 @@ function capture() {
 async function project() {
   const root = await mkdtemp(join(tmpdir(), 'agilno-preflight-'));
   await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+  }));
   return root;
 }
 
@@ -54,6 +57,24 @@ test('passes when doctor, git, runtime, private state, and quality commands are 
   });
   assert.equal(exitCode, EXIT_CODES.SUCCESS);
   assert.equal(JSON.parse(result.writes[0][1]).status, 'pass');
+});
+
+test('fails required quality-command readiness when the configured script is absent', async () => {
+  const root = await project();
+  await writeFile(join(root, 'package.json'), JSON.stringify({ scripts: { build: 'x' } }));
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => readyTools,
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => ({ status: 'ready' }),
+    runtimeCapacity: { available: 4, required: 3 },
+  });
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'fail');
+  assert.ok(quality.commands.some(step => step.logicalId === 'test' && step.status === 'missing-script'));
 });
 
 test('fails closed for dirty, detached, stale, occupied, insufficient runtime, and missing commands', async t => {

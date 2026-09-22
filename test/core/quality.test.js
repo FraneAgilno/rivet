@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import test from 'node:test';
 
 import { createGitClient } from '../../src/git/client.js';
+import { configuredFeatureGates, featureQualityAuthority } from '../../src/feature/runtime-bridge.js';
 import { claimApproval, createApprovalReceipt, createApprovalRegistry } from '../../src/policy/approvals.js';
 import { createAuthorityEnvelope } from '../../src/policy/authority.js';
 import { QualityError, runQualityGates } from '../../src/quality/runner.js';
@@ -32,10 +33,14 @@ async function fixture(t) {
   const projectRoot = join(root, 'project');
   await execFile('git', ['init', '--quiet', '-b', 'main', projectRoot]);
   await mkdir(join(projectRoot, 'reports'), { recursive: true });
+  await mkdir(join(projectRoot, 'backend'), { recursive: true });
+  await mkdir(join(projectRoot, 'frontend'), { recursive: true });
   await writeFile(join(projectRoot, 'README.md'), 'fixture\n');
   await writeFile(join(projectRoot, 'reports', '.keep'), 'tracked\n');
+  await writeFile(join(projectRoot, 'backend', '.keep'), 'tracked\n');
+  await writeFile(join(projectRoot, 'frontend', '.keep'), 'tracked\n');
   await writeFile(join(projectRoot, '.gitignore'), 'reports/results.json\n');
-  await git(projectRoot, 'add', '--', 'README.md', 'reports/.keep', '.gitignore');
+  await git(projectRoot, 'add', '--', 'README.md', 'reports/.keep', 'backend/.keep', 'frontend/.keep', '.gitignore');
   await execFile('git', ['-C', projectRoot, '-c', 'user.name=Agilno Test', '-c', 'user.email=test@agilno.example', 'commit', '--quiet', '-m', 'fixture']);
   const commitSha = (await git(projectRoot, 'rev-parse', 'HEAD')).stdout.trim();
   const gitClient = await createGitClient({ gitExecutable: await gitExecutable() });
@@ -121,6 +126,49 @@ test('binds configured executable/argv provenance and gate-produced AC mappings 
   assert.equal(results.gates[0].output.stdout, 'gate passed');
   assert.match(results.gates[0].artifacts[0].sha256, /^[0-9a-f]{64}$/);
   assert.ok(Object.isFrozen(results));
+});
+
+test('fails a required logical gate when any expanded child step fails', async t => {
+  const f = await fixture(t);
+  const executable = join(f.root, 'cwd-gate');
+  await writeFile(executable, [
+    '#!/bin/sh',
+    'if [ "$(basename "$PWD")" = frontend ]; then exit 3; fi',
+    'exit 0',
+    '',
+  ].join('\n'), { mode: 0o700 });
+  await chmod(executable, 0o700);
+  const config = {
+    project: {
+      schemaVersion: 2,
+      commands: {
+        build: { steps: [
+          { cwd: 'backend', argv: ['npm', 'run', 'build'] },
+          { cwd: 'frontend', argv: ['npm', 'run', 'build'] },
+        ] },
+        test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+      },
+    },
+    quality: { commandGates: [
+      { id: 'build', command: 'build', required: true },
+      { id: 'test', command: 'test', required: true },
+    ] },
+  };
+  const gates = await configuredFeatureGates(config, async () => executable);
+
+  const result = await runQualityGates({
+    projectRoot: f.projectRoot,
+    commitSha: f.commitSha,
+    authority: featureQualityAuthority(config),
+    gates,
+  }, { gitClient: f.gitClient, now: clock(START, START + 1, START + 2, START + 3, START + 4, START + 5) });
+
+  assert.equal(result.status, 'fail');
+  assert.deepEqual(result.gates.map(gate => [gate.id, gate.cwd, gate.status]), [
+    ['build-1', 'backend', 'passed'],
+    ['build-2', 'frontend', 'failed'],
+    ['test', 'backend', 'passed'],
+  ]);
 });
 
 test('rejects caller-invented commit provenance and untrusted git clients', async t => {
