@@ -115,6 +115,10 @@ async function resolveTargets(parsed, dependencies) {
 }
 
 export async function uninstall(parsed, dependencies) {
+  if (parsed.flags.minimal) {
+    const { managedInstall } = await import('../install/managed.js');
+    return managedInstall(parsed, dependencies);
+  }
   const { fs, output, prompt } = dependencies;
   const targets = await resolveTargets(parsed, dependencies);
   if (!targets) return EXIT_CODES.SUCCESS;

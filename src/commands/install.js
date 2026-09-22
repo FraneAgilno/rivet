@@ -629,6 +629,10 @@ export async function checkForUpdate(dependencies) {
 }
 
 export async function install(parsed, dependencies) {
+  if (parsed.flags.minimal) {
+    const { managedInstall } = await import('../install/managed.js');
+    return managedInstall(parsed, dependencies);
+  }
   const { fs, output, packageRoot, separator } = dependencies;
   const paths = distributionPaths(packageRoot);
   const mandatoryNames = getMandatoryNames(dependencies);
