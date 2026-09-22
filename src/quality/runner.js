@@ -11,6 +11,9 @@ const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const AC_ID = /^[A-Z][A-Z0-9]+-[1-9][0-9]*-AC[1-9][0-9]*$/;
+const PACKAGE_RUNNERS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'yarn', 'yarn.cmd', 'bun']);
+const PACKAGE_SCRIPT = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const MAX_PACKAGE_MANIFEST_BYTES = 256 * 1024;
 const qualityRuns = new WeakSet();
 
 export class QualityError extends Error {
@@ -134,9 +137,18 @@ function configuredTest(value) {
   return Object.freeze({ id: id(input.id), acceptanceCriteria: Object.freeze(acceptanceCriteria) });
 }
 
+function packageScript(value, args) {
+  if (value === undefined) return null;
+  const input = capture(value, new Set(['runner', 'script']), ['runner', 'script']);
+  if (typeof input.runner !== 'string' || !PACKAGE_RUNNERS.has(input.runner.toLowerCase())
+    || typeof input.script !== 'string' || !PACKAGE_SCRIPT.test(input.script)
+    || args.length !== 2 || args[0] !== 'run' || args[1] !== input.script) fail('invalid-quality-input');
+  return Object.freeze({ runner: input.runner.toLowerCase(), script: input.script });
+}
+
 function gate(value) {
   const input = capture(value, new Set([
-    'id', 'executable', 'args', 'cwd', 'required', 'artifactPaths', 'tests', 'resultPath',
+    'id', 'executable', 'args', 'cwd', 'packageScript', 'required', 'artifactPaths', 'tests', 'resultPath',
   ]), ['id', 'executable', 'args', 'cwd', 'required', 'artifactPaths', 'tests']);
   const gateId = id(input.id);
   if (typeof input.executable !== 'string' || !isAbsolute(input.executable)
@@ -144,6 +156,7 @@ function gate(value) {
     || typeof input.required !== 'boolean') fail('invalid-quality-input');
   const artifactPaths = strings(input.artifactPaths, 256, 500).map(path => relativePath(path));
   const tests = array(input.tests, 2_000, configuredTest);
+  const args = Object.freeze(strings(input.args, 256, 4_096));
   if (new Set(artifactPaths.map(path => path.toLowerCase())).size !== artifactPaths.length) fail('invalid-quality-input');
   if (new Set(tests.map(item => item.id.toLowerCase())).size !== tests.length) fail('invalid-quality-input');
   const resultPath = input.resultPath === undefined ? null : relativePath(input.resultPath);
@@ -153,8 +166,9 @@ function gate(value) {
   return Object.freeze({
     id: gateId,
     executable: input.executable,
-    args: Object.freeze(strings(input.args, 256, 4_096)),
+    args,
     cwd: relativePath(input.cwd, true),
+    packageScript: packageScript(input.packageScript, args),
     required: input.required,
     artifactPaths: Object.freeze(artifactPaths),
     tests: Object.freeze(tests),
@@ -224,6 +238,22 @@ function readPinnedFile(project, relative, maxBytes) {
       });
     } finally { if (descriptor !== undefined) closeSync(descriptor); }
   });
+}
+
+function verifyPackageScript(project, configured) {
+  if (configured.packageScript === null) return;
+  const relative = configured.cwd === '.'
+    ? 'package.json' : `${configured.cwd}/package.json`;
+  let manifest;
+  try {
+    const contents = readPinnedFile(project, relative, MAX_PACKAGE_MANIFEST_BYTES);
+    manifest = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(contents.bytes));
+  } catch {
+    fail('gate-failed');
+  }
+  const scripts = manifest?.scripts;
+  if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)
+    || typeof scripts[configured.packageScript.script] !== 'string') fail('gate-failed');
 }
 
 async function priorResult(project, path) {
@@ -351,6 +381,7 @@ export async function runQualityGates(input, options = {}) {
     let commandResult;
     const beforeResult = await priorResult(project, configured.resultPath);
     try {
+      verifyPackageScript(project, configured);
       startedMs = value.now();
       timestamp(startedMs);
       commandResult = await runCommand({

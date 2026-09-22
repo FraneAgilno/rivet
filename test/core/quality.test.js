@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { access, chmod, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -39,8 +39,11 @@ async function fixture(t) {
   await writeFile(join(projectRoot, 'reports', '.keep'), 'tracked\n');
   await writeFile(join(projectRoot, 'backend', '.keep'), 'tracked\n');
   await writeFile(join(projectRoot, 'frontend', '.keep'), 'tracked\n');
+  await writeFile(join(projectRoot, 'backend', 'package.json'), JSON.stringify({ scripts: { build: 'x', test: 'x' } }));
+  await writeFile(join(projectRoot, 'frontend', 'package.json'), JSON.stringify({ scripts: { build: 'x' } }));
   await writeFile(join(projectRoot, '.gitignore'), 'reports/results.json\n');
-  await git(projectRoot, 'add', '--', 'README.md', 'reports/.keep', 'backend/.keep', 'frontend/.keep', '.gitignore');
+  await git(projectRoot, 'add', '--', 'README.md', 'reports/.keep', 'backend/.keep', 'backend/package.json',
+    'frontend/.keep', 'frontend/package.json', '.gitignore');
   await execFile('git', ['-C', projectRoot, '-c', 'user.name=Agilno Test', '-c', 'user.email=test@agilno.example', 'commit', '--quiet', '-m', 'fixture']);
   const commitSha = (await git(projectRoot, 'rev-parse', 'HEAD')).stdout.trim();
   const gitClient = await createGitClient({ gitExecutable: await gitExecutable() });
@@ -56,6 +59,11 @@ async function fixture(t) {
   await chmod(failing, 0o700);
   t.after(() => rm(root, { recursive: true, force: true }));
   return { root, projectRoot, passing, failing, commitSha, gitClient };
+}
+
+async function npmExecutable() {
+  const located = (await execFile('which', ['npm'])).stdout.trim();
+  return realpath(located);
 }
 
 function authority(commandIds) {
@@ -169,6 +177,97 @@ test('fails a required logical gate when any expanded child step fails', async t
     ['build-2', 'frontend', 'failed'],
     ['test', 'backend', 'passed'],
   ]);
+});
+
+test('rejects a missing child manifest before npm can fall back to an ancestor script', async t => {
+  const f = await fixture(t);
+  const marker = join(f.root, 'ancestor-script-ran');
+  await rm(join(f.projectRoot, 'backend', 'package.json'));
+  await writeFile(join(f.projectRoot, 'package.json'), JSON.stringify({
+    scripts: { build: `node -e "require('node:fs').writeFileSync('${marker}', 'ran')"` },
+  }));
+  await git(f.projectRoot, 'add', '--all');
+  await execFile('git', [
+    '-C', f.projectRoot, '-c', 'user.name=Agilno Test', '-c', 'user.email=test@agilno.example',
+    'commit', '--quiet', '-m', 'remove child manifest',
+  ]);
+  const commitSha = (await git(f.projectRoot, 'rev-parse', 'HEAD')).stdout.trim();
+  const config = {
+    project: { schemaVersion: 2, commands: {
+      build: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'build'] }] },
+      test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+    } },
+    quality: { commandGates: [{ id: 'build', command: 'build', required: true }] },
+  };
+  const gates = await configuredFeatureGates(config, npmExecutable);
+
+  await assert.rejects(() => runQualityGates({
+    projectRoot: f.projectRoot, commitSha, authority: featureQualityAuthority(config), gates,
+  }, { gitClient: f.gitClient, now: clock(START, START + 1) }), QualityError);
+  await assert.rejects(() => access(marker));
+});
+
+test('rejects a symlinked package manifest before launching its configured gate', async t => {
+  const f = await fixture(t);
+  const externalManifest = join(f.root, 'external-package.json');
+  const marker = join(f.root, 'symlink-gate-ran');
+  const gate = join(f.root, 'symlink-gate');
+  await writeFile(externalManifest, JSON.stringify({ scripts: { build: 'x' } }));
+  await rm(join(f.projectRoot, 'backend', 'package.json'));
+  await symlink(externalManifest, join(f.projectRoot, 'backend', 'package.json'));
+  await git(f.projectRoot, 'add', '--all');
+  await execFile('git', [
+    '-C', f.projectRoot, '-c', 'user.name=Agilno Test', '-c', 'user.email=test@agilno.example',
+    'commit', '--quiet', '-m', 'link child manifest',
+  ]);
+  const commitSha = (await git(f.projectRoot, 'rev-parse', 'HEAD')).stdout.trim();
+  await writeFile(gate, `#!/bin/sh\nprintf ran > '${marker}'\n`, { mode: 0o700 });
+  await chmod(gate, 0o700);
+  const config = {
+    project: { schemaVersion: 2, commands: {
+      build: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'build'] }] },
+      test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+    } },
+    quality: { commandGates: [{ id: 'build', command: 'build', required: true }] },
+  };
+  const gates = await configuredFeatureGates(config, async () => gate);
+
+  await assert.rejects(() => runQualityGates({
+    projectRoot: f.projectRoot, commitSha, authority: featureQualityAuthority(config), gates,
+  }, { gitClient: f.gitClient, now: clock(START, START + 1) }), QualityError);
+  await assert.rejects(() => access(marker));
+});
+
+test('revalidates the exact manifest immediately before every expanded step', async t => {
+  const f = await fixture(t);
+  const marker = join(f.root, 'second-step-ran');
+  const gate = join(f.root, 'replace-next-manifest');
+  await writeFile(gate, [
+    '#!/bin/sh',
+    'if [ "$(basename "$PWD")" = backend ]; then rm ../frontend/package.json; exit 0; fi',
+    `printf ran > '${marker}'`,
+    '',
+  ].join('\n'), { mode: 0o700 });
+  await chmod(gate, 0o700);
+  const config = {
+    project: { schemaVersion: 2, commands: {
+      build: { steps: [
+        { cwd: 'backend', argv: ['npm', 'run', 'build'] },
+        { cwd: 'frontend', argv: ['npm', 'run', 'build'] },
+      ] },
+      test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+    } },
+    quality: { commandGates: [{ id: 'build', command: 'build', required: true }] },
+  };
+  const gates = await configuredFeatureGates(config, async () => gate);
+
+  await assert.rejects(() => runQualityGates({
+    projectRoot: f.projectRoot,
+    commitSha: f.commitSha,
+    authority: featureQualityAuthority(config),
+    gates,
+  }, { gitClient: f.gitClient, now: clock(START, START + 1, START + 2) }), QualityError);
+  await assert.rejects(() => access(marker));
 });
 
 test('rejects caller-invented commit provenance and untrusted git clients', async t => {

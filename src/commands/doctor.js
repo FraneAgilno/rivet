@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
 import { inspectCommandReadiness } from '../config/command-readiness.js';
@@ -84,10 +84,21 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
   }
   const environment = dependencies.env ?? process.env;
   const packageManager = config.project.stack.packageManager;
-  const tools = await (dependencies.toolDiscovery ?? discoverTools)({ packageManager }, {
+  let tools = await (dependencies.toolDiscovery ?? discoverTools)({ packageManager }, {
     cwd: projectRoot,
     runner: dependencies.runner,
   });
+  if (typeof dependencies.resolveCommandExecutable === 'function') {
+    let runtimeResolved = false;
+    try {
+      const executable = await dependencies.resolveCommandExecutable(packageManager);
+      runtimeResolved = typeof executable === 'string' && isAbsolute(executable);
+    } catch {}
+    tools = Object.freeze({
+      ...tools,
+      [packageManager]: Object.freeze({ ...(tools[packageManager] ?? {}), runtimeResolved }),
+    });
+  }
   const credentials = providerCredentialStatus(config, environment);
   const providers = await providerChecks(
     config,
@@ -99,6 +110,7 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
   const unavailableProviders = providers.filter(item => ['unavailable', 'timeout', 'error'].includes(item.connectivity));
   const toolsReady = requiredToolReady(tools.node)
     && requiredToolReady(tools[packageManager])
+    && tools[packageManager].runtimeResolved !== false
     && requiredToolReady(tools.git);
   const failed = missingCredentials.length > 0 || unavailableProviders.length > 0 || !toolsReady || !commands.ready;
   const exitCode = missingCredentials.length > 0 || unavailableProviders.length > 0

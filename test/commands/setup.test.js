@@ -198,7 +198,12 @@ test('Vowlify setup previews exact child steps and warnings without writes or sc
     { cwd: 'frontend', argv: ['npm', 'run', 'type-check'] },
   ]);
   assert.ok(preview.result.warnings.some(message => /frontend.*no test script/i.test(message)));
-  assert.ok(preview.result.nextSteps.some(message => /backend.*npm run build/i.test(message)));
+  assert.ok(preview.result.nextSteps.some(message => (
+    /build \(required\).*backend.*npm run build.*backend\/package\.json#scripts\.build/i.test(message)
+  )));
+  assert.ok(preview.result.nextSteps.some(message => (
+    /typecheck \(optional\).*frontend.*npm run type-check.*frontend\/package\.json#scripts\.type-check/i.test(message)
+  )));
   assert.ok(preview.result.nextSteps.some(message => /checks have not run/i.test(message)));
   assert.ok(!preview.result.nextSteps.some(message => /Detected .* unavailable/i.test(message)));
   await assert.rejects(() => lstat(join(root, '.rivet')));

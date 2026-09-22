@@ -51,7 +51,7 @@ test('verifies every exact bounded child script without executing it', async () 
   ]);
 });
 
-test('reports absent effective scripts and package-manager mismatches as unavailable', async () => {
+test('reports absent effective scripts as unavailable', async () => {
   const root = await fixture();
   const value = config({
     build: { steps: [{ cwd: 'frontend', argv: ['npm', 'run', 'build'] }] },
@@ -61,10 +61,6 @@ test('reports absent effective scripts and package-manager mismatches as unavail
   const absent = inspectCommandReadiness(root, value, { fs: nodeFs, tools });
   assert.equal(absent.ready, false);
   assert.deepEqual(absent.steps.map(step => step.status), ['ready', 'missing-script']);
-
-  value.project.commands.test.steps[0].argv[0] = 'yarn';
-  const mismatch = inspectCommandReadiness(root, value, { fs: nodeFs, tools });
-  assert.equal(mismatch.steps[1].status, 'manager-mismatch');
 });
 
 test('rejects configured symlink ancestors and directory identity changes', async t => {

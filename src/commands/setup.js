@@ -46,9 +46,18 @@ async function existingConfiguration(root, fs) {
 
 function previewSteps(preview) {
   if (!preview?.proposal?.commands) return [];
+  const gates = new Map((preview.proposal.qualityGates ?? [])
+    .map(gate => [gate.command, gate.required ? 'required' : 'optional']));
   return Object.entries(preview.proposal.commands).flatMap(([logicalId, command]) => {
     const steps = Array.isArray(command) ? [{ cwd: '.', argv: command }] : command.steps;
-    return steps.map(step => `${logicalId}: ${step.cwd} -> ${step.argv.join(' ')}`);
+    return steps.map((step, index) => {
+      const prefix = Array.isArray(command)
+        ? `project.commands.${logicalId}` : `project.commands.${logicalId}.steps[${index}]`;
+      const source = preview.proposal.provenance?.[`${prefix}.cwd`]?.source
+        ?? preview.proposal.provenance?.[prefix]?.source
+        ?? 'unavailable';
+      return `${logicalId} (${gates.get(logicalId) ?? 'not-gated'}): ${step.cwd} -> ${step.argv.join(' ')} [source: ${source}]`;
+    });
   });
 }
 

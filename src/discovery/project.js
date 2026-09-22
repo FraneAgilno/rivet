@@ -1,6 +1,8 @@
 import * as filesystem from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { isExecutionCompatibleCwd } from '../config/commands.js';
+
 const MAX_DISCOVERY_FILE_BYTES = 256 * 1024;
 const MAX_DISCOVERY_AGGREGATE_BYTES = 2 * 1024 * 1024;
 const MAX_DISCOVERY_ENTRIES = 256;
@@ -136,11 +138,24 @@ function safeLockfilePresence(root, relativePath, fs) {
   return true;
 }
 
-function managerEvidence(root, packagePaths, fs, inspectedFiles) {
+function declaredManager(value) {
+  if (typeof value !== 'string' || value.length > 160) return null;
+  const match = /^(npm|pnpm|yarn|bun)@[^\s@]{1,128}$/.exec(value);
+  return match?.[1] ?? null;
+}
+
+function managerEvidence(root, packages, fs, inspectedFiles) {
   const evidence = [];
-  for (const packagePath of packagePaths) {
+  for (const item of packages) {
+    const declaration = declaredManager(item.manifest.packageManager);
+    if (declaration) {
+      evidence.push({
+        manager: declaration,
+        relativePath: item.path === '.' ? 'package.json#packageManager' : `${item.path}/package.json#packageManager`,
+      });
+    }
     for (const [filename, manager] of LOCK_FILES) {
-      const relativePath = packagePath === '.' ? filename : `${packagePath}/${filename}`;
+      const relativePath = item.path === '.' ? filename : `${item.path}/${filename}`;
       if (safeLockfilePresence(root, relativePath, fs)) {
         evidence.push({ manager, relativePath });
         inspectedFiles.add(relativePath);
@@ -184,7 +199,8 @@ function commandRegistry(packages, manager) {
       unresolved.push({ command: key, reason: 'no-script-in-supported-scope' });
     }
     if (selected.length === 0) continue;
-    if (selected.some(item => item.packagePath !== '.')) structured = true;
+    if (selected.some(item => item.packagePath !== '.')
+      || (key === 'typecheck' && selected.some(item => item.script === 'type-check'))) structured = true;
     commands[key] = selected.map(item => ({
       cwd: item.packagePath,
       argv: [manager, 'run', item.script],
@@ -247,7 +263,7 @@ export async function discoverProject(projectRoot, options = {}) {
   }
   const packageFiles = [{ path: '.', file: manifestFile }];
   for (const name of [...entries].sort((left, right) => left < right ? -1 : left > right ? 1 : 0)) {
-    if (name.startsWith('.') || IGNORED_CHILD_DIRECTORIES.has(name)) continue;
+    if (name.startsWith('.') || IGNORED_CHILD_DIRECTORIES.has(name) || !isExecutionCompatibleCwd(name)) continue;
     const metadata = fs.lstatSync(join(root, name), { throwIfNoEntry: false });
     if (!metadata || metadata.isSymbolicLink() || !metadata.isDirectory()) continue;
     const canonical = fs.realpathSync(join(root, name));
@@ -271,7 +287,7 @@ export async function discoverProject(projectRoot, options = {}) {
   }
   const manifest = packages[0].manifest;
   const inspectedFiles = new Set(files.keys());
-  const [manager, managerSource] = managerEvidence(root, packages.map(item => item.path), fs, inspectedFiles);
+  const [manager, managerSource] = managerEvidence(root, packages, fs, inspectedFiles);
   const dependencies = Object.assign({}, ...packages.map(item => ({
     ...(item.manifest.dependencies ?? {}), ...(item.manifest.devDependencies ?? {}),
   })));

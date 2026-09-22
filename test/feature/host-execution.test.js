@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { chmod, cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -22,13 +22,86 @@ async function git(root, ...args) {
   return (await execFile('/usr/bin/git', ['-C', root, ...args])).stdout.trim();
 }
 
-async function fixture(t) {
+async function npmExecutable() {
+  const { stdout } = await execFile('which', ['npm']);
+  return realpath(stdout.trim());
+}
+
+async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'] } = {}) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-host-execution-')));
   const root = join(parent, 'project');
   await mkdir(root);
   t.after(() => rm(parent, { recursive: true, force: true }));
   await cp(CONFIG, join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Host execution fixture\n');
+  if (schemaV2) {
+    await writeFile(join(root, 'package.json'), JSON.stringify({
+      name: 'host-v2-root',
+      scripts: {
+        build: 'node -e "require(\'node:fs\').writeFileSync(\'fallback-ran\', \'ran\');process.exit(71)"',
+        test: 'node -e "require(\'node:fs\').writeFileSync(\'fallback-ran\', \'ran\');process.exit(72)"',
+      },
+    }));
+    for (const name of ['backend', 'frontend']) await mkdir(join(root, name));
+    await writeFile(join(root, 'backend', 'package.json'), JSON.stringify({
+      name: 'host-v2-backend',
+      scripts: {
+        build: 'node -e "process.exit(require(\'./package.json\').name === \'host-v2-backend\' ? 0 : 81)"',
+        test: 'node -e "process.exit(require(\'./package.json\').name === \'host-v2-backend\' ? 0 : 82)"',
+      },
+    }));
+    await writeFile(join(root, 'frontend', 'package.json'), JSON.stringify({
+      name: 'host-v2-frontend',
+      scripts: {
+        build: 'node -e "process.exit(require(\'./package.json\').name === \'host-v2-frontend\' ? 0 : 83)"',
+      },
+    }));
+    await writeFile(join(root, '.rivet', 'project.yaml'), [
+      'schemaVersion: 2',
+      'id: host-v2-project',
+      'name: Host V2 Project',
+      'stack:',
+      '  framework: other',
+      '  language: javascript',
+      '  packageManager: npm',
+      'repository:',
+      '  defaultBranch: main',
+      '  branchPattern: feature/{slug}',
+      '  sensitivePaths: [.env]',
+      'commands:',
+      '  build:',
+      '    steps:',
+      '      - {cwd: backend, argv: [npm, run, build]}',
+      '      - {cwd: frontend, argv: [npm, run, build]}',
+      '  test:',
+      '    steps:',
+      '      - {cwd: backend, argv: [npm, run, test]}',
+      '',
+    ].join('\n'));
+    await writeFile(join(root, '.rivet', 'quality.yaml'), [
+      'schemaVersion: 1',
+      'providerRefs: [figma-main, git-ci-main]',
+      'completionProfileRefs: [engineering, delivery]',
+      'commandGates:',
+      '  - {id: build, command: build, required: true}',
+      '  - {id: test, command: test, required: true}',
+      'expectations:',
+      '  storybook: optional',
+      '  playwright: optional',
+      '  accessibility: wcag-aa',
+      '  security: required',
+      '  visual: none',
+      'evidence:',
+      '  requiredTypes: [commit, test, review, human-approval]',
+      '  requireHumanBaseline: false',
+      '  requireHumanFinal: true',
+      '',
+    ].join('\n'));
+  } else {
+    await writeFile(join(root, 'package.json'), JSON.stringify({
+      scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+    }));
+  }
   await execFile('/usr/bin/git', ['init', '--quiet', '--initial-branch=main', root]);
   await git(root, 'add', '.');
   await git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture');
@@ -50,7 +123,7 @@ async function fixture(t) {
       kind: 'agilno.feature-decomposition',
       workItems: [{
         objective: 'Add the agenda implementation.',
-        ownedPaths: ['app/agenda.js'],
+        ownedPaths,
         acceptanceCriterionIndexes: [1],
       }],
     },
@@ -167,6 +240,94 @@ test('submitResult integrates an exact restarted host action and verify stops at
   const observed = await restarted.status({ project: root, runId: approved.runId });
   assert.equal(observed.run.status, 'awaiting-final-approval');
   assert.equal(observed.runtime.nodes.find(node => node.id === 'final-delivery').status, 'ready');
+});
+
+test('schema-v2 host verification runs each exact child package and still stops at final approval', async t => {
+  const { root, gitClient, approved } = await fixture(t, { schemaV2: true });
+  const npm = await npmExecutable();
+  const execution = createHostExecution({
+    gitClient,
+    now: () => NOW,
+    resolveCommandExecutable: async runner => {
+      assert.equal(runner, 'npm');
+      return npm;
+    },
+    environment: { PATH: process.env.PATH },
+  });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({
+    project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion,
+  });
+  const contract = JSON.parse(next.action.payload).contract;
+  await mkdir(join(contract.worktree.path, 'app'), { recursive: true });
+  await writeFile(join(contract.worktree.path, 'app', 'agenda.js'), 'export const agenda = true;\n');
+  const submitted = await execution.submitResult({
+    project: root,
+    runId: approved.runId,
+    expectedRuntimeVersion: next.runtimeVersion,
+    action: next.action,
+    result: resultFor(next.action),
+  });
+
+  const verified = await execution.verify({
+    project: root,
+    runId: approved.runId,
+    expectedRunVersion: prepared.run.version,
+    expectedRuntimeVersion: submitted.runtimeVersion,
+  });
+
+  assert.equal(verified.status, 'awaiting-final-approval');
+  assert.deepEqual(verified.evidenceRefs.filter(ref => ref.startsWith('test:')).sort(), [
+    'test:build-1', 'test:build-2', 'test:test',
+  ]);
+  const observed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(observed.runtime.nodes.find(node => node.id === 'final-delivery').status, 'ready');
+});
+
+test('host verification rejects deleted and symlinked child manifests before execution', async t => {
+  for (const replacement of ['deleted', 'symlink']) {
+    await t.test(replacement, async t2 => {
+      const { root, gitClient, approved } = await fixture(t2, {
+        schemaV2: true,
+        ownedPaths: ['backend/package.json'],
+      });
+      const npm = await npmExecutable();
+      const execution = createHostExecution({
+        gitClient,
+        now: () => NOW,
+        resolveCommandExecutable: async () => npm,
+        environment: { PATH: process.env.PATH },
+      });
+      const prepared = await execution.prepare({
+        project: root, runId: approved.runId, expectedRunVersion: approved.version,
+      });
+      const next = await execution.nextAction({
+        project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion,
+      });
+      const worktree = JSON.parse(next.action.payload).contract.worktree.path;
+      await rm(join(worktree, 'backend', 'package.json'));
+      if (replacement === 'symlink') {
+        await symlink('../frontend/package.json', join(worktree, 'backend', 'package.json'));
+      }
+      const submitted = await execution.submitResult({
+        project: root,
+        runId: approved.runId,
+        expectedRuntimeVersion: next.runtimeVersion,
+        action: next.action,
+        result: resultFor(next.action),
+      });
+
+      await assert.rejects(() => execution.verify({
+        project: root,
+        runId: approved.runId,
+        expectedRunVersion: prepared.run.version,
+        expectedRuntimeVersion: submitted.runtimeVersion,
+      }), error => error.code === 'ERR_QUALITY_GATE');
+      const integration = (await gitClient.listWorktrees(root))
+        .find(item => item.branch.includes(approved.runId));
+      await assert.rejects(() => access(join(integration.path, 'fallback-ran')));
+    });
+  }
 });
 
 test('submitResult rejects stale actions and blocks mismatched evidence before integration', async t => {

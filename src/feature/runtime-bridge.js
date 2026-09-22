@@ -454,6 +454,7 @@ export async function configuredFeatureGates(config, resolveCommandExecutable) {
       executable: await resolveCommandExecutable(configured.argv[0]),
       args: Object.freeze(configured.argv.slice(1)),
       cwd: configured.cwd,
+      packageScript: Object.freeze({ runner: configured.argv[0], script: configured.argv[2] }),
       required: configured.required,
       artifactPaths: Object.freeze([]),
       tests: Object.freeze([]),

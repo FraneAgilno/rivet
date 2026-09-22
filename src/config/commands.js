@@ -21,18 +21,23 @@ function fail(path, reason) {
   throw new CommandConfigurationError(path, reason);
 }
 
-function validCwd(value, path) {
-  if (value === '.') return value;
+export function isExecutionCompatibleCwd(value) {
+  if (value === '.') return true;
   if (typeof value !== 'string' || value.length < 1 || value.length > 300
     || value.normalize('NFKC') !== value || /[\\:\u0000-\u001f\u007f]/.test(value)
-    || value.startsWith('/') || value.endsWith('/') || value.includes('//')) fail(path, 'unsafe-path');
+    || value.startsWith('-') || value.startsWith('/') || value.endsWith('/') || value.includes('//')) return false;
   const parts = value.split('/');
   if (parts.some(part => !part || part === '.' || part === '..' || part.endsWith('.') || part.endsWith(' ')
-    || WINDOWS_RESERVED.test(part) || part.toLowerCase() === '.git')) fail(path, 'unsafe-path');
+    || WINDOWS_RESERVED.test(part) || part.toLowerCase() === '.git')) return false;
+  return true;
+}
+
+function validCwd(value, path) {
+  if (!isExecutionCompatibleCwd(value)) fail(path, 'unsafe-path');
   return value;
 }
 
-function validArgv(value, logicalId, path) {
+function validArgv(value, logicalId, path, allowTypeCheckAlias) {
   if (!Array.isArray(value) || value.length !== 3
     || Reflect.ownKeys(value).length !== 4) fail(path, 'command-grammar');
   const argv = value.map((item, index) => {
@@ -42,13 +47,13 @@ function validArgv(value, logicalId, path) {
   const [runner, verb, script] = argv;
   if (!SAFE_COMMAND_RUNNERS.has(runner.toLowerCase())) fail(`${path}/0`, 'unsafe-executable');
   if (verb !== 'run' || !SCRIPT.test(script)) fail(path, 'command-grammar');
-  if (script !== logicalId && !(logicalId === 'typecheck' && script === 'type-check')) {
+  if (script !== logicalId && !(allowTypeCheckAlias && logicalId === 'typecheck' && script === 'type-check')) {
     fail(`${path}/2`, 'command-script-binding');
   }
   return Object.freeze(argv);
 }
 
-function compiledGroup(logicalId, rawSteps, path) {
+function compiledGroup(logicalId, rawSteps, path, allowTypeCheckAlias) {
   if (!Array.isArray(rawSteps) || rawSteps.length < 1 || rawSteps.length > MAX_STEPS
     || Reflect.ownKeys(rawSteps).length !== rawSteps.length + 1) fail(path, 'command-step-count');
   const seen = new Set();
@@ -65,7 +70,7 @@ function compiledGroup(logicalId, rawSteps, path) {
       if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) fail(stepPath, 'command-step');
     }
     const cwd = validCwd(raw.cwd, `${stepPath}/cwd`);
-    const argv = validArgv(raw.argv, logicalId, `${stepPath}/argv`);
+    const argv = validArgv(raw.argv, logicalId, `${stepPath}/argv`, allowTypeCheckAlias);
     const identity = JSON.stringify([cwd, ...argv]);
     if (seen.has(identity)) fail(stepPath, 'duplicate-step');
     seen.add(identity);
@@ -83,6 +88,8 @@ export function compileProjectCommands(project) {
   if (!commands || typeof commands !== 'object' || Array.isArray(commands)
     || ![Object.prototype, null].includes(Object.getPrototypeOf(commands))) fail('/project/commands', 'commands');
   const allowed = version === 1 ? LEGACY_COMMANDS : LOGICAL_COMMANDS;
+  const expectedManager = typeof project.stack?.packageManager === 'string'
+    ? project.stack.packageManager : null;
   const keys = Reflect.ownKeys(commands);
   if (keys.some(key => typeof key !== 'string' || !allowed.includes(key))) fail('/project/commands', 'command-key');
   const output = Object.create(null);
@@ -90,7 +97,10 @@ export function compileProjectCommands(project) {
     const descriptor = Object.getOwnPropertyDescriptor(commands, logicalId);
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) fail(`/project/commands/${logicalId}`, 'command');
     if (version === 1) {
-      output[logicalId] = compiledGroup(logicalId, [{ cwd: '.', argv: descriptor.value }], `/project/commands/${logicalId}`);
+      output[logicalId] = compiledGroup(logicalId, [{ cwd: '.', argv: descriptor.value }], `/project/commands/${logicalId}`, false);
+      if (expectedManager && output[logicalId].steps[0].argv[0].toLowerCase().replace(/\.cmd$/, '') !== expectedManager) {
+        fail(`/project/commands/${logicalId}/0`, 'package-manager-mismatch');
+      }
       continue;
     }
     const group = descriptor.value;
@@ -100,7 +110,10 @@ export function compileProjectCommands(project) {
     const steps = Object.getOwnPropertyDescriptor(group, 'steps');
     if (groupKeys.length !== 1 || groupKeys[0] !== 'steps' || !steps?.enumerable
       || !Object.hasOwn(steps, 'value')) fail(`/project/commands/${logicalId}`, 'command-group');
-    output[logicalId] = compiledGroup(logicalId, steps.value, `/project/commands/${logicalId}/steps`);
+    output[logicalId] = compiledGroup(logicalId, steps.value, `/project/commands/${logicalId}/steps`, true);
+    if (expectedManager && output[logicalId].steps.some(step => (
+      step.argv[0].toLowerCase().replace(/\.cmd$/, '') !== expectedManager
+    ))) fail(`/project/commands/${logicalId}/steps`, 'package-manager-mismatch');
   }
   return Object.freeze(output);
 }

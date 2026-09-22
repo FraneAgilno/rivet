@@ -37,7 +37,11 @@ async function installedFixture(t, kind) {
   await cp(VALID_CONFIG, join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'requests', 'feature.md'), '# Recording agenda\n\n## Acceptance Criteria\n\n- Preserve recorded selections.\n');
   await writeFile(join(root, 'app', 'page.js'), "export const page = 'conference';\n");
-  await writeFile(join(root, 'package.json'), `${JSON.stringify({ name: 'installed-feature-fixture', private: true }, null, 2)}\n`);
+  await writeFile(join(root, 'package.json'), `${JSON.stringify({
+    name: 'installed-feature-fixture',
+    private: true,
+    scripts: { build: 'x', test: 'x', lint: 'x' },
+  }, null, 2)}\n`);
   await execFile('git', ['init', '--quiet', '--bare', remote]);
   await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
   await execFile('git', ['-C', root, 'add', '.']);

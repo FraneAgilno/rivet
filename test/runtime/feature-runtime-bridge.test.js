@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -247,6 +247,9 @@ test('executes all Workers sequentially on an isolated integration branch and st
   t.after(() => rm(parentRoot, { recursive: true, force: true }));
   await cp(new URL('../fixtures/config/valid/.rivet/', import.meta.url), join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Runtime fixture\n');
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+  }));
   await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
   await execFile('git', ['-C', root, 'add', '.']);
   await execFile('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture']);
@@ -323,6 +326,108 @@ test('executes all Workers sequentially on an isolated integration branch and st
   assert.ok(result.evidenceRefs.some(ref => ref.startsWith('commit:')));
 });
 
+test('autonomous verification blocks a committed child-manifest deletion before any gate launches', async t => {
+  const parentRoot = await realpath(await mkdtemp(join(tmpdir(), 'rivet-feature-manifest-')));
+  const root = join(parentRoot, 'project');
+  const marker = join(parentRoot, 'quality-gate-ran');
+  await mkdir(root);
+  t.after(() => rm(parentRoot, { recursive: true, force: true }));
+  await cp(new URL('../fixtures/config/valid/.rivet/', import.meta.url), join(root, '.rivet'), { recursive: true });
+  await mkdir(join(root, 'backend'));
+  await writeFile(join(root, 'README.md'), '# Runtime manifest fixture\n');
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    name: 'runtime-root', scripts: { build: 'node -e "process.exit(71)"', test: 'node -e "process.exit(72)"' },
+  }));
+  await writeFile(join(root, 'backend', 'package.json'), JSON.stringify({
+    name: 'runtime-backend', scripts: { build: 'x', test: 'x' },
+  }));
+  await writeFile(join(root, '.rivet', 'project.yaml'), [
+    'schemaVersion: 2',
+    'id: runtime-manifest-project',
+    'name: Runtime Manifest Project',
+    'stack: {framework: other, language: javascript, packageManager: npm}',
+    'repository:',
+    '  defaultBranch: main',
+    '  branchPattern: feature/{slug}',
+    '  sensitivePaths: [.env]',
+    'commands:',
+    '  build:',
+    '    steps:',
+    '      - {cwd: backend, argv: [npm, run, build]}',
+    '  test:',
+    '    steps:',
+    '      - {cwd: backend, argv: [npm, run, test]}',
+    '',
+  ].join('\n'));
+  await writeFile(join(root, '.rivet', 'quality.yaml'), [
+    'schemaVersion: 1',
+    'providerRefs: [figma-main, git-ci-main]',
+    'completionProfileRefs: [engineering, delivery]',
+    'commandGates:',
+    '  - {id: build, command: build, required: true}',
+    '  - {id: test, command: test, required: true}',
+    'expectations: {storybook: optional, playwright: optional, accessibility: wcag-aa, security: required, visual: none}',
+    'evidence:',
+    '  requiredTypes: [commit, test, review, human-approval]',
+    '  requireHumanBaseline: false',
+    '  requireHumanFinal: true',
+    '',
+  ].join('\n'));
+  await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
+  await execFile('git', ['-C', root, 'add', '.']);
+  await execFile('git', [
+    '-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--quiet', '-m', 'fixture',
+  ]);
+  const baselineCommit = (await execFile('git', ['-C', root, 'rev-parse', 'HEAD'])).stdout.trim();
+  const gitClient = await createGitClient({ gitExecutable: await gitExecutable() });
+  const config = await loadProjectConfig(root);
+  const request = workRequest();
+  const planner = createFeaturePlanner({ planningClient: { propose: async () => ({
+    schemaVersion: 1,
+    kind: 'agilno.feature-decomposition',
+    workItems: [{
+      objective: 'Replace the backend package manifest.',
+      ownedPaths: ['backend/package.json'],
+      acceptanceCriterionIndexes: [1, 2],
+    }],
+  }) } });
+  const featurePlan = await planner.propose({ config, workRequest: request, baselineCommit, client: 'claude' });
+  const digest = featurePlanDigest(featurePlan);
+  const run = {
+    runId: 'runtime-manifest-run', status: 'running', workRequest: request, featurePlan, proposalDigest: digest,
+    activation: { approverId: 'human-cli-operator', approvedAt: NOW, requestDigest: request.digest, proposalDigest: digest },
+  };
+  const gateExecutable = join(parentRoot, 'bounded-gate');
+  await writeFile(gateExecutable, `#!/bin/sh\nprintf ran > '${marker}'\n`, { mode: 0o700 });
+  await chmod(gateExecutable, 0o700);
+  const executor = createFeatureExecutor({
+    gitClient,
+    now: () => NOW,
+    resolveCommandExecutable: async () => gateExecutable,
+    clientFor() {
+      return Object.freeze({
+        provider: 'claude',
+        async launch(contract) {
+          await rm(join(contract.worktree.path, 'backend', 'package.json'));
+          return {
+            version: 1,
+            status: 'success',
+            output: { summary: 'Removed the package manifest.', evidence: [...contract.evidence] },
+            usage: { tokens: 10, costUsd: 0 },
+          };
+        },
+      });
+    },
+  });
+
+  const result = await executor({ project: root, run });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.summary, /quality gates could not complete safely/i);
+  await assert.rejects(() => access(marker));
+});
+
 test('rejects mismatched Worker evidence before integrating its committed changes', async t => {
   const parentRoot = await realpath(await mkdtemp(join(tmpdir(), 'rivet-feature-evidence-')));
   const root = join(parentRoot, 'project');
@@ -330,6 +435,9 @@ test('rejects mismatched Worker evidence before integrating its committed change
   t.after(() => rm(parentRoot, { recursive: true, force: true }));
   await cp(new URL('../fixtures/config/valid/.rivet/', import.meta.url), join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Evidence fixture\n');
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+  }));
   await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
   await execFile('git', ['-C', root, 'add', '.']);
   await execFile('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture']);
@@ -383,6 +491,9 @@ test('resumes one blocked Worker in its exact preserved checkout and records a b
   t.after(() => rm(parentRoot, { recursive: true, force: true }));
   await cp(new URL('../fixtures/config/valid/.rivet/', import.meta.url), join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Recovery fixture\n');
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+  }));
   await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
   await execFile('git', ['-C', root, 'add', '.']);
   await execFile('git', [

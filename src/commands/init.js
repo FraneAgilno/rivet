@@ -630,6 +630,7 @@ export async function init(parsed, dependencies = {}) {
         proposal: {
           schemaVersion: discovery.proposal.schemaVersion,
           commands: discovery.proposal.commands,
+          qualityGates: proposal.config.quality.commandGates,
           files: proposal.files,
           provenance: proposal.provenance,
           diffs: state.diffs,
@@ -658,6 +659,7 @@ export async function init(parsed, dependencies = {}) {
         proposal: {
           schemaVersion: discovery.proposal.schemaVersion,
           commands: discovery.proposal.commands,
+          qualityGates: proposal.config.quality.commandGates,
           files: proposal.files,
           provenance: proposal.provenance,
           diffs: state.diffs,

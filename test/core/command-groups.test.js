@@ -55,6 +55,7 @@ test('rejects malformed, empty, excessive, duplicate, and unsafe structured comm
     ]],
     ['traversal', [{ cwd: '../backend', argv: ['npm', 'run', 'build'] }]],
     ['absolute', [{ cwd: '/backend', argv: ['npm', 'run', 'build'] }]],
+    ['option-like', [{ cwd: '-frontend', argv: ['npm', 'run', 'build'] }]],
     ['wrong script', [{ cwd: 'backend', argv: ['npm', 'run', 'compile'] }]],
     ['too many', Array.from({ length: 33 }, (_, index) => ({
       cwd: `package-${index}`, argv: ['npm', 'run', 'build'],
@@ -68,6 +69,10 @@ test('rejects malformed, empty, excessive, duplicate, and unsafe structured comm
         build: { steps },
         test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
       };
+      value.quality.commandGates = [
+        { id: 'build', command: 'build', required: true },
+        { id: 'test', command: 'test', required: true },
+      ];
       assert.throws(() => validateProjectConfiguration(value), ConfigurationError);
     });
   }
@@ -81,6 +86,14 @@ test('rejects unknown schema versions and keeps version-1 arrays explicit', asyn
   const mixed = await config();
   mixed.project.commands.build = { steps: [{ cwd: '.', argv: ['npm', 'run', 'build'] }] };
   assert.throws(() => validateProjectConfiguration(mixed), ConfigurationError);
+
+  const aliased = await config();
+  aliased.project.commands.typecheck = ['npm', 'run', 'type-check'];
+  assert.throws(() => validateProjectConfiguration(aliased), ConfigurationError);
+
+  const mismatchedManager = await config();
+  mismatchedManager.project.commands.build = ['yarn', 'run', 'build'];
+  assert.throws(() => validateProjectConfiguration(mismatchedManager), ConfigurationError);
 });
 
 test('rejects colliding and excessive expanded quality gate identities', async t => {

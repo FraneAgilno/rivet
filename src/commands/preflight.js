@@ -1,7 +1,6 @@
 import { join, resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
-import { inspectCommandReadiness } from '../config/command-readiness.js';
 import { loadProjectConfig } from '../config/load.js';
 import { discoverGit } from '../discovery/git.js';
 import { discoverTools } from '../discovery/tools.js';
@@ -60,10 +59,7 @@ export async function preflight(parsed, dependencies = {}) {
       (dependencies.goalStateReader ?? defaultGoalState)(projectRoot),
     ]);
     const capacity = dependencies.runtimeCapacity ?? { available: 1, required: 1 };
-    const qualityCommands = inspectCommandReadiness(projectRoot, config, {
-      fs: dependencies.fs,
-      tools,
-    });
+    const qualityCommands = doctor.checks?.commands ?? { ready: false, steps: [] };
     const checks = [
       check('doctor', doctor.exitCode === EXIT_CODES.SUCCESS, 'Run doctor and resolve failed readiness checks.'),
       check('repository', git.repository === true, 'Run preflight inside a Git repository.'),

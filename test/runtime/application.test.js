@@ -39,7 +39,10 @@ test('constructs one inert narrow application surface with explicit host work ca
   });
 
   assert.equal(effects, 0);
-  assert.deepEqual(Object.keys(application).sort(), ['cwd', 'env', 'feature', 'fetch', 'fs', 'work']);
+  assert.deepEqual(Object.keys(application).sort(), [
+    'cwd', 'env', 'feature', 'fetch', 'fs', 'resolveCommandExecutable', 'work',
+  ]);
+  assert.equal(typeof application.resolveCommandExecutable, 'function');
   assert.deepEqual(Object.keys(application.feature).sort(), [
     'buildLaunchContract', 'cancel', 'collectEvidence', 'createAgentClient', 'createOrchestrator',
     'openRun', 'prepareWorktree', 'propose', 'resume', 'runQualityGates',

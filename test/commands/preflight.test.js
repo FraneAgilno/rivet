@@ -77,6 +77,25 @@ test('fails required quality-command readiness when the configured script is abs
   assert.ok(quality.commands.some(step => step.logicalId === 'test' && step.status === 'missing-script'));
 });
 
+test('reports runtime resolver failures in the quality-command readiness check', async () => {
+  const root = await project();
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => readyTools,
+    resolveCommandExecutable: async () => { throw new Error('runtime resolver unavailable'); },
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => ({ status: 'ready' }),
+    runtimeCapacity: { available: 4, required: 3 },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'fail');
+  assert.ok(quality.commands.every(step => step.status === 'tool-unavailable'));
+});
+
 test('fails closed for dirty, detached, stale, occupied, insufficient runtime, and missing commands', async t => {
   const cases = [
     ['dirty worktree', { git: { ...readyGit, dirty: true } }],

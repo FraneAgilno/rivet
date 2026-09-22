@@ -116,7 +116,8 @@ export function inspectCommandReadiness(projectRoot, config, options = {}) {
     let status = 'ready';
     if (!rootSafe) status = 'unsafe-directory';
     else if (manager !== expectedManager) status = 'manager-mismatch';
-    else if (tools[manager]?.present !== true || tools[manager]?.supported !== true) status = 'tool-unavailable';
+    else if (tools[manager]?.present !== true || tools[manager]?.supported !== true
+      || tools[manager]?.runtimeResolved === false) status = 'tool-unavailable';
     else {
       const directory = directoryFor(root, step.cwd, fs);
       status = directory.status;

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { compileProjectCommands } from '../../src/config/commands.js';
 import {
   MAX_DISCOVERY_ENTRIES,
   MAX_DISCOVERY_MANIFESTS,
@@ -71,6 +72,25 @@ test('root scripts take precedence per logical command without duplicate child e
   });
 });
 
+test('uses schema version 2 when a root type-check alias is selected', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'rivet-root-type-check-'));
+  await packageJson(root, '.', {
+    name: 'root-type-check',
+    scripts: { build: 'x', test: 'x', 'type-check': 'x' },
+  });
+
+  const result = await discoverProject(root);
+
+  assert.equal(result.proposal.schemaVersion, 2);
+  assert.deepEqual(result.proposal.commands.typecheck, {
+    steps: [{ cwd: '.', argv: ['npm', 'run', 'type-check'] }],
+  });
+  assert.doesNotThrow(() => compileProjectCommands({
+    schemaVersion: result.proposal.schemaVersion,
+    commands: result.proposal.commands,
+  }));
+});
+
 test('inherits one root package manager across child steps for npm, pnpm, yarn, and bun', async t => {
   for (const [manager, lockfile] of [
     ['npm', 'package-lock.json'],
@@ -99,6 +119,32 @@ test('reports conflicting package-manager evidence instead of silently selecting
   ));
 });
 
+test('uses a recognized packageManager declaration when no lockfile is present', async () => {
+  const root = await vowlifyFixture();
+  const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  manifest.packageManager = 'pnpm@9.15.0';
+  await writeFile(join(root, 'package.json'), JSON.stringify(manifest));
+
+  const result = await discoverProject(root);
+
+  assert.equal(result.proposal.stack.packageManager, 'pnpm');
+  assert.equal(result.provenance['stack.packageManager'], 'package.json#packageManager');
+  assert.deepEqual(result.proposal.commands.build.steps.map(step => step.argv[0]), ['pnpm', 'pnpm']);
+});
+
+test('blocks conflicting manifest declarations and child lockfiles', async () => {
+  const root = await vowlifyFixture();
+  const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  manifest.packageManager = 'pnpm@9.15.0';
+  await writeFile(join(root, 'package.json'), JSON.stringify(manifest));
+  await writeFile(join(root, 'frontend', 'yarn.lock'), '# yarn');
+
+  await assert.rejects(() => discoverProject(root), error => (
+    error.code === 'PACKAGE_MANAGER_CONFLICT'
+    && error.details.managers.join(',') === 'pnpm,yarn'
+  ));
+});
+
 test('never follows child symlinks and ignores hidden, dependency, and generated directories', async () => {
   const root = await vowlifyFixture();
   const external = await mkdtemp(join(tmpdir(), 'rivet-external-package-'));
@@ -112,6 +158,20 @@ test('never follows child symlinks and ignores hidden, dependency, and generated
 
   assert.deepEqual(result.proposal.commands.build.steps.map(step => step.cwd), ['backend', 'frontend']);
   assert.ok(!result.inspectedFiles.some(path => path.startsWith('linked/')));
+});
+
+test('does not emit option-like child paths that runtime execution rejects', async () => {
+  const root = await vowlifyFixture();
+  await packageJson(root, '-frontend', { scripts: { build: 'unsafe-path-build' } });
+
+  const result = await discoverProject(root);
+  const compiled = compileProjectCommands({
+    schemaVersion: result.proposal.schemaVersion,
+    commands: result.proposal.commands,
+  });
+
+  assert.deepEqual(compiled.build.steps.map(step => step.cwd), ['backend', 'frontend']);
+  assert.ok(!result.inspectedFiles.some(path => path.startsWith('-frontend/')));
 });
 
 test('enforces explicit immediate-entry and manifest-count discovery limits', async t => {

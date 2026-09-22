@@ -152,3 +152,28 @@ test('fails readiness when configured build and test scripts are not effective',
     'missing-script', 'missing-script', 'missing-script',
   ]);
 });
+
+test('uses the runtime executable resolver instead of treating PATH discovery as execution readiness', async () => {
+  const root = await configuredProject();
+  const result = capture();
+  const runners = [];
+  const exitCode = await doctor({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => ({
+      node: { present: true, version: '22.1.0', supported: true },
+      npm: { present: true, version: '10.1.0', supported: true },
+      git: { present: true, version: '2.45.0', supported: true },
+    }),
+    resolveCommandExecutable: async runner => {
+      runners.push(runner);
+      throw new Error('runtime resolver unavailable');
+    },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  assert.deepEqual(runners, ['npm']);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.checks.tools.npm.runtimeResolved, false);
+  assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
+});
