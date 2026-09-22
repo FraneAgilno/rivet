@@ -1,9 +1,10 @@
-import { isAbsolute, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
 import { inspectCommandReadiness } from '../config/command-readiness.js';
 import { loadProjectConfig, providerCredentialStatus } from '../config/load.js';
 import { discoverTools } from '../discovery/tools.js';
+import { verifyCommandExecutable } from '../policy/commands.js';
 
 function emit(output, json, payload, exitCode) {
   if (json) {
@@ -92,7 +93,8 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
     let runtimeResolved = false;
     try {
       const executable = await dependencies.resolveCommandExecutable(packageManager);
-      runtimeResolved = typeof executable === 'string' && isAbsolute(executable);
+      await verifyCommandExecutable(executable);
+      runtimeResolved = true;
     } catch {}
     tools = Object.freeze({
       ...tools,

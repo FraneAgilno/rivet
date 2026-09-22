@@ -241,7 +241,7 @@ function readPinnedFile(project, relative, maxBytes) {
 }
 
 function verifyPackageScript(project, configured) {
-  if (configured.packageScript === null) return;
+  if (configured.packageScript === null) return true;
   const relative = configured.cwd === '.'
     ? 'package.json' : `${configured.cwd}/package.json`;
   let manifest;
@@ -253,7 +253,8 @@ function verifyPackageScript(project, configured) {
   }
   const scripts = manifest?.scripts;
   if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)
-    || typeof scripts[configured.packageScript.script] !== 'string') fail('gate-failed');
+    || typeof scripts[configured.packageScript.script] !== 'string') return false;
+  return true;
 }
 
 async function priorResult(project, path) {
@@ -381,10 +382,11 @@ export async function runQualityGates(input, options = {}) {
     let commandResult;
     const beforeResult = await priorResult(project, configured.resultPath);
     try {
-      verifyPackageScript(project, configured);
+      const scriptAvailable = verifyPackageScript(project, configured);
+      if (!scriptAvailable && configured.required) fail('gate-failed');
       startedMs = value.now();
       timestamp(startedMs);
-      commandResult = await runCommand({
+      commandResult = scriptAvailable ? await runCommand({
         worktree: projectRoot,
         authority: value.authority,
         commands: {
@@ -403,6 +405,9 @@ export async function runQualityGates(input, options = {}) {
         commandId: configured.id,
         cwd: configured.cwd,
         args: [],
+      }) : Object.freeze({
+        status: 'unavailable', code: 127, stdout: '', stderr: '',
+        redacted: false, suppressed: false, truncated: false,
       });
       endedMs = value.now();
       timestamp(endedMs);

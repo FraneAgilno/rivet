@@ -156,6 +156,9 @@ test('human setup preview explains that no files were written', async t => {
 
   assert.equal(code, EXIT_CODES.SUCCESS);
   assert.ok(capture.writes.some(({ value, stream }) => stream === 'stdout' && /Setup preview: no files were written\./.test(value)));
+  assert.ok(capture.writes.some(({ value, stream }) => (
+    stream === 'stdout' && /build \(required\).*source: package\.json#scripts/i.test(value)
+  )));
   await assert.rejects(() => lstat(join(root, '.rivet')));
 });
 

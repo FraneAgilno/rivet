@@ -177,3 +177,30 @@ test('uses the runtime executable resolver instead of treating PATH discovery as
   assert.equal(payload.checks.tools.npm.runtimeResolved, false);
   assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
 });
+
+test('rejects resolver overrides that are directories or non-executable files', async t => {
+  for (const kind of ['directory', 'non-executable-file']) {
+    await t.test(kind, async () => {
+      const root = await configuredProject();
+      const candidate = join(root, kind);
+      if (kind === 'directory') await cp(join(validConfig, '.rivet'), candidate, { recursive: true });
+      else await writeFile(candidate, '#!/bin/sh\nexit 0\n', { mode: 0o600 });
+      const result = capture();
+      const exitCode = await doctor({ flags: { project: root, json: true } }, {
+        output: result.output,
+        env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+        toolDiscovery: async () => ({
+          node: { present: true, version: '22.1.0', supported: true },
+          npm: { present: true, version: '10.1.0', supported: true },
+          git: { present: true, version: '2.45.0', supported: true },
+        }),
+        resolveCommandExecutable: async () => candidate,
+      });
+
+      assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+      const payload = JSON.parse(result.writes[0][1]);
+      assert.equal(payload.checks.tools.npm.runtimeResolved, false);
+      assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
+    });
+  }
+});

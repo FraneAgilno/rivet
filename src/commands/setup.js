@@ -54,6 +54,7 @@ function previewSteps(preview) {
       const prefix = Array.isArray(command)
         ? `project.commands.${logicalId}` : `project.commands.${logicalId}.steps[${index}]`;
       const source = preview.proposal.provenance?.[`${prefix}.cwd`]?.source
+        ?? preview.proposal.provenance?.[`${prefix}[0]`]?.source
         ?? preview.proposal.provenance?.[prefix]?.source
         ?? 'unavailable';
       return `${logicalId} (${gates.get(logicalId) ?? 'not-gated'}): ${step.cwd} -> ${step.argv.join(' ')} [source: ${source}]`;

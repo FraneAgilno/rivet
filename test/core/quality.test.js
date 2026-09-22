@@ -179,6 +179,48 @@ test('fails a required logical gate when any expanded child step fails', async t
   ]);
 });
 
+test('records a missing optional package script as unavailable without launching or failing required gates', async t => {
+  const f = await fixture(t);
+  const optionalMarker = join(f.root, 'optional-gate-ran');
+  const executable = join(f.root, 'optional-aware-gate');
+  await writeFile(executable, [
+    '#!/bin/sh',
+    `if [ "$(basename "$PWD")" = frontend ]; then printf ran > '${optionalMarker}'; fi`,
+    'exit 0',
+    '',
+  ].join('\n'), { mode: 0o700 });
+  await chmod(executable, 0o700);
+  const config = {
+    project: {
+      schemaVersion: 2,
+      commands: {
+        build: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'build'] }] },
+        test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+        typecheck: { steps: [{ cwd: 'frontend', argv: ['npm', 'run', 'typecheck'] }] },
+      },
+    },
+    quality: { commandGates: [
+      { id: 'build', command: 'build', required: true },
+      { id: 'typecheck', command: 'typecheck', required: false },
+    ] },
+  };
+  const gates = await configuredFeatureGates(config, async () => executable);
+
+  const result = await runQualityGates({
+    projectRoot: f.projectRoot,
+    commitSha: f.commitSha,
+    authority: featureQualityAuthority(config),
+    gates,
+  }, { gitClient: f.gitClient, now: clock(START, START + 1, START + 2, START + 3) });
+
+  assert.equal(result.status, 'pass');
+  assert.deepEqual(result.gates.map(gate => [gate.id, gate.status, gate.executionStatus]), [
+    ['build', 'passed', 'success'],
+    ['typecheck', 'failed', 'unavailable'],
+  ]);
+  await assert.rejects(() => access(optionalMarker));
+});
+
 test('rejects a missing child manifest before npm can fall back to an ancestor script', async t => {
   const f = await fixture(t);
   const marker = join(f.root, 'ancestor-script-ran');
@@ -207,7 +249,7 @@ test('rejects a missing child manifest before npm can fall back to an ancestor s
   await assert.rejects(() => access(marker));
 });
 
-test('rejects a symlinked package manifest before launching its configured gate', async t => {
+test('rejects a symlinked optional package manifest before launching its configured gate', async t => {
   const f = await fixture(t);
   const externalManifest = join(f.root, 'external-package.json');
   const marker = join(f.root, 'symlink-gate-ran');
@@ -228,7 +270,7 @@ test('rejects a symlinked package manifest before launching its configured gate'
       build: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'build'] }] },
       test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
     } },
-    quality: { commandGates: [{ id: 'build', command: 'build', required: true }] },
+    quality: { commandGates: [{ id: 'build', command: 'build', required: false }] },
   };
   const gates = await configuredFeatureGates(config, async () => gate);
 

@@ -98,9 +98,6 @@ export function compileProjectCommands(project) {
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) fail(`/project/commands/${logicalId}`, 'command');
     if (version === 1) {
       output[logicalId] = compiledGroup(logicalId, [{ cwd: '.', argv: descriptor.value }], `/project/commands/${logicalId}`, false);
-      if (expectedManager && output[logicalId].steps[0].argv[0].toLowerCase().replace(/\.cmd$/, '') !== expectedManager) {
-        fail(`/project/commands/${logicalId}/0`, 'package-manager-mismatch');
-      }
       continue;
     }
     const group = descriptor.value;

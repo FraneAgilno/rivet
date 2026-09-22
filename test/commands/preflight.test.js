@@ -96,6 +96,30 @@ test('reports runtime resolver failures in the quality-command readiness check',
   assert.ok(quality.commands.every(step => step.status === 'tool-unavailable'));
 });
 
+test('reports ineligible resolved executables in preflight quality readiness', async t => {
+  for (const kind of ['directory', 'non-executable-file']) {
+    await t.test(kind, async () => {
+      const root = await project();
+      const candidate = kind === 'directory' ? root : join(root, 'package.json');
+      const result = capture();
+      const exitCode = await preflight({ flags: { project: root, json: true } }, {
+        output: result.output,
+        env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+        toolDiscovery: async () => readyTools,
+        resolveCommandExecutable: async () => candidate,
+        gitDiscovery: async () => readyGit,
+        goalStateReader: async () => ({ status: 'ready' }),
+        runtimeCapacity: { available: 4, required: 3 },
+      });
+
+      assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+      const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+      assert.equal(quality.status, 'fail');
+      assert.ok(quality.commands.every(step => step.status === 'tool-unavailable'));
+    });
+  }
+});
+
 test('fails closed for dirty, detached, stale, occupied, insufficient runtime, and missing commands', async t => {
   const cases = [
     ['dirty worktree', { git: { ...readyGit, dirty: true } }],

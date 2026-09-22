@@ -78,7 +78,7 @@ test('rejects malformed, empty, excessive, duplicate, and unsafe structured comm
   }
 });
 
-test('rejects unknown schema versions and keeps version-1 arrays explicit', async () => {
+test('rejects unknown schema versions and keeps version-1 arrays explicit and manager-compatible', async () => {
   const future = await config();
   future.project.schemaVersion = 3;
   assert.throws(() => validateProjectConfiguration(future), ConfigurationError);
@@ -93,7 +93,23 @@ test('rejects unknown schema versions and keeps version-1 arrays explicit', asyn
 
   const mismatchedManager = await config();
   mismatchedManager.project.commands.build = ['yarn', 'run', 'build'];
-  assert.throws(() => validateProjectConfiguration(mismatchedManager), ConfigurationError);
+  assert.doesNotThrow(() => validateProjectConfiguration(mismatchedManager));
+  assert.deepEqual(compileProjectCommands(mismatchedManager.project).build.steps[0].argv, ['yarn', 'run', 'build']);
+});
+
+test('requires every schema-version-2 step to use the declared package manager', async () => {
+  const value = await config();
+  value.project.schemaVersion = 2;
+  value.project.commands = {
+    build: { steps: [{ cwd: 'backend', argv: ['yarn', 'run', 'build'] }] },
+    test: { steps: [{ cwd: 'backend', argv: ['npm', 'run', 'test'] }] },
+  };
+  value.quality.commandGates = [
+    { id: 'build', command: 'build', required: true },
+    { id: 'test', command: 'test', required: true },
+  ];
+
+  assert.throws(() => validateProjectConfiguration(value), ConfigurationError);
 });
 
 test('rejects colliding and excessive expanded quality gate identities', async t => {
