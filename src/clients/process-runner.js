@@ -514,7 +514,10 @@ export async function createProcessRunner(input) {
         };
         child.stdout.on('data', chunk => collect(stdout, chunk));
         child.stderr.on('data', chunk => collect(null, chunk));
-        child.stdin.on('error', () => terminateChild('spawn-failed'));
+        // Once spawn() has returned a child, a closed provider stdin is an
+        // execution/availability failure. Classifying EPIPE as a spawn failure
+        // makes the result depend on whether stdin or close wins the event race.
+        child.stdin.on('error', () => terminateChild('provider-unavailable'));
         child.once('error', () => finish(new AgentContractError(classification ?? 'spawn-failed')));
         child.once('spawn', () => clearTimeout(launchTimer));
         child.once('close', code => {
@@ -537,7 +540,7 @@ export async function createProcessRunner(input) {
         launchTimer = setTimeout(() => terminateChild('launch-timeout'), Math.min(launchTimeoutMs, runtimeLimit));
         launchTimer.unref?.();
         if (cancelled) { terminateChild('aborted'); return; }
-        try { child.stdin.end(request.payload, 'utf8'); } catch { terminateChild('spawn-failed'); }
+        try { child.stdin.end(request.payload, 'utf8'); } catch { terminateChild('provider-unavailable'); }
       });
     } finally {
       terminateChild = undefined;
