@@ -27,7 +27,7 @@ async function planningRepository() {
   return root;
 }
 
-test('constructs one inert narrow application surface without retained-action capabilities', () => {
+test('constructs one inert narrow application surface with explicit host work capabilities', () => {
   let effects = 0;
   const application = createRivetApplication({
     cwd: () => '/project',
@@ -39,17 +39,21 @@ test('constructs one inert narrow application surface without retained-action ca
   });
 
   assert.equal(effects, 0);
-  assert.deepEqual(Object.keys(application).sort(), ['cwd', 'env', 'feature', 'fetch', 'fs']);
+  assert.deepEqual(Object.keys(application).sort(), ['cwd', 'env', 'feature', 'fetch', 'fs', 'work']);
   assert.deepEqual(Object.keys(application.feature).sort(), [
     'buildLaunchContract', 'cancel', 'collectEvidence', 'createAgentClient', 'createOrchestrator',
     'openRun', 'prepareWorktree', 'propose', 'resume', 'runQualityGates',
     'start', 'status', 'watch',
+  ]);
+  assert.deepEqual(Object.keys(application.work).sort(), [
+    'nextAction', 'prepare', 'status', 'submitResult', 'verify',
   ]);
   for (const retained of ['push', 'merge', 'mergeDefault', 'deploy', 'providerWrite', 'trackerWrite']) {
     assert.equal(Object.hasOwn(application.feature, retained), false);
   }
   assert.equal(Object.isFrozen(application), true);
   assert.equal(Object.isFrozen(application.feature), true);
+  assert.equal(Object.isFrozen(application.work), true);
 });
 
 test('constructs only pinned Claude or Codex clients and fails closed when executable configuration is absent', () => {

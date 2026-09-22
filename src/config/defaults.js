@@ -7,6 +7,7 @@ function deepFreeze(value) {
 }
 
 export const CONFIG_DIRECTORY = '.rivet';
+export const PROTOCOL_DIRECTORY = 'protocols';
 export const MAX_CONFIG_FILE_BYTES = 256 * 1024;
 
 export const CONFIG_FILES = deepFreeze({

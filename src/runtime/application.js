@@ -24,6 +24,7 @@ import {
 import { collectEvidenceBundle } from '../evidence/collect.js';
 import { createFeatureRunStore } from '../feature/run-store.js';
 import { createFeatureExecutor } from '../feature/runtime-bridge.js';
+import { createHostExecution } from '../feature/host-execution.js';
 import { createFeatureWorkflow } from '../feature/workflow.js';
 import { createGitClient } from '../git/client.js';
 import { createReservedWorktree } from '../git/worktrees.js';
@@ -124,6 +125,7 @@ export function createRivetApplication(input = {}) {
   };
   let workflowPromise;
   let executorPromise;
+  let hostExecutionPromise;
   const clientEnvironment = Object.freeze(Object.fromEntries(
     ['PATH', 'LANG', 'LC_ALL', 'TZ', 'TERM', 'TMPDIR', 'HOME', 'USER', 'LOGNAME', 'SHELL']
       .filter(key => env[key] !== undefined)
@@ -224,6 +226,23 @@ export function createRivetApplication(input = {}) {
       method, async (...args) => (await resolvedWorkflow())[method](...args),
     ])));
 
+  const hostExecution = Object.freeze(Object.fromEntries(
+    ['prepare', 'nextAction', 'status', 'submitResult', 'verify'].map(method => [
+      method,
+      async (...args) => {
+        hostExecutionPromise ??= gitClient().then(client => createHostExecution({
+          gitClient: client,
+          now,
+          resolveCommandExecutable,
+          environment: clientEnvironment,
+        }));
+        const service = await hostExecutionPromise;
+        if (typeof service[method] !== 'function') fail();
+        return service[method](...args);
+      },
+    ]),
+  ));
+
   const feature = Object.freeze({
     ...workflow,
     async openRun(projectRoot, runId) {
@@ -246,5 +265,5 @@ export function createRivetApplication(input = {}) {
     },
   });
 
-  return Object.freeze({ cwd, env, fs, fetch, feature });
+  return Object.freeze({ cwd, env, fs, fetch, feature, work: hostExecution });
 }

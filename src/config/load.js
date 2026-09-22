@@ -17,6 +17,7 @@ import {
   CONFIG_FILES,
   DEFAULT_CONFIG,
   MAX_CONFIG_FILE_BYTES,
+  PROTOCOL_DIRECTORY,
   deepFreeze,
 } from './defaults.js';
 import { ConfigurationError, validateProjectConfiguration } from './validate.js';
@@ -146,8 +147,13 @@ function readTrackedConfiguration(configRoot, fs) {
     }
     const expectedFiles = Object.values(CONFIG_FILES).sort();
     const actualFiles = fs.readdirSync('.').sort();
-    if (actualFiles.length !== expectedFiles.length || actualFiles.some((entry, index) => entry !== expectedFiles[index])) {
+    const unexpected = actualFiles.filter(entry => !expectedFiles.includes(entry) && entry !== PROTOCOL_DIRECTORY);
+    if (unexpected.length > 0) {
       throw new ConfigurationError(`/${CONFIG_DIRECTORY}`, 'unexpected-entry');
+    }
+    const protocolDirectory = fs.lstatSync(PROTOCOL_DIRECTORY, { throwIfNoEntry: false });
+    if (protocolDirectory && (protocolDirectory.isSymbolicLink() || !protocolDirectory.isDirectory())) {
+      throw new ConfigurationError(`/${CONFIG_DIRECTORY}/${PROTOCOL_DIRECTORY}`, 'invalid-directory');
     }
     const parsed = {};
     for (const [name, filename] of Object.entries(CONFIG_FILES)) {

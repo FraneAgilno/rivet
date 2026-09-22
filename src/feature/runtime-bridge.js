@@ -94,7 +94,7 @@ function validRun(config, input) {
   const validated = Object.freeze({ ...run, featurePlan });
   if ((validated.schemaVersion !== undefined && validated.schemaVersion !== 1)
     || typeof validated.runId !== 'string' || validated.runId.length > 64 || !ID.test(validated.runId)
-    || !['claude', 'codex'].includes(validated.featurePlan.client)
+    || !['claude', 'codex', 'host'].includes(validated.featurePlan.client)
     || validated.featurePlan.workRequestDigest !== validated.workRequest.digest
     || typeof validated.proposalDigest !== 'string' || !/^[a-f0-9]{64}$/.test(validated.proposalDigest)
     || featurePlanDigest(validated.featurePlan) !== validated.proposalDigest
@@ -248,14 +248,14 @@ function captureExecutor(input) {
   }
 }
 
-function branchFor(config, plan, runId) {
+export function featureBranchFor(config, plan, runId) {
   const pattern = config.project.repository.branchPattern;
   if (typeof pattern !== 'string' || pattern.split('{slug}').length !== 2) fail();
   if (typeof runId !== 'string' || !ID.test(runId)) fail();
   return pattern.replace('{slug}', `${plan.id}-${runId}`);
 }
 
-function nowMilliseconds(now) {
+export function featureNowMilliseconds(now) {
   let value;
   try { value = now(); } catch { fail(); }
   const milliseconds = Date.parse(value);
@@ -263,12 +263,12 @@ function nowMilliseconds(now) {
   return milliseconds;
 }
 
-async function inspectInstance(instance) {
+export async function inspectFeatureRuntime(instance) {
   const lock = await instance.acquire();
   try { return await instance.read(); } finally { await lock.release(); }
 }
 
-async function workerParent(worktreeRunRoot) {
+export async function prepareFeatureWorkerParent(worktreeRunRoot) {
   const path = join(worktreeRunRoot, 'workers');
   try { await mkdir(path, { mode: 0o700 }); } catch (error) { if (error?.code !== 'EEXIST') throw error; }
   const metadata = await lstat(path);
@@ -298,7 +298,7 @@ function pathWithinResponsibilities(responsibilities, path) {
   ));
 }
 
-async function reusableWorkerCheckout(input) {
+export async function reusableWorkerCheckout(input) {
   const {
     gitClient, projectRoot, statePaths, node, planNode, branch, worktreePath,
     baseSha, nowMs, expectedWorktree,
@@ -339,7 +339,7 @@ async function reusableWorkerCheckout(input) {
   return Object.freeze({ reservation, worker: verified.worker });
 }
 
-async function finalizeWorkerCommit(input) {
+export async function finalizeFeatureWorkerCommit(input) {
   const {
     gitClient, statePaths, node, planNode, leaseId, nowMs,
   } = input;
@@ -417,7 +417,7 @@ async function recoverBlockedWorker(input) {
   return Object.freeze({ state: recovered, leaseId: reused.reservation.leaseId, nodeId: node.id });
 }
 
-function launchInput(node, intent, planNode, run) {
+export function createFeatureLaunchInput(node, intent, planNode, run) {
   const approvedCost = Number(intent.allocation.costUsd);
   const maxCostUsd = run.featurePlan.clientProfile === undefined
     ? approvedCost
@@ -436,13 +436,16 @@ function launchInput(node, intent, planNode, run) {
       maxCostUsd,
     },
     worktree: intent.worktree,
-    contextRefs: [`request:${run.workRequest.digest}`],
+    contextRefs: [
+      `request:${run.workRequest.digest}`,
+      ...run.workRequest.contextRefs.filter(ref => ref.startsWith('protocol:')),
+    ],
     heartbeatInterval: 60_000,
     stopConditions: ['objective-complete', 'commit-created', 'evidence-ready'],
   };
 }
 
-async function configuredGates(config, resolveCommandExecutable) {
+export async function configuredFeatureGates(config, resolveCommandExecutable) {
   const gates = [];
   for (const configured of config.quality.commandGates) {
     const command = config.project.commands[configured.command];
@@ -459,7 +462,7 @@ async function configuredGates(config, resolveCommandExecutable) {
   return Object.freeze(gates);
 }
 
-function qualityAuthority(config) {
+export function featureQualityAuthority(config) {
   const commandIds = config.quality.commandGates.map(gate => gate.id);
   return createAuthorityEnvelope({
     actorId: 'quality-worker',
@@ -496,7 +499,7 @@ export function createFeatureExecutor(input) {
       || repository.headSha !== run.featurePlan.baselineCommit) fail();
 
     const statePaths = await resolveStatePaths(project, run.runId);
-    const integrationBranch = branchFor(config, run.featurePlan, run.runId);
+    const integrationBranch = featureBranchFor(config, run.featurePlan, run.runId);
     const worktreeRunRoot = join(dirname(project), '.rivet-worktrees', repository.repositoryId, basename(statePaths.instanceDir));
     const integration = await prepareIntegrationWorktree({
       projectRoot: project,
@@ -511,8 +514,8 @@ export function createFeatureExecutor(input) {
       initialState: createFeatureRuntimeState({ config, run }),
     });
     const planNodes = new Map(run.featurePlan.nodes.map(node => [node.id, node]));
-    const parent = await workerParent(worktreeRunRoot);
-    const nowMs = () => nowMilliseconds(configured.now);
+    const parent = await prepareFeatureWorkerParent(worktreeRunRoot);
+    const nowMs = () => featureNowMilliseconds(configured.now);
     const selectedClient = configured.clientFor(run.featurePlan.client, run.featurePlan.clientProfile);
     if (!selectedClient || selectedClient.provider !== run.featurePlan.client || typeof selectedClient.launch !== 'function') fail();
     let preparationReason = null;
@@ -592,7 +595,7 @@ export function createFeatureExecutor(input) {
       },
       launchFor(node, intent) {
         try {
-          const source = launchInput(node, intent, planNodes.get(node.id), run);
+          const source = createFeatureLaunchInput(node, intent, planNodes.get(node.id), run);
           buildLaunchContract(source);
           return source;
         } catch (error) {
@@ -612,7 +615,7 @@ export function createFeatureExecutor(input) {
           }
           const evidenceMatches = result.status !== 'success' || exactStrings(result.output?.evidence, node.evidenceRefs);
           if (result.status === 'success') {
-            await finalizeWorkerCommit({
+            await finalizeFeatureWorkerCommit({
               gitClient: configured.gitClient,
               projectRoot: integration.path,
               statePaths,
@@ -644,7 +647,7 @@ export function createFeatureExecutor(input) {
       },
     });
 
-    let state = await inspectInstance(instance);
+    let state = await inspectFeatureRuntime(instance);
     try {
       if (!state.activated) {
         state = await runtime.activate(instance, {
@@ -672,7 +675,7 @@ export function createFeatureExecutor(input) {
       const maximumTicks = run.featurePlan.nodes.length * 4 + 8;
       for (let tick = 0; tick < maximumTicks; tick += 1) {
         const outcome = await runtime.tick(instance, { expectedVersion: state.version, maxActiveNodes: 1 });
-        state = await inspectInstance(instance);
+        state = await inspectFeatureRuntime(instance);
         if (['blocked', 'failed', 'budget-exhausted', 'cancelled'].includes(outcome.terminal)) {
           const stopped = state.graph.nodes.filter(node => ['blocked', 'failed', 'cancelled'].includes(node.status)).map(node => node.id);
           const preparation = preparationReason ? ` Preparation reason: ${preparationReason}.` : '';
@@ -688,7 +691,7 @@ export function createFeatureExecutor(input) {
         if (outcome.launched.length === 0) return blocked(run, state);
       }
     } catch (error) {
-      state = await inspectInstance(instance).catch(() => state);
+      state = await inspectFeatureRuntime(instance).catch(() => state);
       const reason = typeof error?.code === 'string' ? ` Runtime reason: ${error.code}.` : '';
       return blocked(run, state, `Feature execution stopped safely.${reason} Correct the reported condition and resume the feature run.`);
     }
@@ -700,8 +703,8 @@ export function createFeatureExecutor(input) {
       quality = await runQualityGates({
         projectRoot: integration.path,
         commitSha: integrated.headSha,
-        authority: qualityAuthority(config),
-        gates: await configuredGates(config, configured.resolveCommandExecutable),
+        authority: featureQualityAuthority(config),
+        gates: await configuredFeatureGates(config, configured.resolveCommandExecutable),
         environment: configured.environment,
       }, { gitClient: configured.gitClient, now: nowMs });
     } catch {

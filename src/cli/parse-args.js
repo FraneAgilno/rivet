@@ -13,11 +13,12 @@ const COMMANDS = new Set([
   'setup',
   'uninstall',
   'verify',
+  'work',
   'worktrees',
 ]);
 
 const LEGACY_COMMANDS = new Set(['init', 'install', 'uninstall']);
-const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'worktrees']);
+const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'work', 'worktrees']);
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
@@ -34,6 +35,17 @@ const LEGACY_OPTIONS = {
   },
 };
 const STRICT_OPTIONS = {
+  protocols: {
+    boolean: new Set(['json', 'include-drafts', 'publish']),
+    valued: new Set(['expected-revision', 'from', 'project']),
+  },
+  work: {
+    boolean: new Set(['json']),
+    valued: new Set([
+      'action', 'decomposition', 'expected-runtime-version', 'expected-version', 'project', 'result',
+      'request', 'request-text', 'ticket', 'tracker',
+    ]),
+  },
   setup: {
     boolean: new Set(['global', 'write', 'json']),
     valued: new Set(['project', 'target']),
@@ -144,7 +156,7 @@ export function parseArgs(argv) {
           throw new ArgumentError(`Flag '--${name}' does not take a value`);
         }
         if (commandOptions.valued.has(name) && value === true) {
-          if (command === 'setup' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
+          if (command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
             const next = tokens[index + 1];
             if (typeof next === 'string' && next.length > 0 && !next.startsWith('-')) {
               value = next;
@@ -186,6 +198,12 @@ export function parseArgs(argv) {
   }
   if (NESTED_COMMANDS.has(command) && positionals.length === 0) {
     throw new ArgumentError(`Command '${command}' requires a subcommand`);
+  }
+  if (command === 'protocols' && !['add', 'import', 'validate', 'find', 'show', 'update'].includes(positionals[0])) {
+    throw new ArgumentError('Unsupported protocol subcommand');
+  }
+  if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify'].includes(positionals[0])) {
+    throw new ArgumentError('Unsupported work subcommand');
   }
 
   return {

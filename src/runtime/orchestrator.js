@@ -865,7 +865,7 @@ export function createOrchestrator(input) {
     return promise;
   }
 
-  async function tick(instance, inputOptions) {
+  async function tickInternal(instance, inputOptions, launchWork) {
     const options = captureOptions(inputOptions, ['expectedVersion', 'maxActiveNodes', 'signal'], ['expectedVersion']);
     const maxActiveNodes = options.maxActiveNodes ?? 4;
     try { if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) fail('invalid-runtime-input'); }
@@ -963,11 +963,99 @@ export function createOrchestrator(input) {
       .filter(node => node.status === 'reserved' && ['committed', 'prepared'].includes(committed.launchIntents[node.id]?.status))
       .sort((left, right) => committed.launchIntents[left.id].eventSequence - committed.launchIntents[right.id].eventSequence)
       .slice(0, maxActiveNodes);
-    await Promise.all(launches.map(node => launch(instance, committed.launchIntents[node.id], node)));
+    if (launchWork) await Promise.all(launches.map(node => launch(instance, committed.launchIntents[node.id], node)));
     const lock = await instance.acquire();
     let final;
     try { final = clone(await instance.read()); } finally { await lock.release(); }
     return Object.freeze({ version: final.version, terminal: final.terminal, launched: Object.freeze(launches.map(node => node.id).sort()) });
+  }
+
+  async function tick(instance, inputOptions) {
+    return tickInternal(instance, inputOptions, true);
+  }
+
+  async function prepareAction(instance, inputOptions) {
+    const options = captureOptions(inputOptions, ['expectedVersion'], ['expectedVersion']);
+    const inspect = async () => {
+      const lock = await instance.acquire();
+      try { return canonicalRuntimeState(await instance.read(), instance.id); }
+      finally { await lock.release(); }
+    };
+    let state = await inspect();
+    if (state.version !== exactVersion(options.expectedVersion)) fail('version-conflict');
+    let active = state.graph.nodes.find(node => node.status === 'running'
+      && state.launchIntents[node.id]?.status === 'started');
+    if (!active) {
+      await tickInternal(instance, { expectedVersion: state.version, maxActiveNodes: 1 }, false);
+      state = await inspect();
+      active = state.graph.nodes.find(node => node.status === 'reserved'
+        && ['committed', 'prepared'].includes(state.launchIntents[node.id]?.status));
+      if (!active) return Object.freeze({ version: state.version, action: null });
+      let intent = state.launchIntents[active.id];
+      if (config.prepareWorktree && intent.status !== 'prepared') {
+        const claimId = `prepare-${randomUUID()}`;
+        const claimed = await serializeResult(instance.id, () => claimPreparation(instance, intent, claimId));
+        if (claimed === null) fail('version-conflict');
+        const worktree = clone(await config.prepareWorktree(clone(active), clone(claimed)));
+        intent = await serializeResult(instance.id, () => persistPreparedIntent(instance, claimed, claimId, worktree));
+        if (intent === null) fail('version-conflict');
+      }
+      const started = await serializeResult(instance.id, () => markIntentStarted(instance, intent));
+      if (started === null) fail('version-conflict');
+      state = await inspect();
+      active = state.graph.nodes.find(node => node.id === started.nodeId);
+    }
+    const intent = state.launchIntents[active.id];
+    return Object.freeze({
+      version: state.version,
+      action: Object.freeze({
+        node: clone(active),
+        intent: clone(intent),
+        launch: clone(config.launchFor(clone(active), clone(intent))),
+      }),
+    });
+  }
+
+  async function submitAction(instance, inputOptions) {
+    const options = captureOptions(inputOptions, [
+      'expectedVersion', 'nodeId', 'intentId', 'idempotencyKey', 'reservationId', 'result',
+    ], ['expectedVersion', 'nodeId', 'intentId', 'idempotencyKey', 'reservationId', 'result']);
+    const result = captureResult(options.result);
+    const lock = await instance.acquire();
+    let state;
+    try { state = canonicalRuntimeState(await instance.read(), instance.id); }
+    finally { await lock.release(); }
+    if (state.version !== exactVersion(options.expectedVersion)) fail('version-conflict');
+    const node = state.graph.nodes.find(item => item.id === options.nodeId);
+    const intent = state.launchIntents[options.nodeId];
+    if (!node || node.status !== 'running' || intent?.status !== 'started'
+      || intent.id !== options.intentId || intent.idempotencyKey !== options.idempotencyKey
+      || intent.reservationId !== options.reservationId
+      || intent.worktree?.reservationId !== options.reservationId) fail('version-conflict');
+    let report = null;
+    let outcome = { result };
+    if (config.reconcile) {
+      report = clone(await config.reconcile(clone(node), clone(intent), result));
+      if (report?.status !== 'integrated') {
+        outcome = {
+          result: {
+            version: 1,
+            status: 'blocked',
+            output: { summary: 'Worktree reconciliation requires review.', evidence: [] },
+            usage: result.usage,
+          },
+        };
+      }
+    }
+    const committed = await serializeResult(instance.id, () => commitResult(instance, intent, outcome));
+    const settled = committed.graph.nodes.find(item => item.id === node.id);
+    return Object.freeze({
+      version: committed.version,
+      nodeId: node.id,
+      nodeStatus: settled.status,
+      terminal: committed.terminal,
+      report,
+    });
   }
 
   async function cancelGoal(instance, inputOptions) {
@@ -992,6 +1080,6 @@ export function createOrchestrator(input) {
 
   async function retryNode(instance, inputOptions) { return recoverRetryNode(instance, inputOptions, { retryPolicy }); }
 
-  const runtime = Object.freeze({ activate, approveNode, recordHeartbeat, tick, retryNode, recoverStalledNode, cancelNode, cancelGoal });
+  const runtime = Object.freeze({ activate, approveNode, recordHeartbeat, tick, prepareAction, submitAction, retryNode, recoverStalledNode, cancelNode, cancelGoal });
   return runtime;
 }

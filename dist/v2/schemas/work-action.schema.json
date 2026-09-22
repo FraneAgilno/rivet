@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/work-action.schema.json",
+  "title": "Agilno host work action",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "runId",
+    "runtimeVersion",
+    "nodeId",
+    "intentId",
+    "idempotencyKey",
+    "reservationId",
+    "attempt",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "kind": { "type": "string", "const": "agilno.work-action" },
+    "runId": { "$ref": "#/$defs/id" },
+    "runtimeVersion": { "type": "integer", "minimum": 0, "maximum": 9007199254740990 },
+    "nodeId": { "$ref": "#/$defs/id" },
+    "intentId": { "$ref": "#/$defs/id" },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]*$"
+    },
+    "reservationId": { "$ref": "#/$defs/id" },
+    "attempt": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "payload": { "type": "string", "minLength": 1, "maxLength": 131072 }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    }
+  }
+}

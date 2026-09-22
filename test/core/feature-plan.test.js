@@ -4,7 +4,12 @@ import test from 'node:test';
 import { AgentContractError } from '../../src/clients/contract.js';
 import { loadProjectConfig } from '../../src/config/load.js';
 import { createFeaturePlan } from '../../src/feature/plan-contract.js';
-import { FeaturePlanError, createFeaturePlanner, featurePlanDigest } from '../../src/feature/planner.js';
+import {
+  FeaturePlanError,
+  createFeaturePlanner,
+  createHostFeaturePlan,
+  featurePlanDigest,
+} from '../../src/feature/planner.js';
 import { createWorkRequest } from '../../src/work-request/contract.js';
 
 const CONFIG_ROOT = new URL('../fixtures/config/valid/', import.meta.url).pathname;
@@ -47,6 +52,24 @@ function decomposition(overrides = {}) {
 }
 
 async function configuration() { return loadProjectConfig(CONFIG_ROOT); }
+
+test('compiles a harness-supplied decomposition without invoking another model', async () => {
+  const config = await configuration();
+  const workRequest = request();
+  const plan = createHostFeaturePlan({
+    config,
+    workRequest,
+    baselineCommit: BASELINE,
+    decomposition: decomposition(),
+  });
+
+  assert.equal(plan.client, 'host');
+  assert.equal(Object.hasOwn(plan, 'clientProfile'), false);
+  assert.equal(plan.nodes.filter(node => node.role === 'worker').length, 2);
+  assert.deepEqual(plan.nodes[2].ownedPaths, ['app/agenda']);
+  assert.match(featurePlanDigest(plan), /^[a-f0-9]{64}$/);
+  assert.equal(Object.isFrozen(plan), true);
+});
 
 test('accepts one strict proposal and gives the planning client only an immutable read-only policy contract', async () => {
   const config = await configuration();
