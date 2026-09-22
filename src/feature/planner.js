@@ -131,6 +131,34 @@ function compileFeaturePlan({ decomposition, config, workRequest, baselineCommit
   };
 }
 
+export function createHostFeaturePlan(input) {
+  try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Reflect.ownKeys(input).length !== 4
+      || !['config', 'workRequest', 'baselineCommit', 'decomposition'].every(key => Object.hasOwn(input, key))) fail();
+    validateProjectConfiguration(input.config);
+    validateWorkRequest(input.workRequest);
+    const decomposition = createFeatureDecomposition(
+      input.decomposition,
+      input.workRequest.acceptanceCriteria.length,
+    );
+    const bindings = {
+      config: input.config,
+      workRequest: input.workRequest,
+      baselineCommit: input.baselineCommit,
+      client: 'host',
+    };
+    return createFeaturePlan({
+      proposal: compileFeaturePlan({ decomposition, ...bindings }),
+      ...bindings,
+    });
+  } catch (error) {
+    if (error instanceof FeaturePlanError) throw error;
+    if (error instanceof FeatureDecompositionError) fail('decomposition-invalid');
+    fail();
+  }
+}
+
 function planningContract({ config, workRequest, baselineCommit, client }) {
   return immutableJson({
     schemaVersion: 1,

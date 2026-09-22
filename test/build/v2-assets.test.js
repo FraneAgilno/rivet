@@ -290,7 +290,7 @@ test('feature planning schema is packaged with the portable v2 assets', async ()
   }
   const schema = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'schemas', 'feature-plan.schema.json'), 'utf8'));
   assert.equal(schema.additionalProperties, false);
-  assert.deepEqual(schema.properties.client.enum, ['claude', 'codex']);
+  assert.deepEqual(schema.properties.client.enum, ['claude', 'codex', 'host']);
   assert.equal(schema.$defs.node.additionalProperties, false);
   const decomposition = JSON.parse(await readFile(
     join(REPOSITORY_ROOT, 'schemas', 'feature-decomposition.schema.json'), 'utf8',

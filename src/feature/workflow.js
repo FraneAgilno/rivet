@@ -2,20 +2,25 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { assertGitClient } from '../git/client.js';
 import { immutableJson } from '../clients/contract.js';
+import { activeProtocolContextRefs } from '../commands/protocols.js';
 import { loadProjectConfig } from '../config/load.js';
 import { resolveFeatureRunPaths } from '../state/paths.js';
+import { createWorkRequest } from '../work-request/contract.js';
 import { resolveInlineWorkRequest, resolveMarkdownWorkRequest } from '../work-request/local.js';
 import { resolveTrackerWorkRequest } from '../work-request/tracker.js';
 import { featurePlanDigest } from './plan-contract.js';
-import { createFeaturePlanner } from './planner.js';
+import { createFeaturePlanner, createHostFeaturePlan } from './planner.js';
 import { createFeatureRunStore } from './run-store.js';
 
-const INPUT_KEYS = new Set(['gitClient', 'planningClientFor', 'trackerAdapterFor', 'executeFeature', 'now', 'loadConfig']);
-const CLIENTS = new Set(['claude', 'codex']);
+const INPUT_KEYS = new Set([
+  'gitClient', 'planningClientFor', 'trackerAdapterFor', 'executeFeature', 'now', 'loadConfig', 'protocolsFor',
+]);
+const CLIENTS = new Set(['claude', 'codex', 'host']);
 const TRACKERS = new Set(['jira', 'linear']);
 const RUN_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const REF = /^[a-z][a-z0-9-]{0,63}:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const PROTOCOL_REF = /^protocol:[a-z][a-z0-9]*(?:-[a-z0-9]+)*:[1-9][0-9]*:sha256:[a-f0-9]{64}$/;
 
 export class FeatureWorkflowError extends Error {
   constructor(reason = 'invalid-input') {
@@ -147,9 +152,10 @@ export function createFeatureWorkflow(input) {
   const executeFeature = configured.executeFeature;
   const now = configured.now ?? (() => new Date().toISOString());
   const loadConfig = configured.loadConfig ?? loadProjectConfig;
+  const protocolsFor = configured.protocolsFor ?? (project => activeProtocolContextRefs(project));
   if (typeof planningClientFor !== 'function' || typeof executeFeature !== 'function'
     || (trackerAdapterFor !== undefined && typeof trackerAdapterFor !== 'function')
-    || typeof now !== 'function' || typeof loadConfig !== 'function') fail('configuration');
+    || typeof now !== 'function' || typeof loadConfig !== 'function' || typeof protocolsFor !== 'function') fail('configuration');
 
   async function repository(project) {
     const root = absolute(project);
@@ -175,7 +181,11 @@ export function createFeatureWorkflow(input) {
   }
 
   async function propose(raw) {
-    const request = capture(raw, new Set(['project', 'source', 'client', 'tracker']), new Set(['project', 'source']));
+    const request = capture(
+      raw,
+      new Set(['project', 'source', 'client', 'tracker', 'decomposition']),
+      new Set(['project', 'source']),
+    );
     const { observed, config } = await repository(request.project);
     const selectedClient = request.client ?? 'claude';
     if (!CLIENTS.has(selectedClient)) fail('invalid-input');
@@ -193,11 +203,37 @@ export function createFeatureWorkflow(input) {
       const adapter = await trackerAdapterFor(immutableJson({ provider, config, project: observed.root }));
       workRequest = await resolveTrackerWorkRequest({ provider, ticketId: source.value, adapter });
     } else fail('invalid-input');
-    const planningClient = await planningClientFor(immutableJson({ client: selectedClient, project: observed.root }));
-    const planner = createFeaturePlanner({ planningClient });
-    const featurePlan = await planner.propose({
-      config, workRequest, baselineCommit: observed.headSha, client: selectedClient,
-    });
+    let protocolRefs;
+    try { protocolRefs = await protocolsFor(observed.root); } catch { fail('configuration'); }
+    if (!Array.isArray(protocolRefs) || protocolRefs.length > 256
+      || protocolRefs.some(ref => typeof ref !== 'string' || !PROTOCOL_REF.test(ref))
+      || new Set(protocolRefs).size !== protocolRefs.length) fail('configuration');
+    if (protocolRefs.length > 0) {
+      workRequest = createWorkRequest({
+        source: workRequest.source,
+        title: workRequest.title,
+        description: workRequest.description,
+        acceptanceCriteria: workRequest.acceptanceCriteria,
+        contextRefs: [...workRequest.contextRefs, ...protocolRefs].sort(),
+        capturedAt: workRequest.capturedAt,
+      });
+    }
+    if ((selectedClient === 'host') !== (request.decomposition !== undefined)) fail('invalid-input');
+    let featurePlan;
+    if (selectedClient === 'host') {
+      featurePlan = createHostFeaturePlan({
+        config,
+        workRequest,
+        baselineCommit: observed.headSha,
+        decomposition: request.decomposition,
+      });
+    } else {
+      const planningClient = await planningClientFor(immutableJson({ client: selectedClient, project: observed.root }));
+      const planner = createFeaturePlanner({ planningClient });
+      featurePlan = await planner.propose({
+        config, workRequest, baselineCommit: observed.headSha, client: selectedClient,
+      });
+    }
     const runId = runIdentifier(featurePlan, workRequest);
     const store = await storeFor(observed.root, runId);
     const existing = await store.read();

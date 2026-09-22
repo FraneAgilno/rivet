@@ -18,6 +18,8 @@ import {
 import { doctor } from '../commands/doctor.js';
 import { modelsCommand } from '../commands/models.js';
 import { setupCommand } from '../commands/setup.js';
+import { protocolsCommand } from '../commands/protocols.js';
+import { workCommand } from '../commands/work.js';
 import { init } from '../commands/init.js';
 import { preflight } from '../commands/preflight.js';
 import { uninstall } from '../commands/uninstall.js';
@@ -54,6 +56,18 @@ const USAGE = `Usage:
   rivet install                    Interactive — pick which skills to install (project)
   rivet install --all              Install all skills (project)
   rivet setup [--project=<path>|--global] [--target=claude|codex|both] [--write] [--json]
+  rivet protocols add <slug> [--project=<path>] [--json]
+  rivet protocols import <slug> --from=<path> [--project=<path>] [--json]
+  rivet protocols validate [<slug>] [--project=<path>] [--json]
+  rivet protocols find <query> [--include-drafts] [--project=<path>] [--json]
+  rivet protocols show <slug> [--include-drafts] [--project=<path>] [--json]
+  rivet protocols update <slug> --from=<path> --expected-revision=<n> [--publish] [--project=<path>] [--json]
+  rivet work propose --project=<path> (--request=<file>|--request-text=<text>|--ticket=<id>) --decomposition=<file> [--tracker=jira|linear] [--json]
+  rivet work prepare <run-id> --project=<path> --expected-version=<n> [--json]
+  rivet work next <run-id> --project=<path> --expected-runtime-version=<n> [--json]
+  rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> --action=<file> --result=<file> [--json]
+  rivet work verify <run-id> --project=<path> --expected-version=<n> --expected-runtime-version=<n> [--json]
+  rivet work status <run-id> --project=<path> [--json]
   rivet install --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet uninstall --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet install --global           Interactive — pick which skills to install (global)
@@ -142,6 +156,7 @@ function resolveDependencies(overrides = {}) {
     evidence: overrides.evidence,
     quality: overrides.quality,
     feature: overrides.feature,
+    work: overrides.work,
     status: overrides.status,
     runGit: overrides.runGit,
     setup: overrides.setup,
@@ -156,9 +171,11 @@ function resolveDependencies(overrides = {}) {
       setup: setupCommand,
       orchestrate: orchestrateCommand,
       preflight,
+      protocols: protocolsCommand,
       status: statusCommand,
       uninstall,
       verify: verifyCommand,
+      work: workCommand,
       ...overrides.commands,
     },
   };

@@ -25,7 +25,7 @@ Workflow service -> private run state and evidence
 
 A harness provides tools and an execution environment. An API or local text model does not automatically have those tools. Model adapters must declare capabilities and their actual execution status. The framework must not require a second model process simply because the active harness calls its CLI.
 
-The imported feature bridge currently selects Claude or Codex and launches that client. Refactoring it to support the active harness and provider-independent delegation is planned work; the foundation registry does not bypass that boundary.
+The feature bridge supports both spawned adapters and an active-host contract. In host mode, Rivet prepares one durable action and isolated worktree, while the current harness performs the edit. Result submission revalidates the exact action, scope, evidence, and repository changes before integration. This keeps the workflow provider-independent without treating a model registry entry as execution authority.
 
 ## Evidence
 

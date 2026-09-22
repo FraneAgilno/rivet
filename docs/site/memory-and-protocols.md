@@ -10,15 +10,20 @@ The release plan requires a real two-collaborator test. Larger-team requirements
 
 ## Project-specific protocols
 
-The intended interface includes:
+Project procedures live in `.rivet/protocols/<slug>.md`. The directory is optional; existing projects keep the four tracked configuration files and gain the directory when the first protocol is created. Protocol files use YAML frontmatter with a schema version, slug, title, `draft` or `active` status, monotonically increasing revision, UTC update time, and a SHA-256 digest over the metadata and Markdown body.
+
+The CLI supports this lifecycle:
 
 ```text
 rivet protocols add database-changes
-rivet protocols add deployment --from ./deployment-guide.md
+rivet protocols import deployment --from=./deployment-guide.md
+rivet protocols validate [<slug>]
 rivet protocols find "database migration"
-rivet protocols update database-changes
+rivet protocols show database-changes
+rivet protocols update database-changes --from=./deployment-guide.md --expected-revision=1
+rivet protocols update database-changes --from=./deployment-guide.md --expected-revision=1 --publish
 ```
 
-**These commands are not implemented yet.** A user will also be able to ask the active harness to draft a protocol, validate it through the CLI, and follow the project's review process before activation.
+`add` and `import` create drafts. Drafts are excluded from `find` and `show` unless `--include-drafts` is supplied. `update` requires the current revision, increments it atomically, and changes a protocol to `active` only when `--publish` is explicit. Validation and discovery read the project directory at invocation time, so adding or revising a protocol does not require reinstalling a skill. Source imports are bounded, project-contained, regular files and are read as Markdown without running them.
 
 Project procedures belong in `.rivet/protocols/` as reviewable configuration. They are distinct from accumulated development history. Active runs retain the revisions they used so a later protocol edit does not silently change the agreed work.

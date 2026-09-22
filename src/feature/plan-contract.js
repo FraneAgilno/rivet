@@ -12,7 +12,7 @@ const schema = JSON.parse(readFileSync(new URL('../../schemas/feature-plan.schem
 const validateSchema = new Ajv({ allErrors: true, strict: true }).compile(schema);
 const plans = new WeakSet();
 const GIT_OBJECT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
-const CLIENTS = new Set(['claude', 'codex']);
+const CLIENTS = new Set(['claude', 'codex', 'host']);
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
 const VIOLATIONS = Object.freeze({

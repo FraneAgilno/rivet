@@ -6,11 +6,25 @@ This describes the current lower-level alpha runtime. The simpler active-harness
 
 Run `rivet --help` for command syntax. `rivet init --project=<path>` previews project policy; `--write` creates reviewed `.rivet` configuration. `rivet preflight --project=<path>` and `rivet doctor --project=<path>` report project readiness.
 
-The runtime currently launches its selected Claude or Codex client for planning and Worker execution. Configure `RIVET_CLAUDE_EXECUTABLE` or `RIVET_CODEX_EXECUTABLE` to the canonical installed executable. Script entrypoints also need the appropriate `RIVET_CLAUDE_INTERPRETER` or `RIVET_CODEX_INTERPRETER`. Project checks using npm require `RIVET_NPM_EXECUTABLE`. Executable identity, supported version and local authentication must satisfy the adapter checks; a model registry entry alone does not configure execution.
+Rivet supports two execution styles. Host mode lets the active coding harness plan and perform each sealed action without launching another model process. This is the portable path for Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and future harnesses. Spawned mode can still launch the selected Claude or Codex client. For spawned mode, configure `RIVET_CLAUDE_EXECUTABLE` or `RIVET_CODEX_EXECUTABLE` to the canonical installed executable. Script entrypoints also need the appropriate interpreter variable. Project checks using npm require `RIVET_NPM_EXECUTABLE`.
 
 ## Feature lifecycle
 
 The feature commands accept a Markdown request or configured Jira/Linear intake. `feature propose` produces a reviewable plan; `feature start` requires the exact reviewed proposal and current version. `feature status` reports progress. Inspect a blocked run before using `feature resume`; the CLI does not silently replace stale approvals or widen scope.
+
+Host mode uses this lifecycle:
+
+```text
+rivet work propose --project=<path> --request=<file> --decomposition=<json-file>
+rivet feature start <run-id> --project=<path> --expected-version=<n> --proposal-digest=<digest>
+rivet work prepare <run-id> --project=<path> --expected-version=<n>
+rivet work next <run-id> --project=<path> --expected-runtime-version=<n>
+rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> --action=<json-file> --result=<json-file>
+rivet work verify <run-id> --project=<path> --expected-version=<n> --expected-runtime-version=<n>
+rivet work status <run-id> --project=<path>
+```
+
+Keep transient decomposition, action, and result files under `.git/rivet-inputs/` so they remain private state and do not dirty the repository. `work next` creates one isolated Worker checkout and returns a canonical launch/result contract. `work submit` rejects stale actions, changed contracts, evidence mismatches, and edits outside the sealed paths before integration. `work verify` inspects the real integration commit and runs configured gates, then stops at final human approval.
 
 The same selected client performs planning and implementation. Planning is read-only; implementation is limited to its approved worktree. The current bridge runs one Worker at a time and uses fast-forward integration. Checkouts remain under the sibling `.rivet-worktrees` directory until deliberately cleaned up.
 

@@ -33,6 +33,8 @@ No public package has been published. The package namespace is provisional, publ
 
 - Independent `rivet` command, `.rivet` configuration, and private state.
 - Namespaced Claude/Codex skill installation that preserves other frameworks' skills.
+- Harness-neutral host execution for Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and other CLI-capable harnesses.
+- Live project protocols with explicit draft, publish, revision, and digest controls.
 - Extensible model registry with local profile validation for hosted, local, compatible, and harness providers.
 - Imported workflow, Git worktree, provider, and verification modules.
 - CI and searchable documentation source.

@@ -227,3 +227,43 @@ test('runs equivalent Markdown/Jira/Linear requests through one resumable local-
     error => error.code === 'ERR_FEATURE_WORKFLOW_CONFIGURATION' && !error.message.includes('private configuration detail'),
   );
 });
+
+test('accepts a harness-supplied decomposition without resolving a planning client', async () => {
+  const target = await fixture();
+  const { stdout: gitPath } = await execFile('which', ['git']);
+  const gitClient = await createGitClient({ gitExecutable: await realpath(gitPath.trim()) });
+  let planningCalls = 0;
+  const workflow = createFeatureWorkflow({
+    gitClient,
+    now: () => NOW,
+    protocolsFor: async () => ['protocol:database-changes:3:sha256:' + 'a'.repeat(64)],
+    planningClientFor: async () => {
+      planningCalls += 1;
+      throw new Error('host preparation must not resolve a planning model');
+    },
+    async executeFeature() { throw new Error('proposal preparation must not execute work'); },
+  });
+
+  const prepared = await workflow.propose({
+    project: target.root,
+    source: { kind: 'file', value: join(target.root, 'requests', 'smart-agenda.md') },
+    client: 'host',
+    decomposition: proposal({
+      workRequest: {
+        acceptanceCriteria: [
+          'Preserve sessions the attendee already accepted.',
+          'Export the resulting agenda as an ICS file.',
+        ],
+      },
+    }),
+  });
+
+  assert.equal(planningCalls, 0);
+  assert.equal(prepared.status, 'proposed');
+  assert.equal(prepared.featurePlan.client, 'host');
+  assert.equal(Object.hasOwn(prepared.featurePlan, 'clientProfile'), false);
+  assert.deepEqual(prepared.workRequest.contextRefs, [
+    'product:conference-planner',
+    'protocol:database-changes:3:sha256:' + 'a'.repeat(64),
+  ]);
+});

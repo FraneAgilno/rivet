@@ -10,7 +10,7 @@
     "id": { "$ref": "#/$defs/id" },
     "baselineCommit": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
     "workRequestDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "client": { "enum": ["claude", "codex"] },
+    "client": { "enum": ["claude", "codex", "host"] },
     "clientProfile": { "$ref": "#/$defs/clientProfile" },
     "providerRefs": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
     "nodes": { "type": "array", "minItems": 4, "maxItems": 128, "items": { "$ref": "#/$defs/node" } }
