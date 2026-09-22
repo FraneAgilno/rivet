@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,13 @@ function capture() {
   };
 }
 
+async function configuredProject({ scripts = { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' } } = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
+  await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  await writeFile(join(root, 'package.json'), JSON.stringify({ scripts }));
+  return root;
+}
+
 test('reports missing configuration with a stable exit code', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
   const result = capture();
@@ -31,8 +38,7 @@ test('reports missing configuration with a stable exit code', async () => {
 });
 
 test('reports credential names and booleans without credential values', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
-  await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  const root = await configuredProject();
   const secret = 'inert-sensitive-credential-value';
   const result = capture();
   const exitCode = await doctor({ flags: { project: root, json: true } }, {
@@ -54,8 +60,7 @@ test('reports credential names and booleans without credential values', async ()
 });
 
 test('fails safely for missing credentials', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
-  await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  const root = await configuredProject();
   const result = capture();
   const exitCode = await doctor({ flags: { project: root, json: true } }, {
     output: result.output,
@@ -66,8 +71,7 @@ test('fails safely for missing credentials', async () => {
 });
 
 test('maps injected provider probe timeouts and errors without leaking details', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
-  await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  const root = await configuredProject();
   for (const probe of [
     async () => ({ status: 'timeout' }),
     async () => { throw new Error('inert-sensitive-upstream-details'); },
@@ -85,8 +89,7 @@ test('maps injected provider probe timeouts and errors without leaking details',
 });
 
 test('bounds an injected provider probe that never settles', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
-  await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  const root = await configuredProject();
   const result = capture();
   const exitCode = await doctor({ flags: { project: root, json: true } }, {
     output: result.output,
@@ -115,8 +118,7 @@ test('fails closed for empty, partial, and indeterminate required tool discovery
   ];
   for (const [name, tools] of cases) {
     await t.test(name, async () => {
-      const root = await mkdtemp(join(tmpdir(), 'agilno-doctor-'));
-      await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+      const root = await configuredProject();
       const result = capture();
       const exitCode = await doctor({ flags: { project: root, json: true } }, {
         output: result.output,
@@ -129,4 +131,117 @@ test('fails closed for empty, partial, and indeterminate required tool discovery
       assert.equal(payload.status, 'fail');
     });
   }
+});
+
+test('fails readiness when configured build and test scripts are not effective', async () => {
+  const root = await configuredProject({ scripts: {} });
+  const result = capture();
+  const exitCode = await doctor({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => ({
+      node: { present: true, version: '22.1.0', supported: true },
+      npm: { present: true, version: '10.1.0', supported: true },
+      git: { present: true, version: '2.45.0', supported: true },
+    }),
+  });
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.checks.commands.ready, false);
+  assert.deepEqual(payload.checks.commands.steps.filter(step => step.required).map(step => step.status), [
+    'missing-script', 'missing-script', 'missing-script',
+  ]);
+});
+
+test('uses the runtime executable resolver instead of treating PATH discovery as execution readiness', async () => {
+  const root = await configuredProject();
+  const result = capture();
+  const runners = [];
+  const exitCode = await doctor({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => ({
+      node: { present: true, version: '22.1.0', supported: true },
+      npm: { present: true, version: '10.1.0', supported: true },
+      git: { present: true, version: '2.45.0', supported: true },
+    }),
+    resolveCommandExecutable: async runner => {
+      runners.push(runner);
+      throw new Error('runtime resolver unavailable');
+    },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  assert.deepEqual(runners, ['npm']);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.checks.tools.npm.runtimeResolved, false);
+  assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
+});
+
+test('rejects resolver overrides that are directories or non-executable files', async t => {
+  for (const kind of ['directory', 'non-executable-file']) {
+    await t.test(kind, async () => {
+      const root = await configuredProject();
+      const candidate = join(root, kind);
+      if (kind === 'directory') await cp(join(validConfig, '.rivet'), candidate, { recursive: true });
+      else await writeFile(candidate, '#!/bin/sh\nexit 0\n', { mode: 0o600 });
+      const result = capture();
+      const exitCode = await doctor({ flags: { project: root, json: true } }, {
+        output: result.output,
+        env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+        toolDiscovery: async () => ({
+          node: { present: true, version: '22.1.0', supported: true },
+          npm: { present: true, version: '10.1.0', supported: true },
+          git: { present: true, version: '2.45.0', supported: true },
+        }),
+        resolveCommandExecutable: async () => candidate,
+      });
+
+      assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+      const payload = JSON.parse(result.writes[0][1]);
+      assert.equal(payload.checks.tools.npm.runtimeResolved, false);
+      assert.ok(payload.checks.commands.steps.every(step => step.status === 'tool-unavailable'));
+    });
+  }
+});
+
+test('accepts a schema-version-1 quality command that uses a runner distinct from the stack manager', async () => {
+  const root = await configuredProject();
+  const projectConfig = join(root, '.rivet', 'project.yaml');
+  await writeFile(projectConfig, (await readFile(projectConfig, 'utf8'))
+    .replace('build: [npm, run, build]', 'build: [yarn, run, build]'));
+  const executables = {};
+  for (const manager of ['npm', 'yarn']) {
+    const path = join(root, `${manager}-runner`);
+    await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    await chmod(path, 0o700);
+    executables[manager] = await realpath(path);
+  }
+  const discovered = [];
+  const resolved = [];
+  const result = capture();
+  const exitCode = await doctor({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async ({ packageManager }) => {
+      discovered.push(packageManager);
+      return {
+        node: { present: true, version: '22.1.0', supported: true },
+        [packageManager]: { present: true, version: '1.0.0', supported: true },
+        git: { present: true, version: '2.45.0', supported: true },
+      };
+    },
+    resolveCommandExecutable: async manager => {
+      resolved.push(manager);
+      return executables[manager];
+    },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.deepEqual(discovered, ['npm', 'yarn']);
+  assert.deepEqual(resolved, ['npm', 'yarn']);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.checks.tools.npm.runtimeResolved, true);
+  assert.equal(payload.checks.tools.yarn.runtimeResolved, true);
+  assert.equal(payload.checks.commands.steps.find(step => step.logicalId === 'build').status, 'ready');
 });

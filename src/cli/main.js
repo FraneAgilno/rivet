@@ -160,6 +160,7 @@ function resolveDependencies(overrides = {}) {
     status: overrides.status,
     runGit: overrides.runGit,
     setup: overrides.setup,
+    resolveCommandExecutable: overrides.resolveCommandExecutable,
     commands: {
       doctor,
       evidence: evidenceCommand,

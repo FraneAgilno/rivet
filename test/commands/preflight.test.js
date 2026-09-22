@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,9 @@ function capture() {
 async function project() {
   const root = await mkdtemp(join(tmpdir(), 'agilno-preflight-'));
   await cp(join(validConfig, '.rivet'), join(root, '.rivet'), { recursive: true });
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
+  }));
   return root;
 }
 
@@ -54,6 +57,110 @@ test('passes when doctor, git, runtime, private state, and quality commands are 
   });
   assert.equal(exitCode, EXIT_CODES.SUCCESS);
   assert.equal(JSON.parse(result.writes[0][1]).status, 'pass');
+});
+
+test('fails required quality-command readiness when the configured script is absent', async () => {
+  const root = await project();
+  await writeFile(join(root, 'package.json'), JSON.stringify({ scripts: { build: 'x' } }));
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => readyTools,
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => ({ status: 'ready' }),
+    runtimeCapacity: { available: 4, required: 3 },
+  });
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'fail');
+  assert.ok(quality.commands.some(step => step.logicalId === 'test' && step.status === 'missing-script'));
+});
+
+test('reports runtime resolver failures in the quality-command readiness check', async () => {
+  const root = await project();
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async () => readyTools,
+    resolveCommandExecutable: async () => { throw new Error('runtime resolver unavailable'); },
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => ({ status: 'ready' }),
+    runtimeCapacity: { available: 4, required: 3 },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'fail');
+  assert.ok(quality.commands.every(step => step.status === 'tool-unavailable'));
+});
+
+test('reports ineligible resolved executables in preflight quality readiness', async t => {
+  for (const kind of ['directory', 'non-executable-file']) {
+    await t.test(kind, async () => {
+      const root = await project();
+      const candidate = kind === 'directory' ? root : join(root, 'package.json');
+      const result = capture();
+      const exitCode = await preflight({ flags: { project: root, json: true } }, {
+        output: result.output,
+        env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+        toolDiscovery: async () => readyTools,
+        resolveCommandExecutable: async () => candidate,
+        gitDiscovery: async () => readyGit,
+        goalStateReader: async () => ({ status: 'ready' }),
+        runtimeCapacity: { available: 4, required: 3 },
+      });
+
+      assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+      const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+      assert.equal(quality.status, 'fail');
+      assert.ok(quality.commands.every(step => step.status === 'tool-unavailable'));
+    });
+  }
+});
+
+test('passes schema-version-1 readiness when each configured runner is available', async () => {
+  const root = await project();
+  const projectConfig = join(root, '.rivet', 'project.yaml');
+  await writeFile(projectConfig, (await readFile(projectConfig, 'utf8'))
+    .replace('build: [npm, run, build]', 'build: [yarn, run, build]'));
+  const executables = {};
+  for (const manager of ['npm', 'yarn']) {
+    const path = join(root, `${manager}-runner`);
+    await writeFile(path, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    await chmod(path, 0o700);
+    executables[manager] = await realpath(path);
+  }
+  const discovered = [];
+  const resolved = [];
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, json: true } }, {
+    output: result.output,
+    env: { ATLASSIAN_API_TOKEN: 'present', FIGMA_ACCESS_TOKEN: 'present', GITHUB_TOKEN: 'present' },
+    toolDiscovery: async ({ packageManager }) => {
+      discovered.push(packageManager);
+      return {
+        node: { present: true, version: '22.1.0', supported: true, compatible: true },
+        [packageManager]: { present: true, version: '1.0.0', supported: true, compatible: true },
+        git: { present: true, version: '2.45.0', supported: true, compatible: true },
+      };
+    },
+    resolveCommandExecutable: async manager => {
+      resolved.push(manager);
+      return executables[manager];
+    },
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => ({ status: 'ready' }),
+    runtimeCapacity: { available: 4, required: 3 },
+  });
+
+  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  assert.deepEqual(discovered, ['npm', 'yarn', 'npm']);
+  assert.deepEqual(resolved, ['npm', 'yarn']);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'pass');
+  assert.equal(quality.commands.find(step => step.logicalId === 'build').manager, 'yarn');
 });
 
 test('fails closed for dirty, detached, stale, occupied, insufficient runtime, and missing commands', async t => {

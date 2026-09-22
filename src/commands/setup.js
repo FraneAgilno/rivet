@@ -44,6 +44,24 @@ async function existingConfiguration(root, fs) {
   return true;
 }
 
+function previewSteps(preview) {
+  if (!preview?.proposal?.commands) return [];
+  const gates = new Map((preview.proposal.qualityGates ?? [])
+    .map(gate => [gate.command, gate.required ? 'required' : 'optional']));
+  return Object.entries(preview.proposal.commands).flatMap(([logicalId, command]) => {
+    const steps = Array.isArray(command) ? [{ cwd: '.', argv: command }] : command.steps;
+    return steps.map((step, index) => {
+      const prefix = Array.isArray(command)
+        ? `project.commands.${logicalId}` : `project.commands.${logicalId}.steps[${index}]`;
+      const source = preview.proposal.provenance?.[`${prefix}.cwd`]?.source
+        ?? preview.proposal.provenance?.[`${prefix}[0]`]?.source
+        ?? preview.proposal.provenance?.[prefix]?.source
+        ?? 'unavailable';
+      return `${logicalId} (${gates.get(logicalId) ?? 'not-gated'}): ${step.cwd} -> ${step.argv.join(' ')} [source: ${source}]`;
+    });
+  });
+}
+
 export async function setupCommand(parsed, dependencies) {
   const flags = parsed.flags;
   if (parsed.operands.length || parsed.subcommand !== null
@@ -81,18 +99,17 @@ export async function setupCommand(parsed, dependencies) {
       configuration = { ...preview.value, status: 'proposed' };
     }
   }
-  const missingScripts = preview ? Object.entries(preview.value.proposal.provenance)
-    .filter(([key, value]) => key.startsWith('project.commands.') && value.source.startsWith('safe-default'))
-    .map(([key]) => key.slice('project.commands.'.length).replace(/\[.*$/, ''))
-    .filter((value, index, all) => all.indexOf(value) === index) : [];
+  const missingScripts = preview?.value.discovery.unresolved?.map(item => item.command) ?? [];
   const tools = preview?.value.discovery.tools;
   const missingTools = tools ? ['node', 'git', ...Object.keys(tools).filter(key => ['npm', 'pnpm', 'yarn', 'bun'].includes(key))]
     .filter(name => !tools[name]?.present || (name === 'node' && Number.parseInt(tools.node.version, 10) < 22)) : [];
   const blockers = [
     ...missingTools.map(name => `Install ${name === 'node' ? 'Node.js 22 or newer' : name} and make it available on PATH.`),
   ];
-  const warnings = missingScripts
-    .map(name => `No root '${name}' package script was detected. Add one before relying on this required check.`);
+  const warnings = [
+    ...missingScripts.map(name => `No '${name}' package script was detected in the supported root/immediate-child scope. Add one before relying on this required check.`),
+    ...(preview?.value.discovery.warnings ?? []).map(item => item.message),
+  ];
   const result = {
     ok: true, status: 'preview', scope: flags.global ? 'global' : 'project', target,
     configuration, installation, blockers, warnings,
@@ -101,8 +118,8 @@ export async function setupCommand(parsed, dependencies) {
       ...warnings,
       ...(!flags.global && preview ? [
         `Project configuration: ${CONFIG_FILES.map(name => join(root, '.rivet', name)).join(', ')}`,
-        `Detected build check: ${(preview.value.discovery?.proposal?.commands?.build ?? preview.value.discovery?.commands?.build ?? []).join(' ') || 'unavailable'}`,
-        `Detected test check: ${(preview.value.discovery?.proposal?.commands?.test ?? preview.value.discovery?.commands?.test ?? []).join(' ') || 'unavailable'}`,
+        ...previewSteps(preview.value),
+        'Checks have not run; setup only inspected bounded project metadata.',
       ] : []),
       ...(installation.targets ?? installation.result?.targets ?? [])
         .map(entry => `${entry.target} skill: ${entry.skillDir} (${entry.action})`),

@@ -19,6 +19,8 @@ rivet setup --global --target=both
 rivet setup --global --target=both --write
 ```
 
+Project preview is read-only. It lists exact root or immediate-child package-script steps, provenance, unresolved required checks, and warnings; it does not run the checks. Generated child steps are written only after `--write`. Repeating setup preserves an existing complete valid `.rivet` configuration byte-for-byte, including later user edits.
+
 To install just the minimal instructions, with no project configuration:
 
 ```sh

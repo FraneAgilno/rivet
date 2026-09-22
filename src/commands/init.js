@@ -10,7 +10,12 @@ import { loadProjectConfig } from '../config/load.js';
 import { validateProjectConfiguration } from '../config/validate.js';
 import { withPinnedTargetDirectory } from './install.js';
 import { discoverGit } from '../discovery/git.js';
-import { discoverProject, inspectBoundedFile, readStrictBoundedFile } from '../discovery/project.js';
+import {
+  ProjectDiscoveryError,
+  discoverProject,
+  inspectBoundedFile,
+  readStrictBoundedFile,
+} from '../discovery/project.js';
 import { discoverTools } from '../discovery/tools.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -100,12 +105,19 @@ function proposalProvenance(config, discovery, git) {
     ),
   );
   for (const command of Object.keys(config.project.commands)) {
-    const source = discovery.provenance[`commands.${command}`];
-    replaceProvenance(
-      provenance,
-      `project.commands.${command}`,
-      provenanceRecord(source, source.startsWith('safe-default') ? 'default' : 'detected', source.startsWith('safe-default') ? 'low' : 'high'),
-    );
+    const steps = config.project.schemaVersion === 1
+      ? [{ prefix: `project.commands.${command}`, source: discovery.provenance[`commands.${command}`] }]
+      : config.project.commands[command].steps.map((_, index) => ({
+        prefix: `project.commands.${command}.steps[${index}]`,
+        source: discovery.provenance[`commands.${command}.steps[${index}]`],
+      }));
+    for (const step of steps) {
+      replaceProvenance(
+        provenance,
+        step.prefix,
+        provenanceRecord(step.source, step.source.startsWith('safe-default') ? 'default' : 'detected', step.source.startsWith('safe-default') ? 'low' : 'high'),
+      );
+    }
   }
   for (const [index, gate] of config.quality.commandGates.entries()) {
     replaceProvenance(
@@ -136,10 +148,11 @@ function proposalFromTemplates(discovery, git, packageRoot, fs) {
   };
   config.project.id = discovery.proposal.id;
   config.project.name = discovery.proposal.name;
+  config.project.schemaVersion = discovery.proposal.schemaVersion;
   config.project.stack = discovery.proposal.stack;
   config.project.repository.defaultBranch = git.defaultBranch ?? 'main';
   config.project.commands = discovery.proposal.commands;
-  for (const command of ['lint', 'typecheck', 'dev']) {
+  for (const command of ['lint', 'typecheck']) {
     if (config.project.commands[command]) {
       config.quality.commandGates.push({ id: command, command, required: false });
     }
@@ -614,8 +627,22 @@ export async function init(parsed, dependencies = {}) {
         ok: true,
         status: 'proposal',
         project: { id: discovery.proposal.id, root: '.' },
-        proposal: { files: proposal.files, provenance: proposal.provenance, diffs: state.diffs },
-        discovery: { features: discovery.features, git: publicGitSummary(git), tools },
+        proposal: {
+          schemaVersion: discovery.proposal.schemaVersion,
+          commands: discovery.proposal.commands,
+          qualityGates: proposal.config.quality.commandGates,
+          files: proposal.files,
+          provenance: proposal.provenance,
+          diffs: state.diffs,
+        },
+        discovery: {
+          features: discovery.features,
+          git: publicGitSummary(git),
+          tools,
+          warnings: discovery.warnings,
+          unresolved: discovery.unresolved,
+        },
+        checksExecuted: false,
       };
       result.message = `Proposed ${FILES.length} configuration files; no files were written.\n${FILES.map(filename => `  ${filename}: ${state.diffs[filename].action}`).join('\n')}`;
       return emit(output, json, result, EXIT_CODES.SUCCESS);
@@ -629,8 +656,22 @@ export async function init(parsed, dependencies = {}) {
         ok: true,
         status: 'written',
         project: { id: discovery.proposal.id, root: '.' },
-        proposal: { files: proposal.files, provenance: proposal.provenance, diffs: state.diffs },
-        discovery: { features: discovery.features, git: publicGitSummary(git), tools },
+        proposal: {
+          schemaVersion: discovery.proposal.schemaVersion,
+          commands: discovery.proposal.commands,
+          qualityGates: proposal.config.quality.commandGates,
+          files: proposal.files,
+          provenance: proposal.provenance,
+          diffs: state.diffs,
+        },
+        discovery: {
+          features: discovery.features,
+          git: publicGitSummary(git),
+          tools,
+          warnings: discovery.warnings,
+          unresolved: discovery.unresolved,
+        },
+        checksExecuted: false,
       };
       if (state.existing.length > 0 && !parsed.flags.overwrite) {
         if (json || typeof dependencies.confirmOverwrite !== 'function') {
@@ -667,7 +708,8 @@ export async function init(parsed, dependencies = {}) {
   } catch (error) {
     return failure(output, json, 'REPOSITORY_CONFLICT', EXIT_CODES.REPOSITORY_CONFLICT,
       'Project configuration could not be proposed or written safely.',
-      error instanceof InitTransactionError ? { recovery: error.recovery } : {});
+      error instanceof InitTransactionError ? { recovery: error.recovery }
+        : error instanceof ProjectDiscoveryError ? { discovery: error.details } : {});
   }
 }
 

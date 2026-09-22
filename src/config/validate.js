@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import Ajv from 'ajv';
 
 import { EVIDENCE_TYPES, SCHEMA_FILES } from './defaults.js';
+import { CommandConfigurationError, compileProjectCommands, compileQualitySteps } from './commands.js';
 
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validators = Object.fromEntries(
@@ -25,9 +26,6 @@ const SECRET_VALUE = /^(?:bearer\s+|basic\s+|gh[pousr]_|github_pat_|sk-[A-Za-z0-
 const ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
 const EVIDENCE_TYPE_SET = new Set(EVIDENCE_TYPES);
 const WINDOWS_RESERVED_PATH_COMPONENT = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\..*)?$/i;
-const SAFE_COMMAND_RUNNERS = new Set([
-  'npm', 'npm.cmd', 'pnpm', 'pnpm.cmd', 'yarn', 'yarn.cmd', 'bun',
-]);
 const ROLE_AUTHORITY_CEILINGS = Object.freeze({
   boss: new Set(['plan', 'implement', 'delegate', 'verify', 'external-write', 'merge', 'deploy', 'change-authority', 'change-budget']),
   manager: new Set(['implement', 'delegate', 'verify', 'external-write', 'merge']),
@@ -186,16 +184,6 @@ function assertSafeRelativePath(value, path) {
   ) fail(path, 'unsafe-path');
 }
 
-function validateCommand(command, commandKey, path) {
-  if (command.length !== 3) fail(path, 'command-grammar');
-  const [runner, verb, scriptName] = command;
-  if (!SAFE_COMMAND_RUNNERS.has(runner.toLowerCase())) {
-    fail(`${path}/0`, 'unsafe-executable');
-  }
-  if (verb !== 'run') fail(`${path}/1`, 'command-grammar');
-  if (scriptName !== commandKey) fail(`${path}/2`, 'command-script-binding');
-}
-
 function validateConfigSemantics(config) {
   scanForSecrets(config);
 
@@ -211,8 +199,10 @@ function validateConfigSemantics(config) {
     }
   }
 
-  for (const [name, command] of Object.entries(config.project.commands)) {
-    validateCommand(command, name, `/project/commands/${name}`);
+  try { compileProjectCommands(config.project); }
+  catch (error) {
+    if (error instanceof CommandConfigurationError) fail(error.path, error.reason);
+    fail('/project/commands', 'command');
   }
   for (const path of config.project.repository.sensitivePaths ?? []) assertSafeRelativePath(path, '/project/repository/sensitivePaths');
 
@@ -256,6 +246,11 @@ function validateConfigSemantics(config) {
   const gateIds = uniqueBy(config.quality.commandGates, 'id', '/quality/commandGates');
   for (const gate of config.quality.commandGates) {
     if (!commandNames.has(gate.command)) fail(`/quality/commandGates/${gate.id}/command`, 'command-reference');
+  }
+  try { compileQualitySteps(config); }
+  catch (error) {
+    if (error instanceof CommandConfigurationError) fail(error.path, error.reason);
+    fail('/quality/commandGates', 'command-expansion');
   }
   for (const mandatoryCommand of ['build', 'test']) {
     if (![...gateIds].some(id => config.quality.commandGates.some(gate => gate.id === id && gate.command === mandatoryCommand && gate.required))) {

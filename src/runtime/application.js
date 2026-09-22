@@ -265,5 +265,5 @@ export function createRivetApplication(input = {}) {
     },
   });
 
-  return Object.freeze({ cwd, env, fs, fetch, feature, work: hostExecution });
+  return Object.freeze({ cwd, env, fs, fetch, feature, work: hostExecution, resolveCommandExecutable });
 }

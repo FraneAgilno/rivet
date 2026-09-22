@@ -59,9 +59,7 @@ export async function preflight(parsed, dependencies = {}) {
       (dependencies.goalStateReader ?? defaultGoalState)(projectRoot),
     ]);
     const capacity = dependencies.runtimeCapacity ?? { available: 1, required: 1 };
-    const qualityCommands = config.quality.commandGates
-      .filter(gate => gate.required)
-      .map(gate => ({ command: gate.command, available: Object.hasOwn(config.project.commands, gate.command) }));
+    const qualityCommands = doctor.checks?.commands ?? { ready: false, steps: [] };
     const checks = [
       check('doctor', doctor.exitCode === EXIT_CODES.SUCCESS, 'Run doctor and resolve failed readiness checks.'),
       check('repository', git.repository === true, 'Run preflight inside a Git repository.'),
@@ -78,8 +76,8 @@ export async function preflight(parsed, dependencies = {}) {
       check('goal-state', goalState?.status === 'ready', 'Initialize and approve the private goal instance.'),
       check('toolchain', tools.node?.supported === true && tools[packageManager]?.supported === true && tools.git?.supported === true,
         'Install a supported local Node, package manager, and Git toolchain.'),
-      check('quality-commands', qualityCommands.every(item => item.available), 'Define every required quality command in project.yaml.', {
-        commands: qualityCommands,
+      check('quality-commands', qualityCommands.ready, 'Define every required quality command as an effective bounded package script.', {
+        commands: qualityCommands.steps,
       }),
     ];
     const failed = checks.filter(item => item.status === 'fail');

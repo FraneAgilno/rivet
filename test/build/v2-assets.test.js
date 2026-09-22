@@ -299,6 +299,19 @@ test('feature planning schema is packaged with the portable v2 assets', async ()
   assert.equal(decomposition.$defs.workItem.additionalProperties, false);
 });
 
+test('project schema packages the explicit version-1 and structured version-2 command contracts', async () => {
+  const source = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'schemas', 'project.schema.json'), 'utf8'));
+  const packaged = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'dist', 'v2', 'schemas', 'project.schema.json'), 'utf8'));
+
+  assert.deepEqual(packaged, source);
+  assert.deepEqual(source.properties.schemaVersion.enum, [1, 2]);
+  assert.deepEqual(source.$defs.commandsV1.required, ['build', 'test']);
+  assert.deepEqual(source.$defs.commandsV2.required, ['build', 'test']);
+  assert.equal(source.$defs.commandGroup.properties.steps.minItems, 1);
+  assert.equal(source.$defs.commandGroup.properties.steps.maxItems, 32);
+  assert.equal(source.$defs.commandStep.properties.argv.$ref, '#/$defs/command');
+});
+
 test('goal protocol distinguishes persisted ready state from dependency-gated scheduler eligibility and exact activation bindings', async () => {
   const graph = graphFixture('parallel-fan-in');
   const integration = graph.nodes.find(node => node.id === 'integration');

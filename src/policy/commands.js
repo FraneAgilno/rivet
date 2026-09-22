@@ -243,7 +243,7 @@ async function verifyCwd(worktree, cwdInput) {
   return verified;
 }
 
-async function verifyExecutable(executable) {
+export async function verifyCommandExecutable(executable) {
   if (typeof executable !== 'string' || executable.length === 0 || executable.length > 1_024 || !isAbsolute(executable)) fail('unsafe-executable');
   if (SHELL_METACHARACTER.test(executable) || UNSAFE_EXECUTABLE.test(basename(executable))) fail('unsafe-executable');
   const before = await lstat(executable, { bigint: true });
@@ -280,7 +280,7 @@ export async function prepareCommand(contractInput, requestInput) {
     const input = snapshotInputs(contractInput, requestInput);
     const worktree = resolve(input.worktree);
     const verifiedWorktree = await verifiedDirectory(worktree, 'invalid-worktree');
-    const executable = await verifyExecutable(input.executable);
+    const executable = await verifyCommandExecutable(input.executable);
     const cwd = await verifyCwd(worktree, input.cwd);
     if (input.maxStreamOutputBytes > input.maxOutputBytes) fail('invalid-output-limit');
     const authorityDecision = evaluateAuthority(input.authority, {
