@@ -20,6 +20,7 @@ import { buildLaunchContract } from '../prompts/launch-contract.js';
 import { runQualityGates } from '../quality/runner.js';
 import { createRuntimeInstance } from '../runtime/instance-store.js';
 import { createOrchestrator } from '../runtime/orchestrator.js';
+import { bootstrapWorktreeDependencies, inspectWorktreeDependencies, WorktreeBootstrapError } from '../runtime/worktree-bootstrap.js';
 import { validateWorkRequest } from '../work-request/contract.js';
 import { createFeaturePlan, featurePlanDigest } from './plan-contract.js';
 
@@ -383,7 +384,8 @@ async function recoverBlockedWorker(input) {
   const intent = state.launchIntents[node.id];
   const planNode = planNodes.get(node.id);
   const manager = state.graph.nodes.find(item => item.id === node.parentId);
-  if (!intent || intent.status !== 'complete' || !intent.worktree || !planNode
+  if (!intent || intent.status !== 'complete'
+    || (!intent.worktree && Object.hasOwn(intent, 'startedAtMs')) || !planNode
     || planNode.role !== 'worker' || !manager || manager.owner.role !== 'manager'
     || state.evidence.some(item => item.nodeId === node.id)) fail();
   const current = await gitClient.inspectRepository(integration.path);
@@ -400,7 +402,7 @@ async function recoverBlockedWorker(input) {
     nowMs,
     expectedWorktree: intent.worktree,
   });
-  recoveryWorktrees.set(node.id, intent.worktree);
+  if (intent.worktree) recoveryWorktrees.set(node.id, intent.worktree);
   const authority = createAuthorityEnvelope({
     actorId: manager.owner.id,
     principal: 'agent',
@@ -491,8 +493,9 @@ export function createFeatureExecutor(input) {
   const configured = captureExecutor(input);
   return async function executeFeature(request, options = {}) {
     if (!options || typeof options !== 'object' || Array.isArray(options)
-      || Reflect.ownKeys(options).some(key => key !== 'signal')
-      || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) fail();
+      || Reflect.ownKeys(options).some(key => !['signal', 'confirmDependencyInstall'].includes(key))
+      || (options.signal !== undefined && !(options.signal instanceof AbortSignal))
+      || (options.confirmDependencyInstall !== undefined && typeof options.confirmDependencyInstall !== 'function')) fail();
     const signal = options.signal;
     if (signal?.aborted) fail();
     if (!request || typeof request !== 'object' || Array.isArray(request)
@@ -505,6 +508,28 @@ export function createFeatureExecutor(input) {
     if (repository.root !== project || repository.detached || repository.dirty
       || repository.branch !== config.project.repository.defaultBranch
       || repository.headSha !== run.featurePlan.baselineCommit) fail();
+
+    async function prepareDependencies(worker, branch, expectedCommit) {
+      const input = {
+        projectRoot: project, worktreePath: worker.root, expectedCommit,
+        expectedBranch: branch, manager: config.project.stack.packageManager,
+      };
+      try {
+        await inspectWorktreeDependencies(input, { gitClient: configured.gitClient });
+      } catch (error) {
+        if (error instanceof WorktreeBootstrapError && error.details.reason === 'missing-lockfile') return;
+        throw error;
+      }
+      if (!options.confirmDependencyInstall) throw new WorktreeBootstrapError('approval-required');
+      const installed = await bootstrapWorktreeDependencies(input, {
+        gitClient: configured.gitClient,
+        resolveCommandExecutable: configured.resolveCommandExecutable,
+        confirm: options.confirmDependencyInstall,
+        signal,
+      });
+      if (installed.status === 'declined') throw new WorktreeBootstrapError('approval-declined');
+      if (installed.status !== 'ready') throw new WorktreeBootstrapError('install-failed');
+    }
 
     const statePaths = await resolveStatePaths(project, run.runId);
     const integrationBranch = featureBranchFor(config, run.featurePlan, run.runId);
@@ -568,6 +593,7 @@ export function createFeatureExecutor(input) {
               expectedWorktree: recoveryWorktrees.get(node.id),
             });
             leases.set(node.id, reused.reservation.leaseId);
+            if (!recoveryWorktrees.has(node.id)) await prepareDependencies(reused.worker, branch, current.headSha);
             preparationReason = null;
             return Object.freeze({
               path: reused.worker.root,
@@ -590,6 +616,7 @@ export function createFeatureExecutor(input) {
           }, { gitClient: configured.gitClient, nowMs: nowMs() });
           const worker = await configured.gitClient.inspectRepository(created.reservation.worktreePath);
           leases.set(node.id, created.reservation.leaseId);
+          await prepareDependencies(worker, branch, current.headSha);
           preparationReason = null;
           return Object.freeze({
             path: worker.root,

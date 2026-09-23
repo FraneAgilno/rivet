@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { assertGitClient } from '../git/client.js';
 import { createApprovalReceipt, createApprovalRegistry } from '../policy/approvals.js';
@@ -31,6 +31,9 @@ export class WorktreeBootstrapError extends Error {
       'ambiguous-lockfile': 'The project has multiple package manager lockfiles. Keep one matching the configured package manager.',
       'manager-mismatch': 'The project lockfile does not match its configured package manager.',
       'checkout-changed': 'Dependency setup changed tracked project files. Inspect the isolated checkout before continuing.',
+      'approval-required': 'Locked dependencies need separate approval before the Worker starts. Use an interactive rivet task command.',
+      'approval-declined': 'Dependency installation was declined. The Worker did not start.',
+      'install-failed': 'Dependency installation failed in the isolated checkout. Inspect the package-manager output and retry.',
     };
     super(messages[reason] ?? messages['invalid-input']);
     this.name = 'WorktreeBootstrapError';
@@ -65,11 +68,12 @@ function inputValue(input) {
 async function safeFile(path) {
   try {
     const before = await lstat(path, { bigint: true });
-    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.size < 1n) return false;
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.size < 1n) fail('unsafe-checkout');
     const canonical = await realpath(path);
     const after = await lstat(path, { bigint: true });
-    return canonical === path && after.isFile() && !after.isSymbolicLink()
-      && before.dev === after.dev && before.ino === after.ino && before.size === after.size;
+    if (canonical !== path || !after.isFile() || after.isSymbolicLink()
+      || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size) fail('unsafe-checkout');
+    return true;
   } catch (error) {
     if (error?.code === 'ENOENT') return false;
     fail('unsafe-checkout');
@@ -148,6 +152,7 @@ export async function bootstrapWorktreeDependencies(input, options = {}) {
       executable, args: plan.args, action: 'dependency.install', elevated: true,
       approvalPolicyId: 'dependency.install', approverId: 'human-owner',
     } },
+    environment: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
     timeoutMs: 10 * 60_000,
     maxOutputBytes: 16 * 1024,
     maxStreamOutputBytes: 16 * 1024,

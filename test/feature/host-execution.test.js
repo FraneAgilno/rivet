@@ -8,6 +8,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
 import { createWorkAction, validateWorkAction } from '../../src/feature/actions.js';
+import { main } from '../../src/cli/main.js';
+import { EXIT_CODES } from '../../src/cli/output.js';
 import { createHostExecution } from '../../src/feature/host-execution.js';
 import { createFeatureWorkflow } from '../../src/feature/workflow.js';
 import { createGitClient } from '../../src/git/client.js';
@@ -31,13 +33,17 @@ async function npmExecutable() {
   return realpath(stdout.trim());
 }
 
-async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'] } = {}) {
+async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false } = {}) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-host-execution-')));
   const root = join(parent, 'project');
   await mkdir(root);
   t.after(() => rm(parent, { recursive: true, force: true }));
   await cp(CONFIG, join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Host execution fixture\n');
+  if (lockedDependencies) {
+    await writeFile(join(root, '.gitignore'), 'node_modules/\n');
+    await writeFile(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n');
+  }
   if (schemaV2) {
     await writeFile(join(root, 'package.json'), JSON.stringify({
       name: 'host-v2-root',
@@ -235,6 +241,30 @@ test('prepare and nextAction durably hand one Worker to the host without a model
   assert.equal(afterRestart.status, 'waiting-for-result');
   assert.equal(afterRestart.action.intentId, next.action.intentId);
   assert.equal(afterRestart.action.payload, next.action.payload);
+});
+
+test('task deps installs in the active host Worker before handoff', async t => {
+  const { root, gitClient, approved } = await fixture(t, { lockedDependencies: true });
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({
+    project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion,
+  });
+  const worktree = JSON.parse(next.action.payload).contract.worktree.path;
+  const installer = join(dirname(root), 'install-fixture');
+  await writeFile(installer, '#!/bin/sh\nmkdir -p node_modules\nprintf ready > node_modules/installed\n', { mode: 0o700 });
+  const messages = [];
+  const { stdout: gitPath } = await execFile('which', ['git']);
+  const code = await main(['task', 'deps'], {
+    cwd: () => root, terminalIsInteractive: () => true,
+    output: { log: value => messages.push(value), error: value => messages.push(value), json() {} },
+    work: execution,
+    resolveCommandExecutable: async name => name === 'git' ? await realpath(gitPath.trim()) : installer,
+    confirmDependencyInstall: async plan => plan.worktreePath === worktree,
+  });
+  assert.equal(code, EXIT_CODES.SUCCESS, messages.join('\n'));
+  assert.equal(await readFile(join(worktree, 'node_modules/installed'), 'utf8'), 'ready');
+  assert.match(messages.join('\n'), /Continue in the owning harness/);
 });
 
 test('submitResult integrates an exact restarted host action and verify stops at final human approval', async t => {

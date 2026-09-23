@@ -24,7 +24,7 @@ rivet task resume
 rivet task deps
 ```
 
-Rivet discovers the project, shows the plan for approval, and manages internal run IDs and revisions. `task deps` asks before installing locked dependencies in the accepted integration checkout when verification needs them. `--project` is only needed when invoking it from outside the project. The direct terminal adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`; newer versions need qualification before use.
+Rivet discovers the project, shows the plan for approval, and manages internal run IDs and revisions. Locked dependencies get a separate approval before a spawned Worker starts; `task deps` prepares the active host Worker or accepted integration checkout when needed. `--project` is only needed when invoking it from outside the project. Direct terminal adapters support Claude Code `2.1.207` and `2.1.274`, and Codex CLI `0.148.0-alpha.9` and `0.155.0-alpha.16`. The current versions completed small local tasks with passing checks on macOS; broader first-user qualification remains open.
 
 ## Contributor checkout
 

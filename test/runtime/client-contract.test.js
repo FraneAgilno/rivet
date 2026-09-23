@@ -161,10 +161,12 @@ test('validates adapter templates and reports unavailable providers without live
   assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.args, ['--print', '--input-format', 'text', '--output-format', 'json', '--no-session-persistence', '{stdin}']);
   assert.equal(CLAUDE_ADAPTER_SYNTAX.outputMode, 'json-structured-output-envelope-v1');
   assert.equal(CLAUDE_ADAPTER_SYNTAX.observedVersion, '2.1.207 (Claude Code)');
-  assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.approvedVersions, ['2.1.207 (Claude Code)']);
+  assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.approvedVersions, ['2.1.207 (Claude Code)', '2.1.274 (Claude Code)']);
   assert.deepEqual(CODEX_ADAPTER_SYNTAX.args, ['exec', '--ephemeral', '--ignore-user-config', '--color', 'never', '{stdin}']);
   assert.equal(CODEX_ADAPTER_SYNTAX.observedVersion, 'codex-cli 0.148.0-alpha.9');
-  assert.deepEqual(CODEX_ADAPTER_SYNTAX.approvedVersions, ['codex-cli 0.148.0-alpha.9']);
+  assert.deepEqual(CODEX_ADAPTER_SYNTAX.approvedVersions, ['codex-cli 0.148.0-alpha.9', 'codex-cli 0.155.0-alpha.16']);
+  assert.doesNotThrow(() => createClaudeClient({ executable: '/missing/claude', expectedVersion: '2.1.274 (Claude Code)', args: CLAUDE_ADAPTER_SYNTAX.args }));
+  assert.doesNotThrow(() => createCodexClient({ executable: '/missing/codex', expectedVersion: 'codex-cli 0.155.0-alpha.16', args: CODEX_ADAPTER_SYNTAX.args }));
   for (const [createClient, syntax] of [[createClaudeClient, CLAUDE_ADAPTER_SYNTAX], [createCodexClient, CODEX_ADAPTER_SYNTAX]]) {
     assert.throws(() => createClient({ executable: '/missing/provider', expectedVersion: syntax.observedVersion, args: [...syntax.args, '{stdin}'] }), /template/i);
     assert.throws(() => createClient({ executable: '/missing/provider', expectedVersion: syntax.observedVersion, args: ['run', '{stdin}'] }), /template/i);

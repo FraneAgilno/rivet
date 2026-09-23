@@ -45,6 +45,7 @@ import { ArgumentError, parseArgs } from './parse-args.js';
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LEGACY_COMMANDS = new Set(['install', 'uninstall']);
 const CONFIRMATION_TIMEOUT_MS = 30_000;
+const DEPENDENCY_CONFIRMATION_TIMEOUT_MS = 120_000;
 const promiseThen = Promise.prototype.then;
 const reflectApply = Reflect.apply;
 const abortControllerAbort = AbortController.prototype.abort;
@@ -157,7 +158,7 @@ async function defaultConfirmDependencyInstall(_plan, options = {}) {
   try {
     const answer = await Promise.race([
       readline.question('Install these dependencies in the isolated checkout? [y/N] '),
-      new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
+      new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), DEPENDENCY_CONFIRMATION_TIMEOUT_MS); }),
     ]);
     return /^(?:y|yes)$/i.test(String(answer).trim());
   } catch { return false; }

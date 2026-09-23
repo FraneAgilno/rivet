@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { cp, mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,6 +91,31 @@ test('constructs only pinned Claude or Codex clients and fails closed when execu
       .feature.createAgentClient('claude'),
     ApplicationConfigurationError,
   );
+});
+
+test('pins a selected newly qualified harness version for Worker launch', async () => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-selected-version-')));
+  const root = join(parent, 'project');
+  await mkdir(root);
+  const interpreter = await realpath('/bin/sh');
+  const executable = join(parent, 'codex');
+  const result = JSON.stringify({ version: 1, status: 'success', output: { summary: 'done', evidence: ['tests'] }, usage: { tokens: 1, costUsd: 0 } });
+  await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' 'codex-cli 0.155.0-alpha.16'; else while IFS= read -r line; do :; done; printf '%s\\n' '${result}'; fi\n`, { mode: 0o700 });
+  const application = createRivetApplication({
+    cwd: () => root,
+    env: { RIVET_CODEX_EXECUTABLE: executable, RIVET_CODEX_INTERPRETER: interpreter, PATH: '/usr/bin:/bin' },
+  });
+  assert.equal((await application.harnesses.select('codex', root)).version, 'codex-cli 0.155.0-alpha.16');
+  const identity = await lstat(root, { bigint: true });
+  const launch = {
+    nodeId: 'worker-one', parentId: 'manager-one', objective: 'Finish a small task.',
+    ownedPaths: ['src/task.js'], authority: { actions: ['code.write'], providers: [] },
+    commands: ['test.unit'], evidence: ['tests'],
+    budget: { maxTokens: 12000, maxRuntimeMs: 30000, maxCostUsd: 2 },
+    worktree: { path: root, dev: identity.dev.toString(), ino: identity.ino.toString(), reservationId: 'lease-one' },
+    contextRefs: [], heartbeatInterval: 5000, stopConditions: ['objective-complete'],
+  };
+  assert.equal((await application.feature.createAgentClient('codex').launch(launch)).status, 'success');
 });
 
 test('opens a private run beneath Git identity without constructing worker or external effects', async () => {

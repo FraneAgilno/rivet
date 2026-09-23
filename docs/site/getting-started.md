@@ -50,6 +50,8 @@ Give Claude Code, Codex, or another capable harness a request such as:
 
 The harness handles Rivet's internal run ID, versions, digest, and JSON action files. You review the plan before activation and the verified result before delivery. If the harness needs to recover an interrupted action, it follows the skill's `work status` and `work next` instructions. Rivet does not push or merge the result automatically.
 
+The current host skill stores temporary proposal/action files under `.git/rivet-inputs/`. Default noninteractive Claude and Codex sandboxes may deny writes there. If that happens, use the terminal flow below for this alpha; a sandbox-compatible private input location is the next host-workflow fix.
+
 ### In a terminal
 
 If a compatible Claude or Codex CLI is installed and authenticated, you can start the same governed workflow with one command:
@@ -58,7 +60,7 @@ If a compatible Claude or Codex CLI is installed and authenticated, you can star
 rivet run "Add a greeting module that exports a greeting string"
 ```
 
-This alpha validates direct terminal adapters for Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`. Check `claude --version` or `codex --version` first. A newer version stops safely with a compatibility message until its adapter is qualified; the coding-harness workflow above still works with the harness you are using.
+Direct terminal adapters support Claude Code `2.1.207` and `2.1.274`, and Codex CLI `0.148.0-alpha.9` and `0.155.0-alpha.16`. The current versions completed disposable local tasks with passing checks on macOS. Check `claude --version` or `codex --version` first. An unqualified version stops safely with a compatibility message; the coding-harness workflow above still works with the harness you are using.
 
 For script-based CLI installs, Rivet also needs `RIVET_CLAUDE_INTERPRETER` or `RIVET_CODEX_INTERPRETER` set to the canonical native interpreter path. Ctrl-C and SIGTERM stop Rivet's local child process before the command exits; use `rivet task status` to inspect an interrupted run before resuming it.
 
@@ -72,9 +74,9 @@ rivet task resume
 rivet task deps
 ```
 
-`task status` shows the next action, integration checkout, changed paths, and executed checks when available. `task resume` continues an approved or blocked spawned run after its cause is corrected. It will not duplicate a run still marked running. If several active tasks exist in the same project, Rivet lists them and asks you to select one with `--run=<id>`; it never guesses. A failed check exits nonzero and leaves its report available in `task status`. If the accepted integration checkout is missing locked dependencies, run `rivet task deps` from anywhere inside the project. Rivet shows the exact frozen package-manager command and asks before running it in that checkout. Then use `rivet task resume` to retry verification at the same commit. Source changes require a new reviewed proposal.
+`task status` shows the next action, integration checkout, changed paths, and executed checks when available. `task resume` continues an approved or blocked spawned run after its cause is corrected. It will not duplicate a run still marked running. If several active tasks exist in the same project, Rivet lists them and asks you to select one with `--run=<id>`; it never guesses. A failed check exits nonzero and leaves its report available in `task status`. Spawned Workers ask separately before installing locked dependencies in their own checkout. For a host Worker that needs dependencies before editing, or for a clean accepted integration checkout missing dependencies during verification, run `rivet task deps` from anywhere inside the project. Rivet shows the exact frozen package-manager command and asks before running it there. After integration setup, use `rivet task resume` for a spawned run or retry `work verify` for a host run at the same commit. Source changes require a new reviewed proposal.
 
-The Worker and integration checkouts are isolated Git worktrees. Dependencies from your original checkout, such as `node_modules`, are not copied into them. `task deps` currently prepares the accepted integration checkout after Worker work; Worker checkout dependencies still need preparation in their own checkout when editing requires them. Rivet's configured checks do not install packages. The result stops at `awaiting-final-approval` for your separate review; it is not a delivery or merge decision.
+The Worker and integration checkouts are isolated Git worktrees. Dependencies from your original checkout, such as `node_modules`, are not copied into them. Add `node_modules/` to your project's `.gitignore` so the isolated checkout remains clean after installation. Rivet's configured checks do not install packages. The result stops at `awaiting-final-approval` for your separate review; it is not a delivery or merge decision.
 
 For the exact `feature` and `work` commands used by coding harnesses and automation, see the [runtime reference](./runtime-reference.md).
 

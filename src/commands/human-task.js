@@ -4,9 +4,11 @@ import { CliError, EXIT_CODES } from '../cli/output.js';
 import { loadProjectConfig } from '../config/load.js';
 import { createFeatureRunStore } from '../feature/run-store.js';
 import { createGitClient } from '../git/client.js';
+import { createReservationStore } from '../git/reservations.js';
 import { bootstrapWorktreeDependencies } from '../runtime/worktree-bootstrap.js';
-import { listExistingFeatureRunPaths } from '../state/paths.js';
+import { listExistingFeatureRunPaths, resolveExistingStatePaths } from '../state/paths.js';
 import { invokeFeature } from './feature.js';
+import { confirmIsolatedDependencyInstall } from './dependency-approval.js';
 
 const RUN_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const ACTIVE = new Set(['proposed', 'approved', 'running', 'blocked', 'awaiting-final-approval']);
@@ -70,8 +72,30 @@ async function dependencyCommand(project, record, dependencies) {
   if (typeof dependencies.work?.status !== 'function'
     || typeof dependencies.resolveCommandExecutable !== 'function') fail('Dependency setup is unavailable.', 'MISSING_CONFIGURATION');
   const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
-  if (!['running', 'blocked'].includes(record.status) || status.checkout?.status !== 'clean') {
-    fail('This task has no clean accepted integration checkout yet. Continue the task, then retry dependency setup.', 'REPOSITORY_CONFLICT');
+  let target = null;
+  if (record.featurePlan.client === 'host' && record.status === 'running') {
+    const statePaths = await resolveExistingStatePaths(project.root, record.runId);
+    const workerIds = new Set(record.featurePlan.nodes.filter(node => node.role === 'worker').map(node => node.id));
+    const nodes = (status.runtime?.nodes ?? []).filter(node => node.status === 'running' && workerIds.has(node.id));
+    if (statePaths && nodes.length === 1) {
+      const reservations = await createReservationStore(statePaths).list();
+      const matches = reservations.reservations.filter(item => item.status === 'active' && item.nodeId === nodes[0].id);
+      if (matches.length === 1) target = {
+        path: matches[0].worktreePath,
+        commit: matches[0].baseSha,
+        branch: matches[0].branch,
+        kind: 'worker',
+      };
+    }
+  }
+  if (!target && status.checkout?.status === 'clean') target = {
+    path: status.checkout.path,
+    commit: status.checkout.acceptedCommit,
+    branch: status.checkout.branch,
+    kind: 'integration',
+  };
+  if (!['running', 'blocked'].includes(record.status) || !target) {
+    fail('This task has no eligible isolated checkout yet. Continue the task, then retry dependency setup.', 'REPOSITORY_CONFLICT');
   }
   const config = await loadProjectConfig(project.root);
   let gitClient;
@@ -82,19 +106,14 @@ async function dependencyCommand(project, record, dependencies) {
     try {
       result = await bootstrapWorktreeDependencies({
         projectRoot: project.root,
-        worktreePath: status.checkout.path,
-        expectedCommit: status.checkout.acceptedCommit,
-        expectedBranch: status.checkout.branch,
+        worktreePath: target.path,
+        expectedCommit: target.commit,
+        expectedBranch: target.branch,
         manager: config.project.stack.packageManager,
       }, {
         gitClient,
         resolveCommandExecutable: dependencies.resolveCommandExecutable,
-        confirm: plan => {
-          dependencies.output.log(`Install locked dependencies in ${visible(plan.worktreePath)}?`);
-          dependencies.output.log(`Command: ${visible(plan.executable)} ${plan.args.map(visible).join(' ')}`);
-          dependencies.output.log('Package installation may run scripts supplied by the project or its dependencies.');
-          return dependencies.confirmDependencyInstall(plan, { signal });
-        },
+        confirm: confirmIsolatedDependencyInstall(dependencies, signal),
         signal,
       });
     } catch (error) {
@@ -111,7 +130,9 @@ async function dependencyCommand(project, record, dependencies) {
       return EXIT_CODES.FAILED_GATE;
     }
     dependencies.output.log(record.featurePlan.client === 'host'
-      ? 'Dependencies are ready in the isolated checkout. Continue in the owning harness and retry work verify.'
+      ? target.kind === 'worker'
+        ? 'Dependencies are ready in the Worker checkout. Continue in the owning harness.'
+        : 'Dependencies are ready in the isolated checkout. Continue in the owning harness and retry work verify.'
       : 'Dependencies are ready in the isolated checkout. Use rivet task resume to retry verification.');
     return EXIT_CODES.SUCCESS;
   });
@@ -172,7 +193,7 @@ export async function humanTaskCommand(parsed, dependencies) {
     catch { fail(`The saved ${record.featurePlan.client} harness is unavailable or incompatible. Restore it before resuming; Rivet will not switch models.`, 'PROVIDER_UNAVAILABLE'); }
     const result = await invokeFeature(dependencies.feature, 'resume', {
       project: project.root, runId: record.runId, expectedVersion: record.version,
-    }, { signal });
+    }, { signal, confirmDependencyInstall: confirmIsolatedDependencyInstall(dependencies, signal) });
     dependencies.output.log(`Task: ${visible(result.status)}.`);
     if (result.summary) dependencies.output.log(visible(result.summary));
     return result.status === 'awaiting-final-approval' ? EXIT_CODES.SUCCESS

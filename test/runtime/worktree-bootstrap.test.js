@@ -78,6 +78,17 @@ test('decline does not execute and approval installs only in the isolated checko
   assert.equal((await value.gitClient.inspectRepository(value.input.worktreePath)).dirty, false);
 });
 
+test('package-manager scripts using env node can run with a bounded PATH', async t => {
+  const value = await fixture(t, { 'package-lock.json': '{"lockfileVersion":3}\n' });
+  await writeFile(value.installer, '#!/usr/bin/env node\nrequire("node:fs").mkdirSync("node_modules", { recursive: true });\nrequire("node:fs").writeFileSync("node_modules/installed", "ready");\n', { mode: 0o700 });
+  const result = await bootstrapWorktreeDependencies(value.input, {
+    gitClient: value.gitClient,
+    resolveCommandExecutable: async () => value.installer,
+    confirm: async () => true,
+  });
+  assert.equal(result.status, 'ready', result.result.stderr);
+});
+
 test('refuses a checkout changed after the prompt and rejects installer source edits', async t => {
   const value = await fixture(t, { 'package-lock.json': '{"lockfileVersion":3}\n' });
   let resolved = false;

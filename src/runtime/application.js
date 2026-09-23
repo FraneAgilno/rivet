@@ -138,6 +138,8 @@ export function createRivetApplication(input = {}) {
   let executorPromise;
   let hostExecutionPromise;
   const selectedHarnesses = new Map();
+  const selectedVersion = kind => selectedHarnesses.get(kind)?.version
+    ?? (kind === 'claude' ? CLAUDE_ADAPTER_SYNTAX.observedVersion : CODEX_ADAPTER_SYNTAX.observedVersion);
   const harnessSettings = kind => {
     const selected = selectedHarnesses.get(kind);
     return selected ? {
@@ -175,7 +177,7 @@ export function createRivetApplication(input = {}) {
     if (request.client === 'claude') {
       return createClaudePlanningClient({
         ...harnessSettings('claude'),
-        expectedVersion: CLAUDE_ADAPTER_SYNTAX.observedVersion,
+        expectedVersion: selectedVersion('claude'),
         worktree: executable(request.project),
         environment: clientEnvironment,
         timeoutMs: FEATURE_PLANNING_TIMEOUT_MS,
@@ -184,7 +186,7 @@ export function createRivetApplication(input = {}) {
     if (request.client === 'codex') {
       return createCodexPlanningClient({
         ...harnessSettings('codex'),
-        expectedVersion: CODEX_ADAPTER_SYNTAX.observedVersion,
+        expectedVersion: selectedVersion('codex'),
         worktree: executable(request.project),
         environment: clientEnvironment,
         timeoutMs: FEATURE_PLANNING_TIMEOUT_MS,
@@ -196,7 +198,7 @@ export function createRivetApplication(input = {}) {
     if (!matchesClientProfile(kind, clientProfile)) fail();
     if (kind === 'claude') return createClaudeClient({
       ...harnessSettings('claude'),
-      expectedVersion: CLAUDE_ADAPTER_SYNTAX.observedVersion,
+      expectedVersion: selectedVersion('claude'),
       args: [
         ...CLAUDE_ADAPTER_SYNTAX.args.slice(0, -1),
         '--model', CLAUDE_FEATURE_PROFILE.model,
@@ -208,7 +210,7 @@ export function createRivetApplication(input = {}) {
     });
     if (kind === 'codex') return createCodexClient({
       ...harnessSettings('codex'),
-      expectedVersion: CODEX_ADAPTER_SYNTAX.observedVersion,
+      expectedVersion: selectedVersion('codex'),
       args: [...CODEX_ADAPTER_SYNTAX.args.slice(0, -1), '--sandbox', 'workspace-write', '{stdin}'],
       environment: clientEnvironment,
     });

@@ -10,7 +10,7 @@ export const CODEX_ADAPTER_SYNTAX = Object.freeze({
   version: 1,
   provider: 'codex',
   observedVersion: 'codex-cli 0.148.0-alpha.9',
-  approvedVersions: Object.freeze(['codex-cli 0.148.0-alpha.9']),
+  approvedVersions: Object.freeze(['codex-cli 0.148.0-alpha.9', 'codex-cli 0.155.0-alpha.16']),
   versionArgs: Object.freeze(['--version']),
   args: ARGS,
   inputMode: 'stdin-text',
@@ -97,7 +97,7 @@ export function createCodexClient(input) {
   const config = capture(input, CONFIG_KEYS, ['executable', 'expectedVersion', 'args']);
   if (typeof config.executable !== 'string' || !config.executable.startsWith('/') || config.executable.length > 1024
     || (config.interpreter !== undefined && (typeof config.interpreter !== 'string' || !config.interpreter.startsWith('/') || config.interpreter.length > 1024))
-    || config.expectedVersion !== CODEX_ADAPTER_SYNTAX.observedVersion) failAgent('template-invalid');
+    || !CODEX_ADAPTER_SYNTAX.approvedVersions.includes(config.expectedVersion)) failAgent('template-invalid');
   const args = captureArgs(config.args);
   const environment = captureEnvironment(config.environment);
   const executable = config.executable;
@@ -133,7 +133,7 @@ export function createCodexPlanningClient(input) {
   const config = capture(input, PLANNING_CONFIG_KEYS, ['executable', 'expectedVersion', 'worktree']);
   if (typeof config.executable !== 'string' || !config.executable.startsWith('/') || config.executable.length > 1024
     || (config.interpreter !== undefined && (typeof config.interpreter !== 'string' || !config.interpreter.startsWith('/') || config.interpreter.length > 1024))
-    || config.expectedVersion !== CODEX_ADAPTER_SYNTAX.observedVersion
+    || !CODEX_ADAPTER_SYNTAX.approvedVersions.includes(config.expectedVersion)
     || typeof config.worktree !== 'string' || !config.worktree.startsWith('/') || config.worktree.length > 1024) {
     failAgent('template-invalid');
   }
