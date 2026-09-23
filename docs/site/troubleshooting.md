@@ -30,7 +30,7 @@ Run `rivet task status` inside the project, or `rivet work status <run-id> --pro
 
 ## A host action was interrupted or blocked
 
-If an older installed skill tries to create `.git/rivet-inputs/`, update it with `rivet setup --write` and reload the harness skill. Current commands support `--decomposition-json`, `--action-json`, and `--result-json`, avoiding temporary input files. If private Git state or isolated worktree operations are denied, request normal harness approval for the exact operation. If unavailable, use an approved interactive environment or terminal `rivet run`. Do not disable sandbox controls to force progress.
+If an older installed skill tries to create `.git/rivet-inputs/`, update it with `rivet setup --write` and reload the harness skill. Current commands support `--decomposition-json`, `--action-json`, and `--result-json`, avoiding temporary input files. If Rivet reports that it lacks filesystem permission, private Git state or isolated worktree access may be denied. Request normal harness approval for the exact command. If unavailable, use an approved interactive environment or terminal `rivet run`. Do not disable sandbox controls to force progress.
 
 For a pending action, get `runtime.version` from `work status`, then call `work next` with that version. `waiting-for-result` returns the same action. For a blocked submission, retain the `work submit` response and inspect blocked nodes in `work status`; create a new reviewed corrective proposal. `feature resume` is only for spawned runs and cannot resume host work.
 

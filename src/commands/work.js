@@ -94,6 +94,9 @@ async function invoke(target, method, input) {
   catch (error) {
     if (error instanceof CliError) throw error;
     const code = String(error?.code ?? '');
+    if (code === 'EPERM' || code === 'EACCES') {
+      throw new CliError('Rivet lacks filesystem permission for this host operation. Request approval for this exact command through your harness, including private Git state and isolated worktree access. If approval is unavailable, use an approved interactive session or the terminal workflow.', 'REPOSITORY_CONFLICT', { cause: error });
+    }
     const publicCode = code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED' ? 'FAILED_GATE'
       : code === 'ERR_HOST_EXECUTION_REPOSITORY' || code.startsWith('ERR_HOST_RUN_') || code.includes('STATE_CONFLICT') || code.includes('VERSION') || code.startsWith('ERR_GIT_')
       ? 'REPOSITORY_CONFLICT'

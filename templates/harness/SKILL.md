@@ -11,7 +11,39 @@ When a user asks to use Rivet on a task, accept the task in ordinary language. D
 
 Use `rivet --help` to see the installed commands. Review and commit setup files and required scripts before proposing work; the configured default branch must be clean. Before host-mode work, run `rivet preflight --project=<path> --mode=host`. Use `rivet doctor --project=<path>` for broader diagnostics, including configured providers; the default preflight remains for orchestration work. Use `rivet protocols find <query> --project=<path>` to discover active project procedures and load only relevant protocols with `rivet protocols show`.
 
-For host execution, inspect the request and repository, then serialize one strict `agilno.feature-decomposition` object. Run `rivet work propose` with `--decomposition-json=<serialized-json>` and a request source such as `--request-text=<text>`. No temporary input file is required. Present the returned plan for human activation; bind `rivet feature start` to its exact run version and proposal digest. Then call `rivet work prepare`, followed by `rivet work next`. Execute the returned `agilno.agent-launch` contract yourself in its exact worktree and scope. Keep the returned action unchanged, serialize it and the matching result-contract object, submit them with `rivet work submit --action-json=<serialized-action> --result-json=<serialized-result>`, and repeat `work next` until ready to run `rivet work verify`. Read `rivet work status` for the integration checkout, changed paths, worker claims, executed checks, and next action. Never treat verification as final approval.
+## Proposal input format
+
+For `--request-text`, turn the user's request into Markdown with a level-one title and a nonempty `## Acceptance Criteria` bullet list. Plain prose alone is not a valid work request. Preserve the user's scope; ask about missing requirements instead of inventing them. Example:
+
+```markdown
+# Add a greeting module
+
+## Acceptance Criteria
+- Export greet(name) from src/greeting.js, returning Hello, <name>!.
+- Add test/greeting.test.js using the Node built-in test runner.
+```
+
+For that request, `--decomposition-json` takes this shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "agilno.feature-decomposition",
+  "workItems": [
+    {
+      "objective": "Implement the greeting module and its test.",
+      "ownedPaths": ["src/greeting.js", "test/greeting.test.js"],
+      "acceptanceCriterionIndexes": [1, 2]
+    }
+  ]
+}
+```
+
+Use these exact field names. Adapt the content to the repository and requested task. Include 1–16 work items, each with an objective, the repository-relative paths it will change, and one-based acceptance-criterion indexes. Cover every request criterion at least once. Do not include read-only dependencies as owned paths, protected paths such as `.git`/`.rivet`, or extra fields for roles, commands, budgets, authority, or approval gates. Rivet derives those from project policy. Do not guess alternate schemas or probe proposal creation with dummy requests.
+
+## Host lifecycle
+
+For host execution, inspect the request and repository, then serialize one strict `agilno.feature-decomposition` object. Run `rivet work propose` with `--decomposition-json=<serialized-json>` and a request source such as `--request-text=<text>`. No temporary input file is required. File inputs, when explicitly chosen, require absolute project-contained paths; do not create untracked files on the clean source branch just to pass proposal inputs. Present the returned plan for human activation; bind `rivet feature start` to its exact run version and proposal digest. Then call `rivet work prepare`, followed by `rivet work next`. Execute the returned `agilno.agent-launch` contract yourself in its exact worktree and scope. Keep the returned action unchanged, serialize it and the matching result-contract object, submit them with `rivet work submit --action-json=<serialized-action> --result-json=<serialized-result>`, and repeat `work next` until ready to run `rivet work verify`. Read `rivet work status` for the integration checkout, changed paths, worker claims, executed checks, and next action. Never treat verification as final approval.
 
 An interrupted pending action is recovered by reading `work status` for the current runtime version and calling `work next` with that version; it returns the same action as `waiting-for-result`. `feature resume` is not a host-mode command. A blocked submission needs a new reviewed corrective proposal. A failed check leaves a report and nonzero result. When a clean active Worker checkout needs locked dependencies, ask the user to run `rivet task deps` and approve the exact frozen install before editing. For a failed verification check caused by missing dependencies, the same command prepares the clean accepted integration checkout; then retry verification at the unchanged commit. Source corrections require a new reviewed proposal. Rivet's sealed quality commands do not authorize package installation, and setup does not install dependencies.
 
@@ -30,3 +62,6 @@ Host compatibility depends on tools and permissions, not the session version. Th
 Pass each JSON flag as one argument using a shell-free argument array when available. If a shell is required, use proper shell quoting; JSON.stringify is not shell escaping. Never interpolate unquoted task text or JSON into shell commands. Inline inputs are limited to 64 KiB of UTF-8 each. For larger inputs, the existing --decomposition, --action, and --result file options accept bounded project-contained files up to 128 KiB; use an approved location that preserves the clean baseline. Select exactly one input form for each object. Never trim or rewrite a returned action to fit a size limit. Arguments may appear in command history or process listings; keep credentials out of these payloads.
 
 If Rivet needs permission to write its private Git state or create/access a reserved worktree, request approval for that exact operation through the harness. These CLI permissions are separate from human activation and final-delivery approval. If the environment cannot grant access, stop with the exact blocked operation and suggest an approved interactive session or the terminal flow. Direct JSON removes temporary input writes; it does not bypass sandbox restrictions.
+
+
+A harness tool may require interactive approval for a command even when Rivet preflight passes, including multiline arguments. If it denies the command for permission or safety review, stop and request normal approval for that exact operation. Do not try alternate encodings, quoting, temporary files, wrappers, or policy edits to get around that denial. If the session is noninteractive and cannot request approval, report the blocker and ask the user to continue in an interactive coding session. Do not invent a proposal ID or digest when proposal creation failed.
