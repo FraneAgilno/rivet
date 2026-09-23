@@ -79,7 +79,7 @@ test('task deps selects the run but refuses installation before an accepted chec
   }));
   assert.equal(result, EXIT_CODES.REPOSITORY_CONFLICT, messages.join('\n'));
   assert.equal(confirmations, 0);
-  assert.match(messages.join('\n'), /no clean accepted integration checkout/);
+  assert.match(messages.join('\n'), /no eligible isolated checkout/);
 });
 
 test('multiple or corrupt private runs cannot be silently inferred', async t => {

@@ -249,9 +249,11 @@ test('executes all Workers sequentially on an isolated integration branch and st
   t.after(() => rm(parentRoot, { recursive: true, force: true }));
   await cp(new URL('../fixtures/config/valid/.rivet/', import.meta.url), join(root, '.rivet'), { recursive: true });
   await writeFile(join(root, 'README.md'), '# Runtime fixture\n');
+  await writeFile(join(root, '.gitignore'), 'node_modules/\n');
   await writeFile(join(root, 'package.json'), JSON.stringify({
     scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
   }));
+  await writeFile(join(root, 'package-lock.json'), '{"lockfileVersion":3}\n');
   await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
   await execFile('git', ['-C', root, 'add', '.']);
   await execFile('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture']);
@@ -274,9 +276,10 @@ test('executes all Workers sequentially on an isolated integration branch and st
     },
   });
   const gateExecutable = join(dirname(root), 'bounded-gate');
-  await writeFile(gateExecutable, '#!/bin/sh\n[ "$RIVET_GATE_ENV" = present ]\n', { mode: 0o700 });
+  await writeFile(gateExecutable, '#!/bin/sh\nif [ "$1" = ci ]; then mkdir -p node_modules; printf ready > node_modules/installed; exit 0; fi\n[ "$RIVET_GATE_ENV" = present ]\n', { mode: 0o700 });
   await chmod(gateExecutable, 0o700);
   const launches = [];
+  let installsApproved = 0;
   const executor = createFeatureExecutor({
     gitClient,
     environment: { RIVET_GATE_ENV: 'present', PATH: '/bin' },
@@ -291,6 +294,7 @@ test('executes all Workers sequentially on an isolated integration branch and st
       return Object.freeze({
         provider: kind,
         async launch(contract) {
+          assert.equal(await readFile(join(contract.worktree.path, 'node_modules/installed'), 'utf8'), 'ready');
           launches.push({
             nodeId: contract.nodeId,
             branchBase: (await gitClient.inspectRepository(contract.worktree.path)).headSha,
@@ -311,8 +315,20 @@ test('executes all Workers sequentially on an isolated integration branch and st
     },
   });
 
-  const result = await executor({ project: root, run });
+  const deferred = await executor({ project: root, run }, { confirmDependencyInstall: async () => false });
+  assert.equal(deferred.status, 'blocked');
+  assert.equal(launches.length, 0);
+
+  const result = await executor({ project: root, run }, {
+    confirmDependencyInstall: async plan => {
+      assert.deepEqual(plan.args, ['ci']);
+      assert.match(plan.worktreePath, /workers\//);
+      installsApproved += 1;
+      return true;
+    },
+  });
   assert.equal(result.status, 'awaiting-final-approval', JSON.stringify({ result, launches }));
+  assert.equal(installsApproved, launches.length);
   const featurePaths = await resolveFeatureRunPaths(root, run.runId);
   const accepted = await createAcceptedIntegrationStore(await acceptedIntegrationPaths(featurePaths)).readOnly();
   const verification = await createVerificationReportStore(await verificationReportPaths(featurePaths)).readOnly();

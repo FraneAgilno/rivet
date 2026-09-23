@@ -26,9 +26,11 @@ Run `rivet preflight --project=<path> --mode=host --json` for the host workflow.
 
 ## Verification fails after the Worker submitted
 
-Run `rivet task status` inside the project, or `rivet work status <run-id> --project=<path> --json` for the full report. Its `verification` report identifies the tested commit, isolated integration checkout, changed paths, and executed checks. A failed `work verify` exits nonzero and keeps the run before final approval. For missing locked dependencies in the accepted integration checkout, run `rivet task deps`; review and approve its exact package-manager command, then retry verification of the unchanged commit. The command requires one matching lockfile, a clean accepted checkout, and an interactive terminal. Other environment issues still need repair. A source correction requires a new reviewed proposal. Rivet does not install dependencies through its quality commands.
+Run `rivet task status` inside the project, or `rivet work status <run-id> --project=<path> --json` for the full report. Its `verification` report identifies the tested commit, isolated integration checkout, changed paths, and executed checks. A failed `work verify` exits nonzero and keeps the run before final approval. For missing locked dependencies in the clean accepted integration checkout, run `rivet task deps`; review and approve its exact package-manager command, then retry verification of the unchanged commit. The same command prepares a clean active host Worker before editing. It requires one matching lockfile and an interactive terminal. Other environment issues still need repair. A source correction requires a new reviewed proposal. Rivet does not install dependencies through its quality commands.
 
 ## A host action was interrupted or blocked
+
+If the harness cannot create `.git/rivet-inputs/`, its sandbox is protecting Git metadata. The current host skill needs that private input location, so the host proposal cannot proceed under that sandbox. Use the terminal `rivet run` flow for this alpha while Rivet adds a project-writable ignored input location.
 
 For a pending action, get `runtime.version` from `work status`, then call `work next` with that version. `waiting-for-result` returns the same action. For a blocked submission, retain the `work submit` response and inspect blocked nodes in `work status`; create a new reviewed corrective proposal. `feature resume` is only for spawned runs and cannot resume host work.
 

@@ -88,6 +88,17 @@ function executionSignal(options) {
   return options.signal;
 }
 
+function workerExecutionOptions(options) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)
+    || Reflect.ownKeys(options).some(key => !['signal', 'confirmDependencyInstall'].includes(key))
+    || (options.signal !== undefined && !(options.signal instanceof AbortSignal))
+    || (options.confirmDependencyInstall !== undefined && typeof options.confirmDependencyInstall !== 'function')) fail('invalid-input');
+  return Object.freeze({
+    signal: options.signal,
+    ...(options.confirmDependencyInstall ? { confirmDependencyInstall: options.confirmDependencyInstall } : {}),
+  });
+}
+
 function sourcePath(project, value) {
   const request = absolute(value);
   const path = relative(project, request);
@@ -281,7 +292,8 @@ export function createFeatureWorkflow(input) {
   }
 
   async function resume(raw, options = {}) {
-    const signal = executionSignal(options);
+    const execution = workerExecutionOptions(options);
+    const signal = execution.signal;
     const request = capture(raw, new Set(['project', 'runId', 'expectedVersion']));
     const { store, record } = await readRun(request.project, request.runId);
     if (record.featurePlan.client === 'host') fail('host-use-work');
@@ -294,7 +306,7 @@ export function createFeatureWorkflow(input) {
     let result;
     try {
       result = executionResult(await executeFeature(
-        immutableJson({ project: absolute(request.project), run: running }), { signal },
+        immutableJson({ project: absolute(request.project), run: running }), execution,
       ));
     } catch (error) {
       try {

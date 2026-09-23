@@ -139,15 +139,17 @@ test('runs equivalent Markdown/Jira/Linear requests through one resumable local-
   const remoteBefore = await git(target.root, 'ls-remote', '--refs', 'origin');
   let executionAttempt = 0;
   let integrationWorktree;
+  const confirmDependencyInstall = async () => true;
 
   const workflow = createFeatureWorkflow({
     gitClient,
     now: () => NOW,
     planningClientFor: async () => ({ async propose(contract) { return proposal(contract); } }),
     trackerAdapterFor: async ({ provider }) => adapters[provider],
-    async executeFeature({ project, run }) {
+    async executeFeature({ project, run }, options) {
       executionAttempt += 1;
       if (executionAttempt === 1) {
+        assert.equal(options.confirmDependencyInstall, confirmDependencyInstall);
         return {
           status: 'blocked', summary: 'Worker interruption recorded; resume is safe.',
           runtimeRefs: ['worker:interrupted'], evidenceRefs: ['report:interrupted'],
@@ -199,7 +201,7 @@ test('runs equivalent Markdown/Jira/Linear requests through one resumable local-
   const approved = await workflow.start({
     project: target.root, runId: markdown.runId, expectedVersion: markdown.version, proposalDigest: markdown.proposalDigest,
   });
-  const interrupted = await workflow.resume({ project: target.root, runId: markdown.runId, expectedVersion: approved.version });
+  const interrupted = await workflow.resume({ project: target.root, runId: markdown.runId, expectedVersion: approved.version }, { confirmDependencyInstall });
   assert.equal(interrupted.status, 'blocked');
   const observed = await workflow.status({ project: target.root, runId: markdown.runId });
   assert.equal(observed.version, interrupted.version);

@@ -4,11 +4,12 @@ import { CLAUDE_ADAPTER_SYNTAX } from '../clients/claude.js';
 import { CODEX_ADAPTER_SYNTAX } from '../clients/codex.js';
 import { CliError, EXIT_CODES, observeOutputErrors } from '../cli/output.js';
 import { invokeFeature } from './feature.js';
+import { confirmIsolatedDependencyInstall } from './dependency-approval.js';
 
 const KINDS = new Set(['claude', 'codex']);
 const SUPPORTED = Object.freeze({
-  claude: CLAUDE_ADAPTER_SYNTAX.observedVersion,
-  codex: CODEX_ADAPTER_SYNTAX.observedVersion,
+  claude: CLAUDE_ADAPTER_SYNTAX.approvedVersions.join(', '),
+  codex: CODEX_ADAPTER_SYNTAX.approvedVersions.join(', '),
 });
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
@@ -166,7 +167,7 @@ async function runInteractive(parsed, dependencies, signal) {
   });
   const result = await invokeFeature(feature, 'watch', {
     project: project.root, runId: proposal.runId, expectedVersion: started.version,
-  }, { signal });
+  }, { signal, confirmDependencyInstall: confirmIsolatedDependencyInstall(dependencies, signal) });
   dependencies.output.log(`Rivet task: ${visible(result.status)}.`);
   if (result.summary) dependencies.output.log(visible(result.summary));
   dependencies.output.log('Use rivet task status to inspect the checkout and verification evidence.');

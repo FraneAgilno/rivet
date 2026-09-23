@@ -103,7 +103,7 @@ export async function discoverHarnesses({ env, projectRoot, runner, signal }) {
         if (probe.code !== 0 || probe.timedOut || probe.truncated?.stdout || probe.truncated?.stderr) continue;
         observed = String(probe.stdout || probe.stderr || '').trim();
       } catch { continue; }
-      if (observed === syntax.observedVersion) {
+      if (syntax.approvedVersions.includes(observed)) {
         selected = Object.freeze({ kind, executable, ...(interpreter ? { interpreter } : {}), version: observed });
         break;
       }

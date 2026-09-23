@@ -9,7 +9,8 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Setup preview/apply with bounded root and immediate-child package discovery, ordered multi-step quality commands, honest unresolved warnings, and byte-preserving existing configuration.
 - Active-harness `work` commands for harness-supplied planning, isolated Worker execution, bounded integration, and verification without launching a second model process.
 - Interactive `rivet run "task"` from a configured project root or nested folder, with automatic project discovery, a reviewed approval gate, and compatible installed Claude/Codex execution.
-- `rivet task status`, `rivet task resume`, and `rivet task deps` select a unique active run without asking for its ID. Dependency recovery prepares the clean accepted integration checkout from a matching lockfile after separate interactive approval.
+- `rivet task status`, `rivet task resume`, and `rivet task deps` select a unique active run without asking for its ID. Dependency setup prepares a clean active host Worker or accepted integration checkout after separate interactive approval. Spawned Workers ask before installing locked dependencies in their isolated checkout.
+- Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
 - Extensible model registry and local profile validation.
 - Imported workflow, worktree, evidence, provider, and quality modules.
@@ -19,8 +20,8 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 ## Still required
 
 - License selection and final package namespace.
-- Versioned package distribution, discovery beyond bounded immediate child packages, and dependency bootstrap before Worker execution in isolated worktrees.
-- Live Claude/Codex first-task demonstrations and qualification of current installed CLI versions; the direct adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`.
+- Versioned package distribution and discovery beyond bounded immediate child packages.
+- Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Default noninteractive sessions blocked writes to the skill's `.git/rivet-inputs/` path before `work propose`; that input workflow needs a sandbox-compatible location. The direct adapters support Claude Code `2.1.207`/`2.1.274` and Codex CLI `0.148.0-alpha.9`/`0.155.0-alpha.16`; the two current versions have local terminal trials on macOS.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Shared Obsidian memory.
 - MCP capability registry and live provider qualification.

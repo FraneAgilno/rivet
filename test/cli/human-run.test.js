@@ -51,10 +51,20 @@ function services(root, { selected = ['codex'], approve = true, status = 'awaiti
         if (approve === 'eof') throw new Error('input closed');
         return approve;
       },
+      confirmDependencyInstall: async () => true,
       feature: {
         async propose(input) { calls.push(['propose', input]); return proposal; },
         async start(input) { calls.push(['start', input]); return { version: 4 }; },
-        async watch(input) { calls.push(['watch', input]); return { status, summary: 'Checks completed.' }; },
+        async watch(input, options) {
+          calls.push(['watch', input]);
+          if (options?.confirmDependencyInstall) {
+            const approved = await options.confirmDependencyInstall({
+              executable: '/opt/npm', args: ['ci'], worktreePath: '/tmp/rivet-worker',
+            });
+            calls.push(['dependency approval', approved]);
+          }
+          return { status, summary: 'Checks completed.' };
+        },
         async status() { throw new Error('unexpected status'); },
       },
     },
@@ -72,6 +82,8 @@ test('one terminal command from a nested project folder keeps IDs and revisions 
   assert.deepEqual(s.calls[2][1], {
     project: root, runId: 'user-request-abc123', expectedVersion: 3, proposalDigest: 'a'.repeat(64),
   });
+  assert.deepEqual(s.calls[4], ['dependency approval', true]);
+  assert.match(s.messages.join('\n'), /Install locked dependencies in \/tmp\/rivet-worker/);
   const shown = s.messages.join('\n');
   assert.match(shown, /Project: .*rivet-human-run-/);
   assert.match(shown, /path: src\/greeting\.js/);
@@ -145,6 +157,7 @@ test('incompatible installed harness explains the validated versions without pla
   assert.equal(await main(['run', 'Add a greeting module'], s.overrides), EXIT_CODES.PROVIDER_UNAVAILABLE);
   assert.equal(s.calls.length, 0);
   assert.match(s.messages.join('\n'), /codex-cli 0\.148\.0-alpha\.9/);
+  assert.match(s.messages.join('\n'), /codex-cli 0\.155\.0-alpha\.16/);
   assert.match(s.messages.join('\n'), /Rivet skill in your coding harness/);
 });
 

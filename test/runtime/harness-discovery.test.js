@@ -32,6 +32,25 @@ test('discovers only a version-compatible installed adapter outside the project'
   assert.deepEqual(called.map(item => item[0]), [await realpath(process.execPath)]);
 });
 
+test('discovers the newly qualified Claude and Codex versions while retaining older versions', async t => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-harness-versions-')));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const claude = join(parent, 'claude');
+  const codex = join(parent, 'codex');
+  await writeFile(claude, '#!/usr/bin/env node\n');
+  await writeFile(codex, '#!/usr/bin/env node\n');
+  await chmod(claude, 0o700);
+  await chmod(codex, 0o700);
+  const versions = new Map([[claude, '2.1.274 (Claude Code)'], [codex, 'codex-cli 0.155.0-alpha.16']]);
+  const detected = await discoverHarnesses({
+    env: { PATH: parent, RIVET_CLAUDE_INTERPRETER: await realpath(process.execPath), RIVET_CODEX_INTERPRETER: await realpath(process.execPath) },
+    projectRoot: '/private/tmp/project',
+    runner: async (_command, args) => ({ code: 0, stdout: `${versions.get(args[0])}\n`, truncated: {} }),
+  });
+  assert.equal(detected.find(item => item.kind === 'claude').version, '2.1.274 (Claude Code)');
+  assert.equal(detected.find(item => item.kind === 'codex').version, 'codex-cli 0.155.0-alpha.16');
+});
+
 test('wrong version is ineligible and an explicit missing interpreter is reported', async t => {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-harness-discovery-')));
   t.after(() => rm(parent, { recursive: true, force: true }));
