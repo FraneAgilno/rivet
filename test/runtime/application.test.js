@@ -100,7 +100,7 @@ test('pins a selected newly qualified harness version for Worker launch', async 
   const interpreter = await realpath('/bin/sh');
   const executable = join(parent, 'codex');
   const result = JSON.stringify({ version: 1, status: 'success', output: { summary: 'done', evidence: ['tests'] }, usage: { tokens: 1, costUsd: 0 } });
-  await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' 'codex-cli 0.155.0-alpha.16'; else while IFS= read -r line; do :; done; printf '%s\\n' '${result}'; fi\n`, { mode: 0o700 });
+  await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' 'codex-cli 0.155.0-alpha.16'; elif [ "$2" = "--help" ]; then printf '%s\\n' '--ephemeral' '--ignore-user-config' '--color' '--sandbox'; else while IFS= read -r line; do :; done; printf '%s\\n' '${result}'; fi\n`, { mode: 0o700 });
   const application = createRivetApplication({
     cwd: () => root,
     env: { RIVET_CODEX_EXECUTABLE: executable, RIVET_CODEX_INTERPRETER: interpreter, PATH: '/usr/bin:/bin' },

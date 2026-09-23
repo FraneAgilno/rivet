@@ -161,10 +161,10 @@ test('validates adapter templates and reports unavailable providers without live
   assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.args, ['--print', '--input-format', 'text', '--output-format', 'json', '--no-session-persistence', '{stdin}']);
   assert.equal(CLAUDE_ADAPTER_SYNTAX.outputMode, 'json-structured-output-envelope-v1');
   assert.equal(CLAUDE_ADAPTER_SYNTAX.observedVersion, '2.1.207 (Claude Code)');
-  assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.approvedVersions, ['2.1.207 (Claude Code)', '2.1.274 (Claude Code)']);
+  assert.deepEqual(CLAUDE_ADAPTER_SYNTAX.testedVersions, ['2.1.207 (Claude Code)', '2.1.274 (Claude Code)']);
   assert.deepEqual(CODEX_ADAPTER_SYNTAX.args, ['exec', '--ephemeral', '--ignore-user-config', '--color', 'never', '{stdin}']);
   assert.equal(CODEX_ADAPTER_SYNTAX.observedVersion, 'codex-cli 0.148.0-alpha.9');
-  assert.deepEqual(CODEX_ADAPTER_SYNTAX.approvedVersions, ['codex-cli 0.148.0-alpha.9', 'codex-cli 0.155.0-alpha.16']);
+  assert.deepEqual(CODEX_ADAPTER_SYNTAX.testedVersions, ['codex-cli 0.148.0-alpha.9', 'codex-cli 0.155.0-alpha.16']);
   assert.doesNotThrow(() => createClaudeClient({ executable: '/missing/claude', expectedVersion: '2.1.274 (Claude Code)', args: CLAUDE_ADAPTER_SYNTAX.args }));
   assert.doesNotThrow(() => createCodexClient({ executable: '/missing/codex', expectedVersion: 'codex-cli 0.155.0-alpha.16', args: CODEX_ADAPTER_SYNTAX.args }));
   for (const [createClient, syntax] of [[createClaudeClient, CLAUDE_ADAPTER_SYNTAX], [createCodexClient, CODEX_ADAPTER_SYNTAX]]) {
@@ -176,7 +176,7 @@ test('validates adapter templates and reports unavailable providers without live
   }
 });
 
-test('launches provider-specific, version-pinned argv through stdin using faithful fake executables', async t => {
+test('launches provider-specific, capability-checked argv on unfamiliar versions through stdin using faithful fake executables', async t => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'provider-adapter-')));
   const worktree = join(root, 'worktree');
   await mkdir(worktree);
@@ -192,18 +192,25 @@ test('launches provider-specific, version-pinned argv through stdin using faithf
     [createCodexClient, CODEX_ADAPTER_SYNTAX, '[ "$#" -eq 5 ] && [ "$1" = "exec" ] && [ "$2" = "--ephemeral" ] && [ "$3" = "--ignore-user-config" ] && [ "$4" = "--color" ] && [ "$5" = "never" ]'],
   ];
   for (const [createClient, syntax, argvCheck] of cases) {
+    const version = syntax.provider === 'claude' ? '99.0.0 (Claude Code)' : 'codex-cli 99.0.0';
     const executable = join(root, `fake-${syntax.provider}`);
     const providerResult = syntax.provider === 'claude' ? claudeResult : result;
-    await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${syntax.observedVersion}'; exit 0; fi\n${argvCheck} || exit 41\npayload=$(cat)\ncase "$payload" in *'"kind":"agilno.agent-launch"'*) ;; *) exit 42 ;; esac\nprintf '%s\\n' '${providerResult}'\n`, { mode: 0o700 });
+    await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nif [ "$1" = "--help" ] || [ "$2" = "--help" ]; then printf '%s\\n' '${syntax.requiredOptions.join('\n')}'; exit 0; fi\n${argvCheck} || exit 41\npayload=$(cat)\ncase "$payload" in *'"kind":"agilno.agent-launch"'*) ;; *) exit 42 ;; esac\nprintf '%s\\n' '${providerResult}'\n`, { mode: 0o700 });
     await chmod(executable, 0o700);
-    const client = createClient({ executable, interpreter, expectedVersion: syntax.observedVersion, args: syntax.args, timeoutMs: 1000 });
+    const client = createClient({ executable, interpreter, expectedVersion: version, args: syntax.args, timeoutMs: 1000 });
     assert.equal((await client.launch(launch)).status, 'success');
+    const automatic = createClient({ executable, interpreter, args: syntax.args, timeoutMs: 1000 });
+    assert.equal((await automatic.launch(launch)).status, 'success');
+    const incompatible = join(root, 'missing-help-' + syntax.provider);
+    await writeFile(incompatible, '#!' + interpreter + '\nif [ "$1" = "--version" ]; then printf "%s\\n" "' + version + '"; else printf "%s\\n" "no required options"; fi\n', { mode: 0o700 });
+    await assert.rejects(() => createClient({ executable: incompatible, interpreter, args: syntax.args, timeoutMs: 1000 }).launch(launch),
+      error => error.code === 'ERR_AGENT_PROVIDER_UNAVAILABLE');
     const driftVersion = syntax.provider === 'claude' ? '9.9.9 (Claude Code)' : 'codex-cli 9.9.9';
-    assert.throws(() => createClient({ executable, interpreter, expectedVersion: driftVersion, args: syntax.args, timeoutMs: 1000 }), error => error.code === 'ERR_AGENT_TEMPLATE_INVALID');
+    assert.doesNotThrow(() => createClient({ executable, interpreter, expectedVersion: driftVersion, args: syntax.args, timeoutMs: 1000 }));
     const driftExecutable = join(root, `drift-${syntax.provider}`);
     await writeFile(driftExecutable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${driftVersion}'; exit 0; fi\nexit 43\n`, { mode: 0o700 });
     await chmod(driftExecutable, 0o700);
-    const drifted = createClient({ executable: driftExecutable, interpreter, expectedVersion: syntax.observedVersion, args: syntax.args, timeoutMs: 1000 });
+    const drifted = createClient({ executable: driftExecutable, interpreter, expectedVersion: version, args: syntax.args, timeoutMs: 1000 });
     await assert.rejects(() => drifted.launch(launch), error => error.code === 'ERR_AGENT_PROVIDER_UNAVAILABLE');
   }
 });
@@ -241,7 +248,7 @@ test('plans through provider-specific read-only modes using the same pinned exec
     const providerPlan = syntax.provider === 'claude'
       ? JSON.stringify({ type: 'result', subtype: 'success', structured_output: JSON.parse(plan) })
       : plan;
-    await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${syntax.observedVersion}'; exit 0; fi\n${argvCheck} || exit 41\npayload=$(cat)\ncase "$payload" in *'"kind":"agilno.feature-planning"'*) ;; *) exit 42 ;; esac\nprintf '%s\\n' '${providerPlan}'\n`, { mode: 0o700 });
+    await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${syntax.observedVersion}'; exit 0; fi\nif [ "$1" = "--help" ] || [ "$2" = "--help" ]; then printf '%s\\n' '${syntax.requiredOptions.join('\n')}'; exit 0; fi\n${argvCheck} || exit 41\npayload=$(cat)\ncase "$payload" in *'"kind":"agilno.feature-planning"'*) ;; *) exit 42 ;; esac\nprintf '%s\\n' '${providerPlan}'\n`, { mode: 0o700 });
     await chmod(executable, 0o700);
     const client = createPlanningClient({
       executable,
@@ -275,7 +282,7 @@ test('runs a pinned npm-style env node entrypoint through the configured native 
     structured_output: { version: 1, status: 'success', output: { summary: 'node entrypoint', evidence: ['tests'] }, usage: { tokens: 1, costUsd: 0 } },
   });
   const resultSchema = JSON.stringify(agentResultContract(validLaunch().evidence).schema);
-  const source = `#!/usr/bin/env node\nconst chunks = [];\nif (process.argv[2] === '--version') { process.stdout.write('2.1.207 (Claude Code)\\n'); } else {\n  const expected = ${JSON.stringify([...CLAUDE_ADAPTER_SYNTAX.args.slice(0, -1), '--json-schema', '__RESULT_SCHEMA__', '--max-budget-usd', '2'])};\n  expected[expected.indexOf('__RESULT_SCHEMA__')] = ${JSON.stringify(resultSchema)};\n  if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(41);\n  process.stdin.on('data', chunk => chunks.push(chunk));\n  process.stdin.on('end', () => {\n    const payload = Buffer.concat(chunks).toString('utf8');\n    if (!payload.includes('\\"kind\\":\\"agilno.agent-launch\\"')) process.exit(42);\n    process.stdout.write(${JSON.stringify(`${result}\n`)});\n  });\n}\n`;
+  const source = `#!/usr/bin/env node\nconst chunks = [];\nif (process.argv[2] === '--version') { process.stdout.write('2.1.207 (Claude Code)\\n'); } else if (process.argv[2] === '--help') { process.stdout.write(${JSON.stringify(CLAUDE_ADAPTER_SYNTAX.requiredOptions.join('\n'))}); } else {\n  const expected = ${JSON.stringify([...CLAUDE_ADAPTER_SYNTAX.args.slice(0, -1), '--json-schema', '__RESULT_SCHEMA__', '--max-budget-usd', '2'])};\n  expected[expected.indexOf('__RESULT_SCHEMA__')] = ${JSON.stringify(resultSchema)};\n  if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(41);\n  process.stdin.on('data', chunk => chunks.push(chunk));\n  process.stdin.on('end', () => {\n    const payload = Buffer.concat(chunks).toString('utf8');\n    if (!payload.includes('\\"kind\\":\\"agilno.agent-launch\\"')) process.exit(42);\n    process.stdout.write(${JSON.stringify(`${result}\n`)});\n  });\n}\n`;
   await writeFile(executable, source, { mode: 0o700 });
   await chmod(executable, 0o700);
   const metadata = await lstat(worktree, { bigint: true });
@@ -297,7 +304,7 @@ test('uses the bounded Sonnet execution profile while preserving only non-secret
     output: { summary: 'user identity preserved', evidence: ['environment-sanitized'] },
     usage: { tokens: 1, costUsd: 0 },
   });
-  await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${CLAUDE_ADAPTER_SYNTAX.observedVersion}'; exit 0; fi\n[ "$#" -eq 16 ] || exit 40\n[ "$7" = "--model" ] && [ "$8" = "sonnet" ] || exit 41\n[ "$9" = "--effort" ] && [ "\${10}" = "low" ] || exit 42\n[ "\${11}" = "--permission-mode" ] && [ "\${12}" = "acceptEdits" ] || exit 43\n[ "\${13}" = "--json-schema" ] && case "\${14}" in *agilno.agent-result*) true ;; *) false ;; esac || exit 43\n[ "\${15}" = "--max-budget-usd" ] && [ "\${16}" = "0.75" ] || exit 44\ncase " $* " in *" --fallback-model "*) exit 45 ;; esac\ncat >/dev/null\n[ "$USER" = "fixture-user" ] || exit 46\n[ -z "$ANTHROPIC_API_KEY" ] || exit 47\nprintf '%s\\n' '${result}'\n`, { mode: 0o700 });
+  await writeFile(executable, `#!${interpreter}\nif [ "$1" = "--version" ]; then printf '%s\\n' '${CLAUDE_ADAPTER_SYNTAX.observedVersion}'; exit 0; fi\nif [ "$1" = "--help" ] || [ "$2" = "--help" ]; then printf '%s\\n' '${CLAUDE_ADAPTER_SYNTAX.requiredOptions.join('\n')}'; exit 0; fi\n[ "$#" -eq 16 ] || exit 40\n[ "$7" = "--model" ] && [ "$8" = "sonnet" ] || exit 41\n[ "$9" = "--effort" ] && [ "\${10}" = "low" ] || exit 42\n[ "\${11}" = "--permission-mode" ] && [ "\${12}" = "acceptEdits" ] || exit 43\n[ "\${13}" = "--json-schema" ] && case "\${14}" in *agilno.agent-result*) true ;; *) false ;; esac || exit 43\n[ "\${15}" = "--max-budget-usd" ] && [ "\${16}" = "0.75" ] || exit 44\ncase " $* " in *" --fallback-model "*) exit 45 ;; esac\ncat >/dev/null\n[ "$USER" = "fixture-user" ] || exit 46\n[ -z "$ANTHROPIC_API_KEY" ] || exit 47\nprintf '%s\\n' '${result}'\n`, { mode: 0o700 });
   await chmod(executable, 0o700);
   const metadata = await lstat(worktree, { bigint: true });
   const launch = validLaunch({

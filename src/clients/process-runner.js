@@ -328,6 +328,20 @@ function killTree(child, signal) {
   } catch {}
 }
 
+// Sending SIGKILL is asynchronous: the direct child may close before its
+// detached descendants finish exiting. Keep cleanup alive until the group is
+// gone, or the bounded grace expires (a reparented zombie can retain the PGID).
+async function settleTermination(child, graceMs) {
+  if (!child?.pid) return;
+  killTree(child, 'SIGKILL');
+  const deadline = performance.now() + graceMs;
+  while (performance.now() < deadline) {
+    try { process.kill(-child.pid, 0); }
+    catch (error) { if (error.code === 'ESRCH') return; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
 export async function createProcessRunner(input) {
   assertSupportedClientPlatform();
   const config = capture(input, CONFIG_KEYS, ['executable', 'worktree'], 'invalid-contract');
@@ -365,7 +379,7 @@ export async function createProcessRunner(input) {
   } finally { removeConstructionListener(); }
   const executionEnvironment = environment(config.environment);
 
-  async function probeVersion() {
+  async function probe(args, help = false) {
     let cancelled = signalAborted(boundSignal);
     if (cancelled) failAgent('aborted');
     let terminateChild;
@@ -379,10 +393,11 @@ export async function createProcessRunner(input) {
       guard();
       const currentTarget = await inspectLaunchTarget(executable, interpreter, launchTarget, guard);
       guard();
-      const command = invocation(currentTarget, ['--version']);
+      const command = invocation(currentTarget, args);
       return await new Promise((resolvePromise, rejectPromise) => {
         let child;
         let classification;
+        let cleanupDeadline;
         let settled = false;
         let timer;
         let killTimer;
@@ -393,11 +408,14 @@ export async function createProcessRunner(input) {
           if (settled) return;
           settled = true;
           clearTimeout(timer); clearTimeout(killTimer); clearTimeout(hardTimer);
-          if (error) rejectPromise(error); else resolvePromise(value);
+          if (error && classification && child) {
+            settleTermination(child, Math.max(0, cleanupDeadline - performance.now())).then(() => rejectPromise(error), () => rejectPromise(error));
+          } else if (error) rejectPromise(error); else resolvePromise(value);
         };
         terminateChild = reason => {
           if (classification || !child) return;
           classification = reason;
+          cleanupDeadline = performance.now() + termGraceMs + killGraceMs;
           killTree(child, 'SIGTERM');
           killTimer = setTimeout(() => killTree(child, 'SIGKILL'), termGraceMs);
           killTimer.unref?.();
@@ -418,7 +436,7 @@ export async function createProcessRunner(input) {
         const collect = (chunk, keep) => {
           if (classification) return;
           const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          const available = Math.max(0, 4096 - bytes);
+          const available = Math.max(0, (help ? 65536 : 4096) - bytes);
           if (keep && available > 0) chunks.push(buffer.subarray(0, available));
           bytes += Math.min(buffer.byteLength, available);
           if (buffer.byteLength > available) terminateChild('provider-unavailable');
@@ -440,7 +458,7 @@ export async function createProcessRunner(input) {
           if (code !== 0) { finish(new AgentContractError('provider-unavailable')); return; }
           try {
             const value = strictDecode(Buffer.concat(chunks)).trim();
-            if (!value || value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)) failAgent('provider-unavailable');
+            if (!value || (!help && (value.length > 200 || /[\u0000-\u001f\u007f]/.test(value)))) failAgent('provider-unavailable');
             finish(null, value);
           } catch { finish(new AgentContractError('provider-unavailable')); }
         });
@@ -489,6 +507,7 @@ export async function createProcessRunner(input) {
         const stdout = [];
         let totalBytes = 0;
         let classification;
+        let cleanupDeadline;
         let settled = false;
         let runtimeTimer;
         let launchTimer;
@@ -498,11 +517,14 @@ export async function createProcessRunner(input) {
           if (settled) return;
           settled = true;
           clearTimeout(runtimeTimer); clearTimeout(launchTimer); clearTimeout(termTimer); clearTimeout(hardTimer);
-          if (error) rejectPromise(error); else resolvePromise(value);
+          if (error && classification && child) {
+            settleTermination(child, Math.max(0, cleanupDeadline - performance.now())).then(() => rejectPromise(error), () => rejectPromise(error));
+          } else if (error) rejectPromise(error); else resolvePromise(value);
         };
         terminateChild = reason => {
           if (classification || !child) return;
           classification = reason;
+          cleanupDeadline = performance.now() + termGraceMs + killGraceMs;
           killTree(child, 'SIGTERM');
           termTimer = setTimeout(() => killTree(child, 'SIGKILL'), termGraceMs);
           termTimer.unref?.();
@@ -574,5 +596,12 @@ export async function createProcessRunner(input) {
   async function run(inputRequest) { return execute(inputRequest, 'launch'); }
   async function runPlanning(inputRequest) { return execute(inputRequest, 'planning'); }
 
-  return Object.freeze({ probeVersion, run, runPlanning });
+  return Object.freeze({
+    probeVersion: () => probe(['--version']),
+    probeHelp: provider => {
+      if (!['claude', 'codex'].includes(provider)) failAgent('invalid-contract');
+      return probe(provider === 'codex' ? ['exec', '--help'] : ['--help'], true);
+    },
+    run, runPlanning,
+  });
 }

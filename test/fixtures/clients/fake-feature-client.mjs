@@ -14,6 +14,14 @@ if (process.argv[2] === '--version') {
   process.exit(0);
 }
 
+if (process.argv.includes('--help')) {
+  const options = provider === 'codex'
+    ? ['--ephemeral', '--ignore-user-config', '--color', '--sandbox']
+    : ['--print', '--input-format', '--output-format', '--no-session-persistence', '--model', '--effort', '--permission-mode', '--tools', '--json-schema', '--max-budget-usd'];
+  process.stdout.write(options.join('\n'));
+  process.exit(0);
+}
+
 const args = process.argv.slice(2);
 const mode = provider === 'codex'
   ? args[args.indexOf('--sandbox') + 1]

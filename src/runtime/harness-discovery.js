@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { access, open, realpath, stat } from 'node:fs/promises';
 import { basename, delimiter, isAbsolute, join, relative } from 'node:path';
 
+import { missingCapabilities, validVersion } from '../clients/compatibility.js';
 import { CLAUDE_ADAPTER_SYNTAX } from '../clients/claude.js';
 import { CODEX_ADAPTER_SYNTAX } from '../clients/codex.js';
 import { createProcessRunner } from '../clients/process-runner.js';
@@ -75,38 +76,39 @@ export async function discoverHarnesses({ env, projectRoot, runner, signal }) {
   for (const [kind, syntax] of Object.entries(ADAPTERS)) {
     const paths = await candidates(kind, env, projectRoot);
     let selected = null;
-    let reason = paths.length === 0 ? 'not-installed' : 'version-incompatible';
+    let reason = paths.length === 0 ? 'not-installed' : 'capability-probe-failed';
     for (const executable of paths) {
       const interpreterName = env[`RIVET_${kind.toUpperCase()}_INTERPRETER`];
       const interpreter = interpreterName === undefined ? null : await usable(interpreterName, projectRoot);
       if (interpreterName !== undefined && interpreter === null) { reason = 'interpreter-unavailable'; continue; }
       const form = await launchForm(executable, interpreter);
       if (form !== 'eligible') { reason = form; continue; }
-      let observed;
       try {
-        const probe = runner ? await runner(
-          interpreter ?? executable,
-          interpreter ? [executable, ...syntax.versionArgs] : [...syntax.versionArgs],
-          { cwd: projectRoot, shell: false, timeoutMs: 3_000, maxOutputBytes: 4 * 1024, signal },
-        ) : {
-          code: 0,
-          stdout: await (await createProcessRunner({
-            executable, ...(interpreter ? { interpreter } : {}), worktree: projectRoot,
-            environment: Object.fromEntries(
-              ['PATH', 'LANG', 'LC_ALL', 'TZ', 'TERM', 'TMPDIR', 'HOME', 'USER', 'LOGNAME', 'SHELL']
-                .filter(key => env[key] !== undefined).map(key => [key, env[key]]),
-            ),
-            timeoutMs: 3_000, launchTimeoutMs: 3_000, maxOutputBytes: 4 * 1024, signal,
-          })).probeVersion(),
-          truncated: {},
+        const processRunner = runner ? null : await createProcessRunner({
+          executable, ...(interpreter ? { interpreter } : {}), worktree: projectRoot,
+          environment: Object.fromEntries(
+            ['PATH', 'LANG', 'LC_ALL', 'TZ', 'TERM', 'TMPDIR', 'HOME', 'USER', 'LOGNAME', 'SHELL']
+              .filter(key => env[key] !== undefined).map(key => [key, env[key]]),
+          ),
+          timeoutMs: 3_000, launchTimeoutMs: 3_000, maxOutputBytes: 64 * 1024, signal,
+        });
+        const probe = async (args, help = false) => {
+          if (!runner) return help ? processRunner.probeHelp(kind) : processRunner.probeVersion();
+          const output = await runner(interpreter ?? executable, interpreter ? [executable, ...args] : args,
+            { cwd: projectRoot, shell: false, timeoutMs: 3_000, maxOutputBytes: help ? 65536 : 4096, signal });
+          if (output.code !== 0 || output.timedOut || output.truncated?.stdout || output.truncated?.stderr) throw new Error('probe failed');
+          const text = String(output.stdout ?? '').trim();
+          if (Buffer.byteLength(text) > (help ? 65536 : 4096)) throw new Error('probe oversized');
+          return text;
         };
-        if (probe.code !== 0 || probe.timedOut || probe.truncated?.stdout || probe.truncated?.stderr) continue;
-        observed = String(probe.stdout || probe.stderr || '').trim();
-      } catch { continue; }
-      if (syntax.approvedVersions.includes(observed)) {
+        const observed = await probe([...syntax.versionArgs]);
+        if (!validVersion(observed)) continue;
+        const help = await probe(kind === 'codex' ? ['exec', '--help'] : ['--help'], true);
+        const missing = missingCapabilities(help, syntax.requiredOptions);
+        if (missing.length) { reason = `missing-options: ${missing.join(', ')}`; continue; }
         selected = Object.freeze({ kind, executable, ...(interpreter ? { interpreter } : {}), version: observed });
         break;
-      }
+      } catch { if (signal?.aborted) throw signal.reason; }
     }
     result.push(Object.freeze(selected ?? { kind, available: false, reason }));
   }

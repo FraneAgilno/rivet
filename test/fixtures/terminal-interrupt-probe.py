@@ -42,8 +42,14 @@ def wait_for_file(master, process, file, timeout=20):
                 output += os.read(master, 65536).decode(errors='replace')
             except OSError:
                 pass
-        if file.exists():
-            return
+        # Shell redirection creates the PID file before printf fills it.
+        # Treat only a complete PID as readiness, not the existence of a file.
+        try:
+            pid = file.read_text().strip()
+            if pid.isdigit() and int(pid) > 0:
+                return
+        except FileNotFoundError:
+            pass
         if process.poll() is not None:
             raise RuntimeError(f'CLI exited before {file.name}: {output}')
         time.sleep(0.05)
@@ -110,6 +116,7 @@ if(process.argv.includes('--version')){
  }
  console.log('codex-cli 0.148.0-alpha.9');process.exit(0);
 }
+if(process.argv.includes('--help')){console.log('--ephemeral\n--ignore-user-config\n--color\n--sandbox');process.exit(0);}
 let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{
  const p=JSON.parse(input);
  if(p.kind==='agilno.feature-planning'){
@@ -216,11 +223,11 @@ finally:
         if marker.exists():
             try:
                 os.kill(int(marker.read_text()), signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, ValueError):
                 pass
             try:
                 os.killpg(int(marker.read_text()), signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, ValueError):
                 pass
     for process, master in processes:
         if process.poll() is None:
