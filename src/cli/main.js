@@ -20,6 +20,8 @@ import { modelsCommand } from '../commands/models.js';
 import { setupCommand } from '../commands/setup.js';
 import { protocolsCommand } from '../commands/protocols.js';
 import { workCommand } from '../commands/work.js';
+import { humanRunCommand } from '../commands/human-run.js';
+import { humanTaskCommand } from '../commands/human-task.js';
 import { init } from '../commands/init.js';
 import { preflight } from '../commands/preflight.js';
 import { uninstall } from '../commands/uninstall.js';
@@ -56,6 +58,9 @@ const USAGE = `Usage:
   rivet install                    Interactive — pick which skills to install (project)
   rivet install --all              Install all skills (project)
   rivet setup [--project=<path>|--global] [--target=claude|codex|both] [--write] [--json]
+  rivet run "task" [--harness=claude|codex] [--project=<path>]
+  rivet task status [--project=<path>] [--run=<id>]
+  rivet task resume [--project=<path>] [--run=<id>]
   rivet protocols add <slug> [--project=<path>] [--json]
   rivet protocols import <slug> --from=<path> [--project=<path>] [--json]
   rivet protocols validate [<slug>] [--project=<path>] [--json]
@@ -123,17 +128,23 @@ async function defaultConfirmOverwrite() {
   }
 }
 
-async function defaultConfirmFeatureActivation() {
+async function defaultConfirmFeatureActivation(_proposal, options = {}) {
+  if (options.signal?.aborted) return false;
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   let timer;
+  let cancelQuestion;
+  const interrupted = new Promise(resolvePromise => { cancelQuestion = resolvePromise; });
+  const abort = () => { cancelQuestion(''); readline.close(); };
+  options.signal?.addEventListener('abort', abort, { once: true });
   try {
     const answer = await Promise.race([
       readline.question('Activate this private feature run? [y/N] '),
       new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
+      interrupted,
     ]);
     return /^(?:y|yes)$/i.test(String(answer).trim());
   } catch { return false; }
-  finally { clearTimeout(timer); readline.close(); }
+  finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
 }
 
 function resolveDependencies(overrides = {}) {
@@ -148,6 +159,8 @@ function resolveDependencies(overrides = {}) {
     fetch: overrides.fetch ?? globalThis.fetch,
     confirmOverwrite: overrides.confirmOverwrite ?? defaultConfirmOverwrite,
     confirmFeatureActivation: overrides.confirmFeatureActivation ?? defaultConfirmFeatureActivation,
+    terminalIsInteractive: overrides.terminalIsInteractive ?? (() => process.stdin.isTTY === true && process.stdout.isTTY === true),
+    harnesses: overrides.harnesses,
     packageRoot: overrides.packageRoot ?? PACKAGE_ROOT,
     maxJsonOutputBytes: overrides.maxJsonOutputBytes ?? MAX_JSON_OUTPUT_BYTES,
     maxUpdateResponseBytes: overrides.maxUpdateResponseBytes,
@@ -173,6 +186,8 @@ function resolveDependencies(overrides = {}) {
       orchestrate: orchestrateCommand,
       preflight,
       protocols: protocolsCommand,
+      run: humanRunCommand,
+      task: humanTaskCommand,
       status: statusCommand,
       uninstall,
       verify: verifyCommand,

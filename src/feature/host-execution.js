@@ -460,7 +460,7 @@ export function createHostExecution(input) {
     const paths = await resolveExistingFeatureRunPaths(value.project, value.runId);
     if (paths === null) fail('run-missing');
     const run = await createFeatureRunStore(paths).readOnly();
-    if (run === null || run.featurePlan.client !== 'host') fail('run-missing');
+    if (run === null) fail('run-missing');
     const reports = createVerificationReportStore(await verificationReportPaths(paths));
     const verification = await reports.readOnly();
     if (verification !== null && (verification.runId !== run.runId
@@ -494,6 +494,7 @@ export function createHostExecution(input) {
       : [];
     const readyForVerification = (runtime?.nodes ?? [])
       .some(node => node.id === 'final-delivery' && node.status === 'ready');
+    const hostRun = run.featurePlan.client === 'host';
     const verificationStale = verification !== null && accepted !== null
       && (verification.commitSha !== accepted.commitSha || checkout?.status !== 'clean');
     const deliverable = run.status === 'awaiting-final-approval'
@@ -512,15 +513,23 @@ export function createHostExecution(input) {
       : deliverable
       ? 'Review the integration diff and executed checks, then make the separate final delivery decision.'
       : run.status === 'blocked'
-        ? 'Inspect the blocked nodes and last submission response. Source correction requires a new reviewed proposal.'
+        ? hostRun
+          ? 'Inspect the blocked nodes and last submission response. Source correction requires a new reviewed proposal.'
+          : verification?.status === 'fail'
+            ? 'Repair the environment in the unchanged integration checkout, then use rivet task resume. Source changes require a new reviewed proposal.'
+            : 'Inspect the blocked spawned run. Use rivet task resume only after its cause is corrected.'
         : readyForVerification && accepted === null
           ? 'Accepted integration identity is missing. Do not verify this run; create a new reviewed proposal.'
-        : verification?.status === 'fail'
+        : verification?.status === 'fail' && hostRun
           ? verification.nextAction
           : run.status === 'running' && runtime !== null
-            ? 'Use work next with runtime.version to continue or recover the pending action.'
+            ? hostRun
+              ? 'Use work next with runtime.version to continue or recover the pending action.'
+              : 'A spawned run is marked running. Inspect its process and private state before recovery; do not launch a duplicate worker.'
             : run.status === 'approved'
-              ? 'Use work prepare with run.version to create the isolated execution state.'
+              ? hostRun
+                ? 'Use work prepare with run.version to create the isolated execution state.'
+                : 'Use rivet task resume to continue the approved spawned task.'
               : 'Review the proposal and current run state before proceeding.';
     return immutableJson({ run, runtime, verification, checkout, blockedNodes, nextAction });
   }

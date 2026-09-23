@@ -129,7 +129,7 @@ export function verificationReport(input) {
   return valid({
     schemaVersion: 1,
     runId: input.run.runId,
-    runVersion: input.run.version,
+    runVersion: Number.isSafeInteger(input.run.version) ? input.run.version : 1,
     runtimeVersion: input.state.version,
     status: input.quality?.status === 'pass' ? 'pass' : 'fail',
     baselineCommit: input.run.featurePlan.baselineCommit,

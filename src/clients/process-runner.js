@@ -401,7 +401,10 @@ export async function createProcessRunner(input) {
           killTree(child, 'SIGTERM');
           killTimer = setTimeout(() => killTree(child, 'SIGKILL'), termGraceMs);
           killTimer.unref?.();
-          hardTimer = setTimeout(() => finish(new AgentContractError(reason)), termGraceMs + killGraceMs);
+          hardTimer = setTimeout(() => {
+            killTree(child, 'SIGKILL');
+            finish(new AgentContractError(reason));
+          }, termGraceMs + killGraceMs);
           hardTimer.unref?.();
         };
         if (cancelled) { finish(new AgentContractError('aborted')); return; }
@@ -422,9 +425,18 @@ export async function createProcessRunner(input) {
         };
         child.stdout.on('data', chunk => collect(chunk, true));
         child.stderr.on('data', chunk => collect(chunk, false));
-        child.once('error', () => finish(new AgentContractError(classification ?? 'provider-unavailable')));
+        child.once('error', () => {
+          if (classification) killTree(child, 'SIGKILL');
+          finish(new AgentContractError(classification ?? 'provider-unavailable'));
+        });
         child.once('close', code => {
-          if (classification) { finish(new AgentContractError(classification)); return; }
+          if (classification) {
+            // A detached adapter can exit before a descendant in its process
+            // group. Kill the group before clearing the escalation timer.
+            killTree(child, 'SIGKILL');
+            finish(new AgentContractError(classification));
+            return;
+          }
           if (code !== 0) { finish(new AgentContractError('provider-unavailable')); return; }
           try {
             const value = strictDecode(Buffer.concat(chunks)).trim();
@@ -494,7 +506,10 @@ export async function createProcessRunner(input) {
           killTree(child, 'SIGTERM');
           termTimer = setTimeout(() => killTree(child, 'SIGKILL'), termGraceMs);
           termTimer.unref?.();
-          hardTimer = setTimeout(() => finish(new AgentContractError(reason)), termGraceMs + killGraceMs);
+          hardTimer = setTimeout(() => {
+            killTree(child, 'SIGKILL');
+            finish(new AgentContractError(reason));
+          }, termGraceMs + killGraceMs);
           hardTimer.unref?.();
         };
         if (cancelled) { finish(new AgentContractError('aborted')); return; }
@@ -518,10 +533,18 @@ export async function createProcessRunner(input) {
         // execution/availability failure. Classifying EPIPE as a spawn failure
         // makes the result depend on whether stdin or close wins the event race.
         child.stdin.on('error', () => terminateChild('provider-unavailable'));
-        child.once('error', () => finish(new AgentContractError(classification ?? 'spawn-failed')));
+        child.once('error', () => {
+          if (classification) killTree(child, 'SIGKILL');
+          finish(new AgentContractError(classification ?? 'spawn-failed'));
+        });
         child.once('spawn', () => clearTimeout(launchTimer));
         child.once('close', code => {
-          if (classification) { finish(new AgentContractError(classification)); return; }
+          if (classification) {
+            // The direct adapter may be gone while its descendants remain.
+            killTree(child, 'SIGKILL');
+            finish(new AgentContractError(classification));
+            return;
+          }
           // The child emitted a close event, so it did spawn successfully. A
           // non-zero exit is a provider execution failure, not a spawn failure;
           // classify it as unavailable so the runtime can apply its bounded

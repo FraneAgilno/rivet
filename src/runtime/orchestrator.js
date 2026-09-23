@@ -822,10 +822,13 @@ export function createOrchestrator(input) {
     return null;
   }
 
-  async function launch(instance, intent, node) {
+  async function launch(instance, intent, node, signal) {
     const key = `${instance.id}:${intent.id}`;
     if (inflight.has(key)) return inflight.get(key);
     const controller = new AbortController(); controllers.set(`${instance.id}:${node.id}`, controller);
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     const promise = (async () => {
       try {
       let outcome; let phase = 'claim'; let preparationClaimId;
@@ -859,7 +862,11 @@ export function createOrchestrator(input) {
       }
       await serializeResult(instance.id, () => commitResult(instance, intent, outcome));
       return outcome;
-      } finally { controllers.delete(`${instance.id}:${node.id}`); inflight.delete(key); }
+      } finally {
+        signal?.removeEventListener('abort', abort);
+        controllers.delete(`${instance.id}:${node.id}`);
+        inflight.delete(key);
+      }
     })();
     inflight.set(key, promise);
     return promise;
@@ -963,7 +970,7 @@ export function createOrchestrator(input) {
       .filter(node => node.status === 'reserved' && ['committed', 'prepared'].includes(committed.launchIntents[node.id]?.status))
       .sort((left, right) => committed.launchIntents[left.id].eventSequence - committed.launchIntents[right.id].eventSequence)
       .slice(0, maxActiveNodes);
-    if (launchWork) await Promise.all(launches.map(node => launch(instance, committed.launchIntents[node.id], node)));
+    if (launchWork) await Promise.all(launches.map(node => launch(instance, committed.launchIntents[node.id], node, options.signal)));
     const lock = await instance.acquire();
     let final;
     try { final = clone(await instance.read()); } finally { await lock.release(); }

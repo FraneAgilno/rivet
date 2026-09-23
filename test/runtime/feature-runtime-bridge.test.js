@@ -10,6 +10,8 @@ import { failAgent } from '../../src/clients/contract.js';
 import { createFakeClient } from '../../src/clients/fake.js';
 import { loadProjectConfig } from '../../src/config/load.js';
 import { featurePlanDigest } from '../../src/feature/plan-contract.js';
+import { createAcceptedIntegrationStore } from '../../src/feature/accepted-integration.js';
+import { createVerificationReportStore } from '../../src/feature/verification-report.js';
 import { createFeaturePlanner } from '../../src/feature/planner.js';
 import {
   configuredFeatureGates,
@@ -22,7 +24,7 @@ import { createGitClient } from '../../src/git/client.js';
 import { createReservationStore } from '../../src/git/reservations.js';
 import { createRuntimeInstance } from '../../src/runtime/instance-store.js';
 import { createOrchestrator } from '../../src/runtime/orchestrator.js';
-import { resolveStatePaths } from '../../src/state/paths.js';
+import { acceptedIntegrationPaths, resolveFeatureRunPaths, resolveStatePaths, verificationReportPaths } from '../../src/state/paths.js';
 import { createWorkRequest } from '../../src/work-request/contract.js';
 
 const CONFIG_ROOT = new URL('../fixtures/config/valid/', import.meta.url).pathname;
@@ -311,6 +313,12 @@ test('executes all Workers sequentially on an isolated integration branch and st
 
   const result = await executor({ project: root, run });
   assert.equal(result.status, 'awaiting-final-approval', JSON.stringify({ result, launches }));
+  const featurePaths = await resolveFeatureRunPaths(root, run.runId);
+  const accepted = await createAcceptedIntegrationStore(await acceptedIntegrationPaths(featurePaths)).readOnly();
+  const verification = await createVerificationReportStore(await verificationReportPaths(featurePaths)).readOnly();
+  assert.equal(verification.status, 'pass');
+  assert.equal(verification.commitSha, accepted.commitSha);
+  assert.ok(verification.checks.some(check => check.status === 'passed'));
   assert.equal(launches.length, 2);
   assert.deepEqual(launches.map(launch => launch.maxCostUsd), [2, 2]);
   const integrationEntry = (await gitClient.listWorktrees(root)).find(item => item.branch === 'feature/smart-agenda-builder-smart-agenda-live-run');
@@ -425,6 +433,12 @@ test('autonomous verification blocks a committed child-manifest deletion before 
 
   assert.equal(result.status, 'blocked');
   assert.match(result.summary, /quality gates could not complete safely/i);
+  const featurePaths = await resolveFeatureRunPaths(root, run.runId);
+  const accepted = await createAcceptedIntegrationStore(await acceptedIntegrationPaths(featurePaths)).readOnly();
+  const verification = await createVerificationReportStore(await verificationReportPaths(featurePaths)).readOnly();
+  assert.equal(verification.status, 'fail');
+  assert.equal(verification.commitSha, accepted.commitSha);
+  assert.match(verification.failure, /quality gate execution failed safely|could not complete safely/i);
   await assert.rejects(() => access(marker));
 });
 

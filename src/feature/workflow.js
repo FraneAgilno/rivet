@@ -81,6 +81,13 @@ function expectedVersion(value) {
   return value;
 }
 
+function executionSignal(options) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)
+    || Reflect.ownKeys(options).some(key => key !== 'signal')
+    || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) fail('invalid-input');
+  return options.signal;
+}
+
 function sourcePath(project, value) {
   const request = absolute(value);
   const path = relative(project, request);
@@ -182,7 +189,8 @@ export function createFeatureWorkflow(input) {
     return { store, record };
   }
 
-  async function propose(raw) {
+  async function propose(raw, options = {}) {
+    const signal = executionSignal(options);
     const request = capture(
       raw,
       new Set(['project', 'source', 'client', 'tracker', 'decomposition']),
@@ -231,7 +239,9 @@ export function createFeatureWorkflow(input) {
       });
     } else {
       const planningClient = await planningClientFor(immutableJson({ client: selectedClient, project: observed.root }));
-      const planner = createFeaturePlanner({ planningClient });
+      const planner = createFeaturePlanner({ planningClient: {
+        propose: contract => planningClient.propose(contract, { signal }),
+      } });
       featurePlan = await planner.propose({
         config, workRequest, baselineCommit: observed.headSha, client: selectedClient,
       });
@@ -270,7 +280,8 @@ export function createFeatureWorkflow(input) {
     return lifecycleView((await readRun(request.project, request.runId)).record);
   }
 
-  async function resume(raw) {
+  async function resume(raw, options = {}) {
+    const signal = executionSignal(options);
     const request = capture(raw, new Set(['project', 'runId', 'expectedVersion']));
     const { store, record } = await readRun(request.project, request.runId);
     if (record.featurePlan.client === 'host') fail('host-use-work');
@@ -282,7 +293,9 @@ export function createFeatureWorkflow(input) {
     }, { expectedVersion: record.version });
     let result;
     try {
-      result = executionResult(await executeFeature(immutableJson({ project: absolute(request.project), run: running })));
+      result = executionResult(await executeFeature(
+        immutableJson({ project: absolute(request.project), run: running }), { signal },
+      ));
     } catch (error) {
       try {
         await store.update({
@@ -310,7 +323,12 @@ export function createFeatureWorkflow(input) {
         status: 'cancelled', updatedAt: now(), runtimeRefs: current.runtimeRefs, evidenceRefs: current.evidenceRefs,
       }, { expectedVersion: current.version }));
     };
-    if (record.featurePlan.client !== 'host') return cancelCurrent(record);
+    if (record.featurePlan.client !== 'host') {
+      // The CLI cannot prove that a spawned worker has stopped. Cancelling its
+      // record while it runs would leave an untracked writer in the checkout.
+      if (record.status === 'running') fail('state-conflict');
+      return cancelCurrent(record);
+    }
     const paths = await resolveFeatureRunPaths(request.project, request.runId);
     const lock = await acquireHostRunLock(paths);
     try {

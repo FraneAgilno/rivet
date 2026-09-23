@@ -337,13 +337,14 @@ function snapshotInput(input, options) {
     'projectRoot', 'commitSha', 'authority', 'gates', 'environment', 'timeoutMs',
     'maxOutputBytes', 'maxStreamOutputBytes',
   ]), ['projectRoot', 'commitSha', 'authority', 'gates']);
-  const optionValues = capture(options, new Set(['now', 'gitClient']), ['gitClient']);
+  const optionValues = capture(options, new Set(['now', 'gitClient', 'signal']), ['gitClient']);
   if (!SHA.test(value.commitSha)) fail('invalid-quality-input');
   const gates = array(value.gates, 64, gate);
   if (gates.length === 0 || new Set(gates.map(item => item.id.toLowerCase())).size !== gates.length) fail('invalid-quality-input');
   const allTestIds = gates.flatMap(item => item.tests.map(test => test.id.toLowerCase()));
   if (new Set(allTestIds).size !== allTestIds.length) fail('invalid-quality-input');
   if (optionValues.now !== undefined && typeof optionValues.now !== 'function') fail('invalid-quality-input');
+  if (optionValues.signal !== undefined && !(optionValues.signal instanceof AbortSignal)) fail('invalid-quality-input');
   try { assertGitClient(optionValues.gitClient); } catch { fail('invalid-quality-input'); }
   return Object.freeze({
     ...value,
@@ -351,6 +352,7 @@ function snapshotInput(input, options) {
     environment: environment(value.environment),
     now: optionValues.now ?? Date.now,
     gitClient: optionValues.gitClient,
+    signal: optionValues.signal,
   });
 }
 
@@ -377,6 +379,7 @@ export async function runQualityGates(input, options = {}) {
   const results = [];
   const attestedTests = [];
   for (const configured of value.gates) {
+    if (value.signal?.aborted) fail('gate-failed');
     let startedMs;
     let endedMs;
     let commandResult;
@@ -405,11 +408,12 @@ export async function runQualityGates(input, options = {}) {
         commandId: configured.id,
         cwd: configured.cwd,
         args: [],
-      }) : Object.freeze({
+      }, { signal: value.signal }) : Object.freeze({
         status: 'unavailable', code: 127, stdout: '', stderr: '',
         redacted: false, suppressed: false, truncated: false,
       });
       endedMs = value.now();
+      if (value.signal?.aborted) fail('gate-failed');
       timestamp(endedMs);
       if (endedMs < startedMs) fail('clock-regressed');
     } catch (error) {

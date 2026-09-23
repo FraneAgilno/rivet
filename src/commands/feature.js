@@ -18,9 +18,9 @@ function service(dependencies, method) {
   return feature;
 }
 
-async function invoke(feature, method, input) {
+async function invoke(feature, method, input, options) {
   try {
-    return await feature[method](input);
+    return await feature[method](input, options);
   } catch (error) {
     if (error instanceof CliError) throw error;
     const code = String(error?.code ?? '');
@@ -43,6 +43,8 @@ async function invoke(feature, method, input) {
     throw new CliError(message, publicCode, { cause: error });
   }
 }
+
+export { invoke as invokeFeature };
 
 function project(value) {
   if (typeof value !== 'string' || value.length < 2 || value.length > 4096 || !isAbsolute(value)

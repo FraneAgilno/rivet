@@ -9,16 +9,18 @@ const COMMANDS = new Set([
   'orchestrate',
   'preflight',
   'protocols',
+  'run',
   'status',
   'setup',
   'uninstall',
   'verify',
   'work',
+  'task',
   'worktrees',
 ]);
 
 const LEGACY_COMMANDS = new Set(['init', 'install', 'uninstall']);
-const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'work', 'worktrees']);
+const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'task', 'work', 'worktrees']);
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
@@ -45,6 +47,14 @@ const STRICT_OPTIONS = {
       'action', 'decomposition', 'expected-runtime-version', 'expected-version', 'project', 'result',
       'request', 'request-text', 'ticket', 'tracker',
     ]),
+  },
+  run: {
+    boolean: new Set(),
+    valued: new Set(['project', 'harness']),
+  },
+  task: {
+    boolean: new Set(),
+    valued: new Set(['project', 'run']),
   },
   setup: {
     boolean: new Set(['global', 'write', 'json']),
@@ -204,6 +214,9 @@ export function parseArgs(argv) {
   }
   if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported work subcommand');
+  }
+  if (command === 'task' && !['status', 'resume'].includes(positionals[0])) {
+    throw new ArgumentError('Unsupported task subcommand');
   }
 
   return {

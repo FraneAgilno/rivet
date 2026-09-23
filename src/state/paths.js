@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, readdir } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { runArgv } from '../discovery/tools.js';
@@ -166,6 +166,25 @@ export async function resolveExistingFeatureRunPaths(projectRoot, runId, options
     stateRoot: featureRunsRoot, instanceDir: runDir,
     snapshotPath: join(runDir, 'run.json'), lockPath: join(runDir, 'run.lock'),
   }));
+}
+
+export async function listExistingFeatureRunPaths(projectRoot, options = {}) {
+  const gitCommonDir = await resolveGitCommonDirectory(projectRoot, options, 'Unable to resolve the Git common directory');
+  const featureRoot = join(gitCommonDir, 'rivet');
+  const featureRunsRoot = join(featureRoot, 'feature-runs');
+  if (!(await existingPrivateDirectory(featureRoot, gitCommonDir))
+    || !(await existingPrivateDirectory(featureRunsRoot, gitCommonDir))) return Object.freeze([]);
+  const entries = await readdir(featureRunsRoot);
+  if (entries.length > 256 || entries.some(name => !INSTANCE_ID.test(name) || name.length > 64)) {
+    throw new Error('Private feature-run directory contains invalid or excessive entries');
+  }
+  const paths = [];
+  for (const name of entries.sort()) {
+    const value = await resolveExistingFeatureRunPaths(projectRoot, name, options);
+    if (value === null) throw new Error('Private feature-run state changed during discovery');
+    paths.push(value);
+  }
+  return Object.freeze(paths);
 }
 
 export async function resolveExistingStatePaths(projectRoot, instance, options = {}) {
