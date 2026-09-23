@@ -21,7 +21,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 
 - License selection and final package namespace.
 - Versioned package distribution and discovery beyond bounded immediate child packages.
-- Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Default noninteractive sessions blocked writes to the skill's `.git/rivet-inputs/` path before `work propose`; that input workflow needs a sandbox-compatible location. The direct adapters support Claude Code `2.1.207`/`2.1.274` and Codex CLI `0.148.0-alpha.9`/`0.155.0-alpha.16`; the two current versions have local terminal trials on macOS.
+- Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Default noninteractive sessions blocked writes to the skill's `.git/rivet-inputs/` path before `work propose`; that input workflow needs a sandbox-compatible location. Direct adapters check required capabilities without a version allowlist; Claude `2.1.274` and Codex `0.155.0-alpha.16` have local terminal trials on macOS. Desktop host lifecycle qualification remains open.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Shared Obsidian memory.
 - MCP capability registry and live provider qualification.

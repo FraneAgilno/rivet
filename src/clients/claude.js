@@ -1,5 +1,6 @@
 import { lstat } from 'node:fs/promises';
 
+import { checkCompatibility, validVersion } from './compatibility.js';
 import { createLaunchContract, failAgent } from './contract.js';
 import { createProcessRunner } from './process-runner.js';
 import { agentResultContract } from './result-contract.js';
@@ -17,7 +18,8 @@ export const CLAUDE_ADAPTER_SYNTAX = Object.freeze({
   version: 1,
   provider: 'claude',
   observedVersion: '2.1.207 (Claude Code)',
-  approvedVersions: Object.freeze(['2.1.207 (Claude Code)', '2.1.274 (Claude Code)']),
+  testedVersions: Object.freeze(['2.1.207 (Claude Code)', '2.1.274 (Claude Code)']),
+  requiredOptions: Object.freeze(['--print', '--input-format', '--output-format', '--no-session-persistence', '--model', '--effort', '--permission-mode', '--tools', '--json-schema', '--max-budget-usd']),
   versionArgs: Object.freeze(['--version']),
   args: ARGS,
   inputMode: 'stdin-text',
@@ -111,10 +113,10 @@ function captureEnvironment(input) {
 }
 
 export function createClaudeClient(input) {
-  const config = capture(input, CONFIG_KEYS, ['executable', 'expectedVersion', 'args']);
+  const config = capture(input, CONFIG_KEYS, ['executable', 'args']);
   if (typeof config.executable !== 'string' || !config.executable.startsWith('/') || config.executable.length > 1024
     || (config.interpreter !== undefined && (typeof config.interpreter !== 'string' || !config.interpreter.startsWith('/') || config.interpreter.length > 1024))
-    || !CLAUDE_ADAPTER_SYNTAX.approvedVersions.includes(config.expectedVersion)) failAgent('template-invalid');
+    || (config.expectedVersion !== undefined && !validVersion(config.expectedVersion))) failAgent('template-invalid');
   const args = captureArgs(config.args);
   if (['--max-budget-usd', '--tools', '--json-schema'].some(option => args.includes(option))) failAgent('template-invalid');
   const environment = captureEnvironment(config.environment);
@@ -140,7 +142,7 @@ export function createClaudeClient(input) {
       timeoutMs: Math.min(timeoutMs ?? contract.budget.maxRuntimeMs, contract.budget.maxRuntimeMs, 10 * 60_000),
       maxOutputBytes, allowOptionArgs: true,
     });
-    if (await runner.probeVersion() !== expectedVersion) failAgent('provider-unavailable');
+    await checkCompatibility(runner, 'claude', [...args, '--json-schema', '--max-budget-usd'], expectedVersion);
     return runner.run({
       args: Object.freeze([
         ...args,
@@ -155,10 +157,10 @@ export function createClaudeClient(input) {
 }
 
 export function createClaudePlanningClient(input) {
-  const config = capture(input, PLANNING_CONFIG_KEYS, ['executable', 'expectedVersion', 'worktree']);
+  const config = capture(input, PLANNING_CONFIG_KEYS, ['executable', 'worktree']);
   if (typeof config.executable !== 'string' || !config.executable.startsWith('/') || config.executable.length > 1024
     || (config.interpreter !== undefined && (typeof config.interpreter !== 'string' || !config.interpreter.startsWith('/') || config.interpreter.length > 1024))
-    || !CLAUDE_ADAPTER_SYNTAX.approvedVersions.includes(config.expectedVersion)
+    || (config.expectedVersion !== undefined && !validVersion(config.expectedVersion))
     || typeof config.worktree !== 'string' || !config.worktree.startsWith('/') || config.worktree.length > 1024) {
     failAgent('template-invalid');
   }
@@ -194,7 +196,7 @@ export function createClaudePlanningClient(input) {
       timeoutMs: config.timeoutMs, maxInputBytes: 512 * 1024,
       maxOutputBytes: config.maxOutputBytes ?? 512 * 1024, allowOptionArgs: true,
     });
-    if (await runner.probeVersion() !== expectedVersion) failAgent('provider-unavailable');
+    await checkCompatibility(runner, 'claude', [...args, '--json-schema', '--max-budget-usd'], expectedVersion);
     return runner.runPlanning({
       args,
       cwd: '.',

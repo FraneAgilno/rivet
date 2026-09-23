@@ -138,8 +138,7 @@ export function createRivetApplication(input = {}) {
   let executorPromise;
   let hostExecutionPromise;
   const selectedHarnesses = new Map();
-  const selectedVersion = kind => selectedHarnesses.get(kind)?.version
-    ?? (kind === 'claude' ? CLAUDE_ADAPTER_SYNTAX.observedVersion : CODEX_ADAPTER_SYNTAX.observedVersion);
+  const selectedVersion = kind => selectedHarnesses.get(kind)?.version;
   const harnessSettings = kind => {
     const selected = selectedHarnesses.get(kind);
     return selected ? {

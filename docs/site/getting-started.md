@@ -60,7 +60,7 @@ If a compatible Claude or Codex CLI is installed and authenticated, you can star
 rivet run "Add a greeting module that exports a greeting string"
 ```
 
-Direct terminal adapters support Claude Code `2.1.207` and `2.1.274`, and Codex CLI `0.148.0-alpha.9` and `0.155.0-alpha.16`. The current versions completed disposable local tasks with passing checks on macOS. Check `claude --version` or `codex --version` first. An unqualified version stops safely with a compatibility message; the coding-harness workflow above still works with the harness you are using.
+Direct terminal adapters check required CLI options instead of enforcing a version allowlist. Compatible versions can run without a Rivet update. Rivet retains its permission and output-contract requirements and stops if required options are missing. See [harness compatibility](./runtime-reference#harness-compatibility). Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16` completed small local terminal tasks on macOS; that evidence does not guarantee every past or future release.
 
 For script-based CLI installs, Rivet also needs `RIVET_CLAUDE_INTERPRETER` or `RIVET_CODEX_INTERPRETER` set to the canonical native interpreter path. Ctrl-C and SIGTERM stop Rivet's local child process before the command exits; use `rivet task status` to inspect an interrupted run before resuming it.
 

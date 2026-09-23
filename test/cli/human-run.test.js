@@ -147,17 +147,17 @@ test('a plan output failure before approval cannot start execution', async t => 
   assert.match(errors.join(''), /Plan output failed before approval/);
 });
 
-test('incompatible installed harness explains the validated versions without planning', async t => {
+test('incompatible installed harness explains capability failures without planning', async t => {
   const { root } = await fixture(t);
   const s = services(root, { selected: [] });
   s.overrides.harnesses.discover = async () => [
-    { kind: 'claude', available: false, reason: 'version-incompatible' },
-    { kind: 'codex', available: false, reason: 'version-incompatible' },
+    { kind: 'claude', available: false, reason: 'missing-options: --sandbox' },
+    { kind: 'codex', available: false, reason: 'missing-options: --sandbox' },
   ];
   assert.equal(await main(['run', 'Add a greeting module'], s.overrides), EXIT_CODES.PROVIDER_UNAVAILABLE);
   assert.equal(s.calls.length, 0);
-  assert.match(s.messages.join('\n'), /codex-cli 0\.148\.0-alpha\.9/);
-  assert.match(s.messages.join('\n'), /codex-cli 0\.155\.0-alpha\.16/);
+  assert.match(s.messages.join('\n'), /missing-options: --sandbox/);
+  assert.match(s.messages.join('\n'), /codex exec --help/);
   assert.match(s.messages.join('\n'), /Rivet skill in your coding harness/);
 });
 

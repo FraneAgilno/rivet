@@ -26,7 +26,7 @@ Rivet supports two execution styles. Host mode lets the active coding harness pl
 
 For interactive terminal use, `rivet run "task"` finds the configured Git root from the current directory, discovers a compatible installed Claude or Codex adapter, shows the complete bounded plan and required checks, and asks for approval before execution. `--harness=claude|codex` selects between two eligible adapters. `--project=<path>` is only needed outside the project or to choose a root explicitly. `rivet task status` selects the sole active run in that project and shows the next action and verification evidence. `rivet task resume` continues an approved or blocked spawned run; it does not duplicate one marked running. Before a spawned Worker starts, Rivet shows the frozen install command for locked root dependencies and asks for a separate approval. `rivet task deps` applies the same approval to a clean active host Worker or accepted integration checkout. Multiple active runs require `--run=<id>`. These human commands keep the exact run ID, version, and proposal digest internal in the usual case. A ticket ID by itself is not accepted as an inline request.
 
-The terminal flow needs a real interactive terminal for review; piped input cannot approve a plan. Direct adapters support Claude Code `2.1.207` and `2.1.274`, and Codex CLI `0.148.0-alpha.9` and `0.155.0-alpha.16`; the current versions passed a small local task trial on macOS. Other versions need qualification before Rivet will launch them. It uses the selected installed CLI and its existing authentication. It does not grant credentials or install a harness. Spawned verification records the accepted integration commit and a durable check report for both pass and failure. A failed check returns nonzero; an environment-only repair can be retried at the same unchanged commit. Final approval requires a matching report, runtime, and clean checkout. A spawned run marked running after an interruption needs process and state inspection before recovery because Rivet cannot prove the prior worker has stopped.
+The terminal flow needs a real interactive terminal for review; piped input cannot approve a plan. Direct adapters check required CLI options without a release allowlist; see [harness compatibility](#harness-compatibility). It uses the selected installed CLI and its existing authentication. It does not grant credentials or install a harness. Spawned verification records the accepted integration commit and a durable check report for both pass and failure. A failed check returns nonzero; an environment-only repair can be retried at the same unchanged commit. Final approval requires a matching report, runtime, and clean checkout. A spawned run marked running after an interruption needs process and state inspection before recovery because Rivet cannot prove the prior worker has stopped.
 
 ## Feature lifecycle
 
@@ -61,3 +61,32 @@ Run state belongs under Rivet's directory in the repository's Git common directo
 ## What is retained
 
 Generic project/evidence templates, protocols, schemas and runtime safety checks remain part of the framework. The conference application generator and recording/rehearsal tooling have been removed. Synthetic test fixtures are development-only and are excluded from the npm package.
+
+
+## Harness compatibility
+
+Rivet checks CLI capabilities instead of requiring a specific release. Before a spawned task, bounded version and help probes verify the installed executable and required options. Claude uses `--help`; Codex uses `exec --help`. Selection records the observed version and checks it again before launch. Advanced explicitly configured clients detect their installed version unless their caller supplies an optional `expectedVersion` consistency check.
+
+Claude requires print mode, text input, JSON output, no session persistence, model/effort selection, permission modes, tool restrictions, JSON schema, and a cost limit. Codex requires exec, ephemeral execution, ignored user configuration, color control, and sandbox selection. Each launch also checks its selected optional flags. Rivet never drops required safety flags. Executable identity checks, cancellation, output limits, and strict result validation still apply.
+
+Help checks establish advertised options; they cannot prove unchanged semantics, authentication, model availability, or future output formats. Incompatible results fail validation. Tested releases are evidence, not an allowlist: prior fixtures cover Claude `2.1.207` and Codex `0.148.0-alpha.9`; small authenticated macOS terminal trials completed with Claude `2.1.274` and Codex `0.155.0-alpha.16`. Regression tests also exercise unfamiliar version labels.
+
+Spawned process adapters currently support macOS and Linux. Native Windows execution is not supported; an app running on Windows does not remove that runtime limit. WSL needs its own compatible environment and qualification.
+
+### CLI and desktop host sessions
+
+Host mode uses the current session's model and tools without checking its app or CLI version.
+
+| Surface | Host workflow requirements |
+| --- | --- |
+| Claude Code CLI | Rivet skill, terminal/file tools, project access, operation permissions |
+| Claude desktop Code tab, local session | Same requirements; open the repository in a coding session |
+| Codex CLI | Rivet skill, terminal/file tools, project access, operation permissions |
+| Codex app, local task | Same requirements; attach the repository and make the skill available |
+| Ordinary chat or restricted remote session | An execution environment exposing those capabilities; chat alone is insufficient |
+
+The [Claude desktop reference](https://code.claude.com/docs/en/desktop) describes local Code sessions, skills, and permission modes. The [Codex app features](https://developers.openai.com/codex/app/features) describe its coding environment. Product capabilities do not establish completed Rivet desktop qualification.
+
+The host needs permission to invoke Rivet, edit the exact reserved checkout, write private Git state, create isolated worktrees, run checks, and present human approvals. `rivet preflight --mode=host --project=<path>` checks project readiness; it cannot prove the surrounding app grants every later operation.
+
+**Current alpha limitation:** default noninteractive host trials stopped at protected `.git/rivet-inputs` writes. Private Git state and sibling worktrees also need permission. Moving input files alone does not prove this resolved. Use normal operation approvals or the terminal `rivet run` flow. Full host lifecycle and fresh-user desktop trials remain open.

@@ -1,16 +1,10 @@
 import { resolveConfiguredProject } from '../cli/project-discovery.js';
 import { withTerminalInterruption } from '../cli/interrupt.js';
-import { CLAUDE_ADAPTER_SYNTAX } from '../clients/claude.js';
-import { CODEX_ADAPTER_SYNTAX } from '../clients/codex.js';
 import { CliError, EXIT_CODES, observeOutputErrors } from '../cli/output.js';
 import { invokeFeature } from './feature.js';
 import { confirmIsolatedDependencyInstall } from './dependency-approval.js';
 
 const KINDS = new Set(['claude', 'codex']);
-const SUPPORTED = Object.freeze({
-  claude: CLAUDE_ADAPTER_SYNTAX.approvedVersions.join(', '),
-  codex: CODEX_ADAPTER_SYNTAX.approvedVersions.join(', '),
-});
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
 
@@ -120,13 +114,13 @@ async function runInteractive(parsed, dependencies, signal) {
       const reason = discovered.find(item => item.kind === requested)?.reason;
       const interpreterHelp = reason === 'interpreter-required'
         ? ` This CLI is a script; set RIVET_${requested.toUpperCase()}_INTERPRETER to its canonical native interpreter path.` : '';
-      fail(`The ${requested} adapter needs ${SUPPORTED[requested]} and an installed, authenticated CLI.${interpreterHelp} Check ${requested} --version. You can use the Rivet skill in your coding harness meanwhile.`, 'PROVIDER_UNAVAILABLE');
+      fail(`The ${requested} adapter is unavailable (${visible(reason ?? 'probe failed')}). Install a CLI with the required options and authenticate it.${interpreterHelp} Check ${requested} ${requested === 'codex' ? 'exec --help' : '--help'}. You can use the Rivet skill in your coding harness meanwhile.`, 'PROVIDER_UNAVAILABLE');
     }
   } else if (eligible.length === 1) choice = eligible[0];
   else if (eligible.length === 0) {
     const scripts = discovered.filter(item => item.reason === 'interpreter-required').map(item => `RIVET_${item.kind.toUpperCase()}_INTERPRETER`);
     const interpreterHelp = scripts.length ? ` Script CLIs need a canonical native interpreter path in ${scripts.join(' or ')}.` : '';
-    fail(`No compatible CLI was found. Validated versions: Claude ${SUPPORTED.claude}; Codex ${SUPPORTED.codex}.${interpreterHelp} Check claude --version or codex --version, or use the Rivet skill in your coding harness.`, 'PROVIDER_UNAVAILABLE');
+    fail(`No compatible CLI was found. ${discovered.map(item => `${item.kind}: ${visible(item.reason)}`).join('; ')}.${interpreterHelp} Check claude --help or codex exec --help, or use the Rivet skill in your coding harness.`, 'PROVIDER_UNAVAILABLE');
   } else fail('Both Claude and Codex are available. Choose --harness=claude or --harness=codex.');
   let selected;
   try { selected = await harnesses.select(choice.kind, project.root, { signal }); }

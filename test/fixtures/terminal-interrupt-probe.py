@@ -110,6 +110,7 @@ if(process.argv.includes('--version')){
  }
  console.log('codex-cli 0.148.0-alpha.9');process.exit(0);
 }
+if(process.argv.includes('--help')){console.log('--ephemeral\n--ignore-user-config\n--color\n--sandbox');process.exit(0);}
 let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{
  const p=JSON.parse(input);
  if(p.kind==='agilno.feature-planning'){

@@ -22,3 +22,6 @@ Active protocol IDs, revisions, and digests are captured in the run and action c
 If `rivet` is not on `PATH`, prefix commands with `npx --yes --package=github:FraneAgilno/rivet#main rivet`. For a reproducible run, replace `main` with a reviewed commit SHA.
 
 Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and other capable harnesses can use the same host-mode CLI contract. Direct spawned adapters remain available for supported clients.
+
+
+Host compatibility depends on tools and permissions, not the session version. This includes Claude Code CLI, Claude desktop local Code sessions, Codex CLI, and Codex app local tasks when they can load this skill and execute Rivet. Confirm access to the project, reserved checkout, Git private state, isolated worktree creation, checks, and human approvals. Ordinary chat alone is insufficient. Host preflight checks project readiness, not every sandbox permission. If the sandbox blocks inputs, private state, or worktree operations, report the exact blocked operation and use the app's normal approval flow; do not bypass restrictions. Noninteractive host and desktop lifecycle qualification remains open.
