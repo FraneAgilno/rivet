@@ -427,3 +427,18 @@ test('inline size boundary is measured in UTF-8 bytes', async () => {
   }), 0);
   assert.equal(calls, 1);
 });
+
+test('host filesystem permission failures give an actionable sanitized error', async () => {
+  for (const code of ['EPERM', 'EACCES']) {
+    const output = capture();
+    const result = await main(['work', 'prepare', 'run-one', '--project=/repo', '--expected-version=1', '--json'], {
+      output: output.output,
+      work: { async prepare() { throw Object.assign(new Error('secret filesystem details'), { code }); } },
+    });
+    assert.equal(result, EXIT_CODES.REPOSITORY_CONFLICT);
+    const message = JSON.parse(output.stderr()).error.message;
+    assert.match(message, /permission/i);
+    assert.match(message, /approval/i);
+    assert.doesNotMatch(message, /secret filesystem details/);
+  }
+});

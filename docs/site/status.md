@@ -30,6 +30,16 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 
 See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation planning is maintained outside this repository.
 
+## Host onboarding observations (2026-09-23)
+
+Installed-package proposal trials on macOS found the managed skill in both Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`. They exposed missing proposal examples and private Git-state permission failures. The skill now includes the exact request/decomposition format, and direct filesystem permission errors explain how to request normal harness approval.
+
+Noninteractive Codex stopped at the permission boundary. An interactive Codex attempt requested approval for the proposal command; the operator canceled that request, so it did not establish proposal or lifecycle success. Claude's noninteractive command checks rejected multiline arguments. The skill now explicitly requires stopping for ordinary approval instead of trying alternative encodings or files after a safety denial.
+
+A Claude retest with that guidance still attempted alternative inputs after denial and was stopped. The guidance alone has not established reliable behavior in that environment; this remains an open onboarding issue.
+
+These are operator-run diagnostics, not completed first-task or fresh-user acceptance trials. Full host execution, desktop sessions, and fresh-user M1 validation remain open.
+
 ## Public foundation
 
 The source is published at [FraneAgilno/rivet](https://github.com/FraneAgilno/rivet) and this documentation is deployed to GitHub Pages. [CI results](https://github.com/FraneAgilno/rivet/actions/workflows/ci.yml) record the macOS/Linux and Node 22/24 matrix. CI tests fixtures and package behavior; it does not qualify live model or MCP accounts.
