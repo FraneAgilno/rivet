@@ -34,7 +34,7 @@ See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation
 
 Installed-package proposal trials on macOS found the managed skill in both Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`. They exposed missing proposal examples and private Git-state permission failures. The skill now includes the exact request/decomposition format, and direct filesystem permission errors explain how to request normal harness approval.
 
-Noninteractive Codex stopped at the permission boundary. An interactive Codex attempt requested approval for the proposal command; the operator canceled that request, so it did not establish proposal or lifecycle success. Claude's noninteractive command checks rejected multiline arguments. The skill now explicitly requires stopping for ordinary approval instead of trying alternative encodings or files after a safety denial.
+Noninteractive Codex stopped at the permission boundary. An initial interactive Codex attempt was canceled at approval. A follow-up interactive trial approved the exact proposal command through the normal permission prompt, created the proposal, and stopped at the activation gate with the source checkout clean. This establishes operator-assisted proposal creation only; execution and final review remain unqualified. Claude's noninteractive command checks rejected multiline arguments. The skill now explicitly requires stopping for ordinary approval instead of trying alternative encodings or files after a safety denial.
 
 A Claude retest with that guidance still attempted alternative inputs after denial and was stopped. The guidance alone has not established reliable behavior in that environment; this remains an open onboarding issue.
 
