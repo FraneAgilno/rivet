@@ -11,7 +11,7 @@ The next milestone is a first-task trial: a new developer installs Rivet, connec
 
 ## Next MVP priorities
 
-1. **Unblock active harness inputs:** replace the skill's `.git/rivet-inputs/` file location with one writable under the default Claude and Codex project sandboxes while keeping the Git baseline clean. Then run a small task in both harnesses. The direct terminal path has passed separate local trials with both current CLIs.
+1. **Validate active harness operation:** direct JSON inputs now avoid temporary files. Run a small task in both harnesses with normal approvals for private Git state and isolated worktrees, then complete fresh-user trials. The direct terminal path has passed separate local trials with both current CLIs.
 2. **Measure the first-task gate:** have a fresh developer follow the quickstart and record setup time, prompts, checks, interruptions, and any shell repair. Keep versioned package publication separate from this alpha.
 3. **Finish distribution decisions:** choose the license and final package namespace, then qualify a versioned release artifact.
 
