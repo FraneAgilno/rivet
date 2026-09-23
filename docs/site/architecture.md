@@ -1,16 +1,12 @@
+<script setup>
+import ArchitectureDiagram from '../.vitepress/components/ArchitectureDiagram.vue'
+</script>
+
 # Architecture
 
 Rivet packages a repeatable team workflow. Coding harnesses already provide editing, terminals, MCP clients, and agent tools; Rivet should reuse those capabilities and add deterministic operations where shared configuration, state, verification, or recovery needs them.
 
-```text
-User -> coding harness -> Rivet protocols -> Rivet CLI -> workflow service
-Terminal user ----------------------------> Rivet CLI
-
-Workflow service -> private run state and evidence
-                 -> project checks and Git worktrees
-                 -> configurable memory and tool providers
-                 -> optional delegated model execution
-```
+<ArchitectureDiagram />
 
 ## Independent identity
 
