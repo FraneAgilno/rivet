@@ -9,7 +9,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Setup preview/apply with bounded root and immediate-child package discovery, ordered multi-step quality commands, honest unresolved warnings, and byte-preserving existing configuration.
 - Active-harness `work` commands for harness-supplied planning, isolated Worker execution, bounded integration, and verification without launching a second model process.
 - Interactive `rivet run "task"` from a configured project root or nested folder, with automatic project discovery, a reviewed approval gate, and compatible installed Claude/Codex execution.
-- `rivet task status` and `rivet task resume` select a unique active run without asking for its ID, retain failed-check diagnostics, and verify the accepted integration commit before final approval.
+- `rivet task status`, `rivet task resume`, and `rivet task deps` select a unique active run without asking for its ID. Dependency recovery prepares the clean accepted integration checkout from a matching lockfile after separate interactive approval.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
 - Extensible model registry and local profile validation.
 - Imported workflow, worktree, evidence, provider, and quality modules.
@@ -19,7 +19,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 ## Still required
 
 - License selection and final package namespace.
-- Versioned package distribution, discovery beyond bounded immediate child packages, and dependency bootstrap in isolated worktrees.
+- Versioned package distribution, discovery beyond bounded immediate child packages, and dependency bootstrap before Worker execution in isolated worktrees.
 - Live Claude/Codex first-task demonstrations and qualification of current installed CLI versions; the direct adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Shared Obsidian memory.

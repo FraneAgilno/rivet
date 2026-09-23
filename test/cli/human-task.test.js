@@ -67,6 +67,21 @@ test('task status selects the sole project-local run without an ID or project fl
   assert.match(messages.join('\n'), /Next: Review the proposal/);
 });
 
+test('task deps selects the run but refuses installation before an accepted checkout exists', async t => {
+  const root = await fixture(t);
+  await createRun(root, 'first-task');
+  const messages = [];
+  let confirmations = 0;
+  const result = await main(['task', 'deps'], overrides(root, messages, {
+    terminalIsInteractive: () => true,
+    confirmDependencyInstall: async () => { confirmations += 1; return true; },
+    resolveCommandExecutable: async () => '/usr/bin/git',
+  }));
+  assert.equal(result, EXIT_CODES.REPOSITORY_CONFLICT, messages.join('\n'));
+  assert.equal(confirmations, 0);
+  assert.match(messages.join('\n'), /no clean accepted integration checkout/);
+});
+
 test('multiple or corrupt private runs cannot be silently inferred', async t => {
   const root = await fixture(t);
   await createRun(root, 'first-task');

@@ -26,7 +26,7 @@ Run `rivet preflight --project=<path> --mode=host --json` for the host workflow.
 
 ## Verification fails after the Worker submitted
 
-Run `rivet work status <run-id> --project=<path> --json`. Its `verification` report identifies the tested commit, isolated integration checkout, changed paths, and executed checks. A failed `work verify` exits nonzero and keeps the run before final approval. If the failure is a missing dependency or other environment issue, prepare it in the isolated checkout and retry verification of the unchanged commit with the same current run and runtime versions. A source correction requires a new reviewed proposal. Rivet does not install dependencies through its quality commands.
+Run `rivet task status` inside the project, or `rivet work status <run-id> --project=<path> --json` for the full report. Its `verification` report identifies the tested commit, isolated integration checkout, changed paths, and executed checks. A failed `work verify` exits nonzero and keeps the run before final approval. For missing locked dependencies in the accepted integration checkout, run `rivet task deps`; review and approve its exact package-manager command, then retry verification of the unchanged commit. The command requires one matching lockfile, a clean accepted checkout, and an interactive terminal. Other environment issues still need repair. A source correction requires a new reviewed proposal. Rivet does not install dependencies through its quality commands.
 
 ## A host action was interrupted or blocked
 

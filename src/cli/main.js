@@ -61,6 +61,7 @@ const USAGE = `Usage:
   rivet run "task" [--harness=claude|codex] [--project=<path>]
   rivet task status [--project=<path>] [--run=<id>]
   rivet task resume [--project=<path>] [--run=<id>]
+  rivet task deps [--project=<path>] [--run=<id>]
   rivet protocols add <slug> [--project=<path>] [--json]
   rivet protocols import <slug> --from=<path> [--project=<path>] [--json]
   rivet protocols validate [<slug>] [--project=<path>] [--json]
@@ -147,6 +148,22 @@ async function defaultConfirmFeatureActivation(_proposal, options = {}) {
   finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
 }
 
+async function defaultConfirmDependencyInstall(_plan, options = {}) {
+  if (options.signal?.aborted) return false;
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  let timer;
+  const abort = () => readline.close();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const answer = await Promise.race([
+      readline.question('Install these dependencies in the isolated checkout? [y/N] '),
+      new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
+    ]);
+    return /^(?:y|yes)$/i.test(String(answer).trim());
+  } catch { return false; }
+  finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
+}
+
 function resolveDependencies(overrides = {}) {
   return {
     fs: overrides.fs ?? filesystem,
@@ -159,6 +176,7 @@ function resolveDependencies(overrides = {}) {
     fetch: overrides.fetch ?? globalThis.fetch,
     confirmOverwrite: overrides.confirmOverwrite ?? defaultConfirmOverwrite,
     confirmFeatureActivation: overrides.confirmFeatureActivation ?? defaultConfirmFeatureActivation,
+    confirmDependencyInstall: overrides.confirmDependencyInstall ?? defaultConfirmDependencyInstall,
     terminalIsInteractive: overrides.terminalIsInteractive ?? (() => process.stdin.isTTY === true && process.stdout.isTTY === true),
     harnesses: overrides.harnesses,
     packageRoot: overrides.packageRoot ?? PACKAGE_ROOT,

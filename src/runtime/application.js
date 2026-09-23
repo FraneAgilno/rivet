@@ -3,7 +3,7 @@ import { createNodeProviderTransport } from '../adapters/node-transport.js';
 import * as filesystem from 'node:fs';
 import { spawn as nodeSpawn } from 'node:child_process';
 import { realpath as realpathFile } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import {
   createClaudeClient,
@@ -86,6 +86,16 @@ function executable(value) {
   return value;
 }
 
+function executableCandidates(runner, pathValue) {
+  const directories = typeof pathValue === 'string' ? pathValue.split(':').slice(0, 128) : [];
+  return [
+    ...directories.filter(directory => directory.length > 1 && directory.length <= 1024
+      && isAbsolute(directory) && resolve(directory) === directory && !/[\u0000\r\n]/.test(directory))
+      .map(directory => join(directory, runner)),
+    `/opt/homebrew/bin/${runner}`, `/usr/local/bin/${runner}`, `/usr/bin/${runner}`,
+  ];
+}
+
 function captureFeatureWorkflow(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) fail();
@@ -117,7 +127,7 @@ export function createRivetApplication(input = {}) {
       if (env.RIVET_GIT_EXECUTABLE !== undefined) {
         return createGitClient({ gitExecutable: executable(env.RIVET_GIT_EXECUTABLE) });
       }
-      for (const candidate of ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git']) {
+      for (const candidate of executableCandidates('git', env.PATH)) {
         try { return await createGitClient({ gitExecutable: executable(await realpathFile(candidate)) }); } catch {}
       }
       fail();
@@ -208,7 +218,7 @@ export function createRivetApplication(input = {}) {
     if (typeof runner !== 'string' || !/^[a-z][a-z0-9.-]{0,31}$/i.test(runner)) fail();
     const configuredPath = env[`RIVET_${runner.toUpperCase().replaceAll('-', '_')}_EXECUTABLE`];
     if (configuredPath !== undefined) return executable(await realpathFile(executable(configuredPath)));
-    for (const candidate of [`/opt/homebrew/bin/${runner}`, `/usr/local/bin/${runner}`, `/usr/bin/${runner}`]) {
+    for (const candidate of executableCandidates(runner, env.PATH)) {
       try { return executable(await realpathFile(candidate)); } catch {}
     }
     fail();
