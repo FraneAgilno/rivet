@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 
-import { containsSecretMaterial } from '../clients/contract.js';
+import { containsSecretMaterial, immutableJson } from '../clients/contract.js';
 
 const INPUT_KEYS = new Set([
   'source', 'title', 'description', 'acceptanceCriteria', 'contextRefs', 'capturedAt',
 ]);
+const OPTIONAL_KEYS = ['context'];
 const REQUEST_KEYS = new Set(['schemaVersion', ...INPUT_KEYS, 'digest']);
 const SOURCE_KEYS = new Set(['kind', 'ref', 'revision', 'url']);
-const SOURCE_KINDS = new Set(['inline', 'markdown', 'jira', 'linear']);
+const SOURCE_KINDS = new Set(['inline', 'markdown', 'jira', 'linear', 'host-observation']);
 const TICKET = /^[A-Z][A-Z0-9]{0,31}-[1-9][0-9]{0,15}$/;
 const SHA256_REVISION = /^sha256:[a-f0-9]{64}$/;
 const PRIVATE_IPV4 = /^(?:0|10|127|169\.254|172\.(?:1[6-9]|2[0-9]|3[01])|192\.168|224|240)(?:\.|$)/;
@@ -89,15 +90,16 @@ function safeRelativePath(value) {
   return normalized;
 }
 
-function safeUrl(value) {
+function safeUrl(value, host = false) {
   string(value, 2048);
   let parsed;
   try { parsed = new URL(value); } catch { fail(); }
   const hostname = parsed.hostname.toLowerCase();
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (!host && parsed.search) || parsed.hash
     || hostname === 'localhost' || hostname.endsWith('.localhost')
     || (isIP(hostname) === 4 && PRIVATE_IPV4.test(hostname))
     || (isIP(hostname) === 6 && (hostname === '::1' || hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80:')))) fail();
+  if (host && [...parsed.searchParams].some(([key, item]) => !['node-id', 'pageId'].includes(key) || !/^[A-Za-z0-9:_-]{1,128}$/.test(item))) fail();
   return parsed.toString();
 }
 
@@ -125,7 +127,7 @@ function source(input) {
     kind,
     ref,
     ...(revision === undefined ? {} : { revision }),
-    ...(value.url === undefined ? {} : { url: safeUrl(value.url) }),
+    ...(value.url === undefined ? {} : { url: safeUrl(value.url, kind === 'host-observation') }),
   };
   if ((kind === 'inline' || kind === 'markdown') && result.url !== undefined) fail();
   return Object.freeze(result);
@@ -137,8 +139,36 @@ function canonical(value) {
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
 }
 
+function context(input) {
+  let value;
+  try { value = immutableJson(input); } catch { fail(); }
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 64 * 1024) fail();
+  captureRecord(value, new Set(['sources', 'userAcceptanceCriteria']));
+  if (!Array.isArray(value.sources) || value.sources.length < 1 || value.sources.length > 16) fail();
+  const identities = new Set();
+  for (const item of value.sources) {
+    captureRecord(item, new Set(['provider', 'providerId', 'projectId', 'resourceId', 'url', 'revision',
+      'capturedAt', 'transport', 'assurance', 'tool', 'content', 'contentDigest']));
+    if (!['jira', 'linear', 'figma', 'confluence', 'generic'].includes(item.provider)
+      || item.transport !== 'harness-mcp' || item.assurance !== 'harness-observed') fail();
+    for (const key of ['providerId', 'projectId', 'resourceId', 'revision', 'tool']) string(item[key], 200);
+    safeUrl(item.url, true);
+    timestamp(item.capturedAt);
+    if (!item.content || typeof item.content !== 'object' || Array.isArray(item.content)
+      || containsSecretMaterial(JSON.stringify(item.content))) fail();
+    const digest = createHash('sha256').update(canonical(item.content)).digest('hex');
+    if (item.contentDigest !== digest) fail();
+    const identity = `${item.providerId}:${item.resourceId}`;
+    if (identities.has(identity)) fail();
+    identities.add(identity);
+  }
+  list(value.userAcceptanceCriteria, { maximum: 256, itemMaximum: 4096 });
+  return value;
+}
+
 function capturedInput(input, request = false) {
-  const value = captureRecord(input, request ? REQUEST_KEYS : INPUT_KEYS, request ? REQUEST_KEYS : INPUT_KEYS);
+  const required = request ? REQUEST_KEYS : INPUT_KEYS;
+  const value = captureRecord(input, new Set([...required, ...OPTIONAL_KEYS]), required);
   if (request && value.schemaVersion !== 1) fail();
   const acceptanceCriteria = list(value.acceptanceCriteria, { maximum: 256, itemMaximum: 4096 });
   if (acceptanceCriteria.length === 0) fail();
@@ -152,6 +182,12 @@ function capturedInput(input, request = false) {
     contextRefs,
     capturedAt: timestamp(value.capturedAt),
   };
+  if (value.context !== undefined) output.context = context(value.context);
+  if (output.source.kind === 'host-observation') {
+    const primary = output.context?.sources[0];
+    if (!primary || output.source.ref !== `${primary.providerId}:${primary.resourceId}`
+      || output.source.revision !== `sha256:${primary.contentDigest}` || output.source.url !== primary.url) fail();
+  }
   if (request) output.digest = string(value.digest, 64);
   return output;
 }
@@ -165,6 +201,7 @@ function digestPayload(value) {
     acceptanceCriteria: value.acceptanceCriteria,
     contextRefs: value.contextRefs,
     capturedAt: value.capturedAt,
+    ...(value.context === undefined ? {} : { context: value.context }),
   };
 }
 

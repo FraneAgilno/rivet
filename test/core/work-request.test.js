@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 
 import {
   createWorkRequest,
@@ -86,4 +87,28 @@ test('snapshots hostile getters once and never retains caller arrays', () => {
   assert.equal(reads, 1);
   assert.deepEqual(request.acceptanceCriteria, ['The persisted agenda downloads as .ics.']);
   assert.deepEqual(request.contextRefs, ['CONFLUENCE:1234']);
+});
+
+test('host context is bound to request digest without claiming direct verification', () => {
+  const context = { sources: [{ provider: 'jira', providerId: 'team-jira', projectId: 'demo',
+    resourceId: 'DEMO-1', url: 'https://jira.example.test/browse/DEMO-1', revision: '1',
+    capturedAt: BASE.capturedAt, transport: 'harness-mcp', assurance: 'harness-observed', tool: 'get_issue',
+    content: { title: 'Issue', description: 'Description', acceptanceCriteria: ['Works'] },
+  }], userAcceptanceCriteria: ['User addition'] };
+  const content = context.sources[0].content;
+  // Canonical key order matches the observation contract.
+  context.sources[0].contentDigest = createHash('sha256').update(JSON.stringify({
+    acceptanceCriteria: content.acceptanceCriteria, description: content.description, title: content.title,
+  })).digest('hex');
+  const source = { kind: 'host-observation', ref: 'team-jira:DEMO-1',
+    revision: `sha256:${context.sources[0].contentDigest}`, url: context.sources[0].url };
+  const request = createWorkRequest({ ...BASE, source, context });
+  assert.equal(validateWorkRequest(request), request);
+  assert.equal(request.context.sources[0].assurance, 'harness-observed');
+  assert.ok(Object.isFrozen(request.context.sources));
+  const changed = { ...request, context: { ...request.context, userAcceptanceCriteria: ['Changed'] } };
+  assert.throws(() => validateWorkRequest(changed));
+  assert.throws(() => createWorkRequest({ ...BASE, source, context: { ...context,
+    sources: [{ ...context.sources[0], assurance: 'provider-verified' }] } }));
+  assert.throws(() => createWorkRequest({ ...BASE, source }));
 });

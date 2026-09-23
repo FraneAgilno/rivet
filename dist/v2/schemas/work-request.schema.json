@@ -15,34 +15,184 @@
     "digest"
   ],
   "properties": {
-    "schemaVersion": { "type": "integer", "const": 1 },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "ref"],
+      "required": [
+        "kind",
+        "ref"
+      ],
       "properties": {
-        "kind": { "enum": ["inline", "markdown", "jira", "linear"] },
-        "ref": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "revision": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "url": { "type": "string", "minLength": 9, "maxLength": 2048, "pattern": "^https://" }
+        "kind": {
+          "enum": [
+            "inline",
+            "markdown",
+            "jira",
+            "linear",
+            "host-observation"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "url": {
+          "type": "string",
+          "minLength": 9,
+          "maxLength": 2048,
+          "pattern": "^https://"
+        }
       }
     },
-    "title": { "type": "string", "minLength": 1, "maxLength": 500 },
-    "description": { "type": "string", "minLength": 1, "maxLength": 131072 },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 131072
+    },
     "acceptanceCriteria": {
       "type": "array",
       "minItems": 1,
       "maxItems": 256,
       "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
     },
     "contextRefs": {
       "type": "array",
       "maxItems": 256,
       "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
     },
-    "capturedAt": { "type": "string", "format": "date-time" },
-    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sources",
+        "userAcceptanceCriteria"
+      ],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "transport",
+              "assurance",
+              "contentDigest",
+              "content",
+              "url",
+              "capturedAt",
+              "providerId",
+              "projectId",
+              "resourceId",
+              "revision",
+              "tool"
+            ],
+            "properties": {
+              "provider": {
+                "enum": [
+                  "jira",
+                  "linear",
+                  "figma",
+                  "confluence",
+                  "generic"
+                ]
+              },
+              "transport": {
+                "const": "harness-mcp"
+              },
+              "assurance": {
+                "const": "harness-observed"
+              },
+              "contentDigest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "content": {
+                "type": "object"
+              },
+              "url": {
+                "type": "string",
+                "maxLength": 2048,
+                "pattern": "^https://"
+              },
+              "capturedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "providerId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "resourceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "revision": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          }
+        },
+        "userAcceptanceCriteria": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      }
+    }
   }
 }

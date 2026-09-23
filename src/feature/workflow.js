@@ -7,6 +7,7 @@ import { loadProjectConfig } from '../config/load.js';
 import { resolveFeatureRunPaths } from '../state/paths.js';
 import { createWorkRequest } from '../work-request/contract.js';
 import { resolveInlineWorkRequest, resolveMarkdownWorkRequest } from '../work-request/local.js';
+import { resolveHostWorkRequest } from '../work-request/host.js';
 import { resolveTrackerWorkRequest } from '../work-request/tracker.js';
 import { featurePlanDigest } from './plan-contract.js';
 import { createFeaturePlanner, createHostFeaturePlan } from './planner.js';
@@ -109,6 +110,8 @@ function sourcePath(project, value) {
 function selectedTracker(config, requested) {
   if (requested !== undefined && !TRACKERS.has(requested)) fail('invalid-input');
   const candidates = config.providers.providers.filter(provider => TRACKERS.has(provider.kind)
+    && (provider.transport === undefined || provider.transport === 'direct-api')
+    && (!provider.projectIds?.length || provider.projectIds.includes(config.project.id))
     && provider.mode !== 'disabled' && provider.capabilities.includes('issues-read'));
   if (requested !== undefined) {
     if (!candidates.some(provider => provider.kind === requested)) fail('configuration');
@@ -218,6 +221,9 @@ export function createFeatureWorkflow(input) {
       workRequest = await resolveMarkdownWorkRequest({
         root: observed.root, path: sourcePath(observed.root, source.value), capturedAt: now(),
       });
+    } else if (source.kind === 'host-observation') {
+      if (selectedClient !== 'host') fail('invalid-input');
+      workRequest = resolveHostWorkRequest({ config, bundle: source.value, capturedAt: now() });
     } else if (source.kind === 'ticket') {
       if (typeof trackerAdapterFor !== 'function') fail('configuration');
       const provider = selectedTracker(config, request.tracker);
@@ -232,6 +238,7 @@ export function createFeatureWorkflow(input) {
     if (protocolRefs.length > 0) {
       workRequest = createWorkRequest({
         source: workRequest.source,
+        ...(workRequest.context === undefined ? {} : { context: workRequest.context }),
         title: workRequest.title,
         description: workRequest.description,
         acceptanceCriteria: workRequest.acceptanceCriteria,

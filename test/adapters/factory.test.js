@@ -122,3 +122,16 @@ test('rejects non-tracker kinds missing endpoints and providers without read cap
     }).create(), TrackerProviderFactoryError);
   }
 });
+
+test('harness and local CLI tracker descriptors never select a direct HTTP adapter', () => {
+  for (const transportKind of ['harness-mcp','local-cli']) {
+    assert.throws(() => createTrackerProviderFactory({
+      config:config([provider({transport:transportKind})]),
+      environment:{JIRA_USERNAME:'user',JIRA_API_TOKEN:'token'},transport:transport(),
+    }).create(),TrackerProviderFactoryError);
+  }
+});
+test('direct tracker selection respects configured project scope',()=>{
+ const scoped={...config([provider({projectIds:['another-project']})]),project:{id:'demo'}};
+ assert.throws(()=>createTrackerProviderFactory({config:scoped,environment:{JIRA_USERNAME:'user',JIRA_API_TOKEN:'token'},transport:transport()}).create(),TrackerProviderFactoryError);
+});

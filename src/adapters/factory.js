@@ -44,9 +44,11 @@ function envValue(environment, reference) {
   return value;
 }
 
-function selectProvider(providers, tracker) {
+function selectProvider(providers, tracker, projectId) {
   if (tracker !== undefined && !TRACKERS.has(tracker)) fail();
   const candidates = providers.filter(provider => provider && typeof provider === 'object' && !Array.isArray(provider)
+    && (!provider.projectIds?.length || provider.projectIds.includes(projectId))
+    && (provider.transport === undefined || provider.transport === 'direct-api')
     && TRACKERS.has(provider.kind) && provider.mode !== 'disabled'
     && Array.isArray(provider.capabilities) && provider.capabilities.includes('issues-read')
     && (tracker === undefined || provider.kind === tracker));
@@ -91,7 +93,7 @@ export function createTrackerProviderFactory(input) {
           const descriptor = Object.getOwnPropertyDescriptor(options, 'tracker');
           if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) fail();
         }
-        const selected = selectProvider(providers, options.tracker);
+        const selected = selectProvider(providers, options.tracker, captured.config.project?.id);
         if (typeof selected.endpoint !== 'string') fail();
         const common = {
           transport: captured.transport,

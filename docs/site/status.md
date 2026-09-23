@@ -13,6 +13,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
 - Extensible model registry and local profile validation.
+- Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
 - Searchable documentation source and a local build.
@@ -24,7 +25,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Direct JSON inputs remove the temporary-file obstruction from earlier noninteractive trials; private Git state/worktree permissions and live lifecycle trials still need validation. Direct adapters check required capabilities without a version allowlist; Claude `2.1.274` and Codex `0.155.0-alpha.16` have local terminal trials on macOS. Desktop host lifecycle qualification remains open.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Shared Obsidian memory.
-- MCP capability registry and live provider qualification.
+- Live provider qualification for the integration registry and context intake.
 - Bitbucket/GitLab repository delivery and expanded model executors.
 - External pilot, evaluations, and release qualification.
 
@@ -36,7 +37,7 @@ Installed-package proposal trials on macOS found the managed skill in both Claud
 
 Noninteractive Codex stopped at the permission boundary. An initial interactive Codex attempt was canceled at approval. A follow-up interactive trial approved the exact proposal command through the normal permission prompt, created the proposal, and stopped at the activation gate with the source checkout clean. This establishes operator-assisted proposal creation only; execution and final review remain unqualified. Claude's noninteractive command checks rejected multiline arguments. The skill now explicitly requires stopping for ordinary approval instead of trying alternative encodings or files after a safety denial.
 
-A Claude retest with that guidance still attempted alternative inputs after denial and was stopped. The guidance alone has not established reliable behavior in that environment; this remains an open onboarding issue.
+A noninteractive Claude retest still attempted alternative inputs after denial and was stopped. In a subsequent interactive default-permission session, the original proposal command succeeded after normal approval. Declining a separate preflight permission prompt interrupted the turn without another attempt. This establishes a supported interactive permission path for proposal creation; it does not qualify noninteractive behavior or the complete lifecycle.
 
 These are operator-run diagnostics, not completed first-task or fresh-user acceptance trials. Full host execution, desktop sessions, and fresh-user M1 validation remain open.
 

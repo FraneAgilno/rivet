@@ -19,7 +19,7 @@ The repository is being kept focused on the reusable framework. Retired conferen
 
 ## Subsequent capabilities
 
-- Configurable MCP integrations and verified Jira/Linear, Figma and knowledge-context workflows.
+- Live qualification of the implemented MCP registry and sourced Jira/Linear, Figma and knowledge-context intake.
 - GitHub, Bitbucket and GitLab delivery adapters.
 - Bounded execution through more API and local model providers.
 - Recovery improvements and broader evaluation coverage.

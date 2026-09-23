@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.rivet.dev/rivet/v2/integration.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "kind",
+    "mode",
+    "capabilities"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "kind": {
+      "enum": [
+        "jira",
+        "linear",
+        "confluence",
+        "figma",
+        "git-ci",
+        "generic"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "disabled",
+        "read-only",
+        "read-write-with-approval"
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "resourceIds": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "pattern": "^[^\\u0000\\r\\n]+$"
+      }
+    },
+    "endpoint": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 2048,
+      "pattern": "^https?://"
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "apiTokenEnv": {
+          "$ref": "#/$defs/envName"
+        },
+        "accessTokenEnv": {
+          "$ref": "#/$defs/envName"
+        },
+        "tokenEnv": {
+          "$ref": "#/$defs/envName"
+        },
+        "usernameEnv": {
+          "$ref": "#/$defs/envName"
+        }
+      }
+    },
+    "transport": {
+      "enum": [
+        "harness-mcp",
+        "direct-api",
+        "local-cli"
+      ]
+    },
+    "projectIds": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "envName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    }
+  }
+}

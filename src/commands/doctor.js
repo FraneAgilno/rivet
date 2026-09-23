@@ -1,3 +1,4 @@
+import { createIntegrationRegistry } from '../integrations/registry.js';
 import { resolve } from 'node:path';
 
 import { EXIT_CODES } from '../cli/output.js';
@@ -42,6 +43,14 @@ async function boundedProbe(probe, provider, timeoutMs) {
 async function providerChecks(config, probe, timeoutMs = 3_000) {
   const checks = [];
   for (const provider of config.providers.providers) {
+    if (provider.projectIds?.length && !provider.projectIds.includes(config.project.id)) {
+      checks.push({ id: provider.id, readiness: 'out-of-scope', connectivity: 'not_checked' });
+      continue;
+    }
+    if (provider.transport && provider.transport !== 'direct-api') {
+      checks.push({ id: provider.id, readiness: 'host-or-local', connectivity: 'not_checked' });
+      continue;
+    }
     if (provider.mode === 'disabled') {
       checks.push({ id: provider.id, readiness: 'disabled', connectivity: 'not_checked' });
       continue;
@@ -140,6 +149,7 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
       credentials,
       providers,
       commands,
+      integrations: createIntegrationRegistry({config,projectId:config.project.id,environment,host:dependencies.integrationHost}).check(),
     },
     summary: failed ? 'One or more readiness checks failed.' : 'Configuration and local readiness checks completed.',
   };
