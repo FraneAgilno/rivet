@@ -30,7 +30,7 @@ Run `rivet task status` inside the project, or `rivet work status <run-id> --pro
 
 ## A host action was interrupted or blocked
 
-If the harness cannot create `.git/rivet-inputs/`, its sandbox is protecting Git metadata. The current host skill needs that private input location, so the host proposal cannot proceed under that sandbox. Use the terminal `rivet run` flow for this alpha while Rivet adds a project-writable ignored input location.
+If an older installed skill tries to create `.git/rivet-inputs/`, update it with `rivet setup --write` and reload the harness skill. Current commands support `--decomposition-json`, `--action-json`, and `--result-json`, avoiding temporary input files. If private Git state or isolated worktree operations are denied, request normal harness approval for the exact operation. If unavailable, use an approved interactive environment or terminal `rivet run`. Do not disable sandbox controls to force progress.
 
 For a pending action, get `runtime.version` from `work status`, then call `work next` with that version. `waiting-for-result` returns the same action. For a blocked submission, retain the `work submit` response and inspect blocked nodes in `work status`; create a new reviewed corrective proposal. `feature resume` is only for spawned runs and cannot resume host work.
 

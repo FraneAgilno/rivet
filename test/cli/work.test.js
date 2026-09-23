@@ -199,20 +199,17 @@ test('real CLI completes host work, reports failed checks, and stops at human re
   assert.equal(readiness.status, 'pass');
   assert.equal(readiness.checks.some(check => check.id === 'goal-state'), false);
 
-  const inputs = join(root, '.git', 'rivet-inputs');
-  await mkdir(inputs);
-  const decompositionPath = join(inputs, 'decomposition.json');
-  await writeFile(decompositionPath, JSON.stringify({
+  const decompositionJson = JSON.stringify({
     schemaVersion: 1, kind: 'agilno.feature-decomposition',
     workItems: [{
       objective: 'Add the greeting module.',
       ownedPaths: ['src/greeting.js'],
       acceptanceCriterionIndexes: [1],
     }],
-  }));
+  });
   const proposal = await cli(['work', 'propose', `--project=${root}`,
     '--request-text=# Add a greeting\n\n## Acceptance criteria\n\n- Add a greeting module.\n',
-    `--decomposition=${decompositionPath}`]);
+    `--decomposition-json=${decompositionJson}`]);
   assert.equal(proposal.status, 'proposed');
   const approved = await cli(['feature', 'start', proposal.runId, `--project=${root}`,
     `--expected-version=${proposal.version}`, `--proposal-digest=${proposal.proposalDigest}`]);
@@ -250,21 +247,20 @@ test('real CLI completes host work, reports failed checks, and stops at human re
   assert.equal(pending.status, 'waiting-for-result');
   assert.deepEqual(pending.action, next.action);
 
-  const actionPath = join(inputs, 'action.json');
-  const resultPath = join(inputs, 'result.json');
-  await writeFile(actionPath, JSON.stringify(pending.action));
-  await writeFile(resultPath, JSON.stringify({
+  const resultJson = JSON.stringify({
     version: 1, status: 'success',
     output: {
       summary: 'Added the greeting module.',
       evidence: JSON.parse(pending.action.payload).contract.evidence,
     },
     usage: { tokens: 1, costUsd: 0 },
-  }));
+  });
   const submitted = await cli(['work', 'submit', proposal.runId, `--project=${root}`,
     `--expected-runtime-version=${pending.runtimeVersion}`,
-    `--action=${actionPath}`, `--result=${resultPath}`]);
+    `--action-json=${JSON.stringify(pending.action)}`, `--result-json=${resultJson}`]);
   assert.equal(submitted.status, 'accepted');
+  await assert.rejects(() => access(join(root, '.git', 'rivet-inputs')));
+  assert.equal((await execFile('git', ['-C', root, 'status', '--porcelain'])).stdout, '');
   let verificationError;
   try {
     await cli(['work', 'verify', proposal.runId, `--project=${root}`,
@@ -321,14 +317,13 @@ test('real CLI completes host work, reports failed checks, and stops at human re
   assert.equal(observed.run.status, 'awaiting-final-approval');
   assert.equal(observed.runtime.nodes.find(node => node.id === 'final-delivery').status, 'ready');
 
-  const blockedDecomposition = join(inputs, 'blocked-decomposition.json');
-  await writeFile(blockedDecomposition, JSON.stringify({
+  const blockedDecomposition = JSON.stringify({
     schemaVersion: 1, kind: 'agilno.feature-decomposition',
     workItems: [{ objective: 'Add another module.', ownedPaths: ['src/another.js'], acceptanceCriterionIndexes: [1] }],
-  }));
+  });
   const blockedProposal = await cli(['work', 'propose', `--project=${root}`,
     '--request-text=# Add another module\n\n## Acceptance criteria\n\n- Add another module.\n',
-    `--decomposition=${blockedDecomposition}`]);
+    `--decomposition-json=${blockedDecomposition}`]);
   const blockedApproval = await cli(['feature', 'start', blockedProposal.runId, `--project=${root}`,
     `--expected-version=${blockedProposal.version}`, `--proposal-digest=${blockedProposal.proposalDigest}`]);
   const blockedPrepared = await cli(['work', 'prepare', blockedProposal.runId, `--project=${root}`,
@@ -338,15 +333,14 @@ test('real CLI completes host work, reports failed checks, and stops at human re
   const blockedWorker = JSON.parse(blockedAction.action.payload).contract.worktree.path;
   await mkdir(join(blockedWorker, 'src'));
   await writeFile(join(blockedWorker, 'src', 'another.js'), "export const another = true;\n");
-  await writeFile(actionPath, JSON.stringify(blockedAction.action));
-  await writeFile(resultPath, JSON.stringify({
+  const blockedResult = JSON.stringify({
     version: 1, status: 'success',
     output: { summary: 'Claimed unrelated evidence.', evidence: ['wrong-evidence'] },
     usage: { tokens: 1, costUsd: 0 },
-  }));
+  });
   const blockedSubmission = await cli(['work', 'submit', blockedProposal.runId, `--project=${root}`,
     `--expected-runtime-version=${blockedAction.runtimeVersion}`,
-    `--action=${actionPath}`, `--result=${resultPath}`]);
+    `--action-json=${JSON.stringify(blockedAction.action)}`, `--result-json=${blockedResult}`]);
   assert.equal(blockedSubmission.status, 'blocked');
   const blockedStatus = await cli(['work', 'status', blockedProposal.runId, `--project=${root}`]);
   assert.equal(blockedStatus.run.status, 'blocked');
@@ -365,4 +359,71 @@ test('real CLI completes host work, reports failed checks, and stops at human re
   assert.equal((await execFile('git', ['--git-dir', remote, 'for-each-ref',
     '--format=%(refname):%(objectname)', 'refs/heads'])).stdout, remoteRefs);
   assert.equal((await execFile('git', ['-C', root, 'status', '--porcelain'])).stdout, '');
+});
+
+test('inline host inputs reach the same services without reading files', async () => {
+  const output = capture();
+  const calls = [];
+  const dependencies = {
+    output: output.output,
+    fs: { lstatSync() { throw new Error('inline input must not read files'); } },
+    feature: { async propose(input) { calls.push(input); return { status: 'proposed' }; } },
+    work: { async submitResult(input) { calls.push(input); return { status: 'accepted' }; } },
+  };
+  const decomposition = { schemaVersion: 1, kind: 'agilno.feature-decomposition', workItems: [] };
+  assert.equal(await main(['work', 'propose', '--project=/repo', '--request-text=Task',
+    '--decomposition-json=' + JSON.stringify(decomposition), '--json'], dependencies), 0);
+  assert.deepEqual(calls[0].decomposition, decomposition);
+  assert.equal(await main(['work', 'submit', 'run-one', '--project=/repo', '--expected-runtime-version=3',
+    '--action-json={"id":"one"}', '--result-json={"status":"success"}', '--json'], dependencies), 0);
+  assert.deepEqual(calls[1].action, { id: 'one' });
+  assert.deepEqual(calls[1].result, { status: 'success' });
+  assert.equal(calls[1].expectedRuntimeVersion, 3);
+});
+
+test('inline inputs reject missing, conflicting, malformed, and oversized values before invoking services', async () => {
+  let effects = 0;
+  for (const flags of [[], ['--decomposition-json={',], ['--decomposition-json='],
+    ['--decomposition=/repo/input.json', '--decomposition-json={}'],
+    ['--decomposition-json=' + JSON.stringify('é'.repeat(32768))]]) {
+    const output = capture();
+    assert.equal(await main(['work', 'propose', '--project=/repo', '--request-text=Task', ...flags, '--json'], {
+      output: output.output, feature: { async propose() { effects++; } },
+    }), EXIT_CODES.INVALID_INPUT);
+  }
+  for (const flags of [[], ['--action-json={}', '--result-json={'],
+    ['--action=/repo/action.json', '--action-json={}', '--result-json={}'],
+    ['--action-json={}', '--result=/repo/result.json', '--result-json={}']]) {
+    const output = capture();
+    assert.equal(await main(['work', 'submit', 'run-one', '--project=/repo', '--expected-runtime-version=3', ...flags, '--json'], {
+      output: output.output, work: { async submitResult() { effects++; } },
+    }), EXIT_CODES.INVALID_INPUT);
+  }
+  assert.equal(effects, 0);
+});
+
+test('mixed file and inline submissions preserve JSON values literally', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'rivet-mixed-input-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, 'action.json'), '{"id":"one"}');
+  const result = { summary: 'quotes " and apostrophe \' and $(touch never) and `never`\nUnicode: é' };
+  let received;
+  const output = capture();
+  assert.equal(await main(['work', 'submit', 'run-one', '--project=' + root, '--expected-runtime-version=3',
+    '--action=' + join(root, 'action.json'), '--result-json=' + JSON.stringify(result), '--json'], {
+    output: output.output, work: { async submitResult(input) { received = input; return { status: 'accepted' }; } },
+  }), 0);
+  assert.deepEqual(received.result, result);
+  assert.deepEqual(received.action, { id: 'one' });
+});
+
+test('inline size boundary is measured in UTF-8 bytes', async () => {
+  const source = JSON.stringify('é'.repeat(32767));
+  assert.equal(Buffer.byteLength(source), 65536);
+  const output = capture();
+  let calls = 0;
+  assert.equal(await main(['work', 'propose', '--project=/repo', '--request-text=Task', '--decomposition-json=' + source, '--json'], {
+    output: output.output, feature: { async propose() { calls++; return { status: 'received' }; } },
+  }), 0);
+  assert.equal(calls, 1);
 });

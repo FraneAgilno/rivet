@@ -35,16 +35,16 @@ The feature commands accept a Markdown request or configured Jira/Linear intake.
 Host mode uses this lifecycle:
 
 ```text
-rivet work propose --project=<path> --request=<file> --decomposition=<json-file>
+rivet work propose --project=<path> --request-text=<text> --decomposition-json='<json>'
 rivet feature start <run-id> --project=<path> --expected-version=<n> --proposal-digest=<digest>
 rivet work prepare <run-id> --project=<path> --expected-version=<n>
 rivet work next <run-id> --project=<path> --expected-runtime-version=<n>
-rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> --action=<json-file> --result=<json-file>
+rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> --action-json='<json>' --result-json='<json>'
 rivet work verify <run-id> --project=<path> --expected-version=<n> --expected-runtime-version=<n>
 rivet work status <run-id> --project=<path>
 ```
 
-Keep transient decomposition, action, and result files under `.git/rivet-inputs/` so they remain private state and do not dirty the repository. Review and commit setup configuration and required scripts before proposing from a clean default branch. `work next` creates one isolated Worker checkout and returns a canonical launch/result contract. `work submit` rejects stale actions, changed contracts, evidence mismatches, and edits outside the sealed paths before integration. `work verify` inspects the real integration commit and runs configured gates, then stops at final human approval. It stores a bounded private report for both passing and failed checks; failed checks return nonzero and do not advance the run to final approval.
+Direct JSON inputs avoid temporary files and keep the Git baseline clean. Each inline JSON value is limited to 64 KiB of UTF-8. Pass it as one argument, preferably using a shell-free argument array; JSON serialization alone is not shell escaping. Existing `--decomposition`, `--action`, and `--result` file inputs remain available for project-contained files up to 128 KiB. Choose exactly one form per object; mixed file/inline submissions are supported. File path and runtime contract checks are unchanged. Credentials do not belong in payloads; command arguments can appear in history or process listings. Review and commit setup configuration and required scripts before proposing from a clean default branch. `work next` creates one isolated Worker checkout and returns a canonical launch/result contract. `work submit` rejects stale actions, changed contracts, evidence mismatches, and edits outside the sealed paths before integration. `work verify` inspects the real integration commit and runs configured gates, then stops at final human approval. It stores a bounded private report for both passing and failed checks; failed checks return nonzero and do not advance the run to final approval.
 
 The same selected client performs planning and implementation. Planning is read-only; implementation is limited to its approved worktree. The current bridge runs one Worker at a time and uses fast-forward integration. Checkouts remain under the sibling `.rivet-worktrees` directory until deliberately cleaned up.
 
@@ -89,4 +89,4 @@ The [Claude desktop reference](https://code.claude.com/docs/en/desktop) describe
 
 The host needs permission to invoke Rivet, edit the exact reserved checkout, write private Git state, create isolated worktrees, run checks, and present human approvals. `rivet preflight --mode=host --project=<path>` checks project readiness; it cannot prove the surrounding app grants every later operation.
 
-**Current alpha limitation:** default noninteractive host trials stopped at protected `.git/rivet-inputs` writes. Private Git state and sibling worktrees also need permission. Moving input files alone does not prove this resolved. Use normal operation approvals or the terminal `rivet run` flow. Full host lifecycle and fresh-user desktop trials remain open.
+**Current alpha limitation:** direct JSON removes the temporary input writes that blocked earlier noninteractive host trials. Private Git state and sibling worktrees still require permission. Use normal operation approvals for those exact operations, or the terminal `rivet run` flow if permissions cannot be granted. Automated host lifecycle coverage is not live desktop qualification; full real-harness and fresh-user trials remain open.

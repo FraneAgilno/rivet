@@ -50,7 +50,7 @@ Give Claude Code, Codex, or another capable harness a request such as:
 
 The harness handles Rivet's internal run ID, versions, digest, and JSON action files. You review the plan before activation and the verified result before delivery. If the harness needs to recover an interrupted action, it follows the skill's `work status` and `work next` instructions. Rivet does not push or merge the result automatically.
 
-The current host skill stores temporary proposal/action files under `.git/rivet-inputs/`. Default noninteractive Claude and Codex sandboxes may deny writes there. If that happens, use the terminal flow below for this alpha; a sandbox-compatible private input location is the next host-workflow fix.
+The host skill passes proposal/action/result JSON directly to Rivet, so temporary input files are not required. Rivet still needs permission to write private Git state and create isolated worktrees. Approve those exact operations through your harness when prompted. If your environment cannot grant access, use the terminal flow below. Full live host and desktop qualification remains open.
 
 ### In a terminal
 

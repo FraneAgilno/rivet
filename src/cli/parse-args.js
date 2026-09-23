@@ -44,7 +44,7 @@ const STRICT_OPTIONS = {
   work: {
     boolean: new Set(['json']),
     valued: new Set([
-      'action', 'decomposition', 'expected-runtime-version', 'expected-version', 'project', 'result',
+      'action', 'action-json', 'decomposition', 'decomposition-json', 'result-json', 'expected-runtime-version', 'expected-version', 'project', 'result',
       'request', 'request-text', 'ticket', 'tracker',
     ]),
   },

@@ -7,6 +7,7 @@ import { CliError, EXIT_CODES } from '../cli/output.js';
 
 const RUN_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const MAX_DECOMPOSITION_BYTES = 128 * 1024;
+const MAX_INLINE_JSON_BYTES = 64 * 1024;
 const SUBCOMMANDS = new Set(['propose', 'prepare', 'next', 'status', 'submit', 'verify']);
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
@@ -68,8 +69,16 @@ function readJson(project, path, fs, label) {
   }
 }
 
-function readDecomposition(project, path, fs) {
-  return readJson(project, path, fs, 'Work decomposition');
+function inputJson(project, flags, name, fs, label) {
+  const inlineName = `${name}-json`;
+  const selected = [name, inlineName].filter(key => flags[key] !== undefined);
+  if (selected.length !== 1) fail(`${label} requires exactly one of --${name} or --${inlineName}.`);
+  if (selected[0] === name) return readJson(project, flags[name], fs, label);
+  const source = flags[inlineName];
+  if (typeof source !== 'string' || !source.length || Buffer.byteLength(source, 'utf8') > MAX_INLINE_JSON_BYTES) {
+    fail(`${label} inline JSON must be between 1 and ${MAX_INLINE_JSON_BYTES} UTF-8 bytes. Use --${name} for larger input.`);
+  }
+  try { return JSON.parse(source); } catch { fail(`${label} is not valid JSON.`); }
 }
 
 function service(dependencies, name, method) {
@@ -105,8 +114,8 @@ function proposalInput(parsed, dependencies) {
   if (parsed.operands.length !== 0) fail('Work propose does not accept a run ID.');
   const project = absolute(parsed.flags.project, 'Work project');
   const selectors = ['request', 'request-text', 'ticket'].filter(key => parsed.flags[key] !== undefined);
-  if (selectors.length !== 1 || typeof parsed.flags.decomposition !== 'string') {
-    fail('Work propose requires one request source and --decomposition.');
+  if (selectors.length !== 1) {
+    fail('Work propose requires one request source.');
   }
   const selected = selectors[0];
   let source;
@@ -117,7 +126,7 @@ function proposalInput(parsed, dependencies) {
     project,
     source: Object.freeze(source),
     client: 'host',
-    decomposition: readDecomposition(project, parsed.flags.decomposition, dependencies.fs ?? filesystem),
+    decomposition: inputJson(project, parsed.flags, 'decomposition', dependencies.fs ?? filesystem, 'Work decomposition'),
     ...(parsed.flags.tracker === undefined ? {} : { tracker: parsed.flags.tracker }),
   });
 }
@@ -133,11 +142,11 @@ export async function workCommand(parsed, dependencies) {
   if (!parsed || parsed.command !== 'work' || !SUBCOMMANDS.has(parsed.subcommand)
     || !Array.isArray(parsed.operands) || !parsed.flags || typeof parsed.flags !== 'object') fail('Work command is invalid.');
   const allowedFlags = {
-    propose: ['project', 'request', 'request-text', 'ticket', 'tracker', 'decomposition', 'json'],
+    propose: ['project', 'request', 'request-text', 'ticket', 'tracker', 'decomposition', 'decomposition-json', 'json'],
     prepare: ['project', 'expected-version', 'json'],
     next: ['project', 'expected-runtime-version', 'json'],
     status: ['project', 'json'],
-    submit: ['project', 'expected-runtime-version', 'action', 'result', 'json'],
+    submit: ['project', 'expected-runtime-version', 'action', 'action-json', 'result', 'result-json', 'json'],
     verify: ['project', 'expected-version', 'expected-runtime-version', 'json'],
   };
   if (Object.keys(parsed.flags).some(key => !allowedFlags[parsed.subcommand].includes(key))) {
@@ -165,14 +174,11 @@ export async function workCommand(parsed, dependencies) {
   }
   if (parsed.subcommand === 'submit') {
     const input = lifecycleInput(parsed, { flag: 'expected-runtime-version', output: 'expectedRuntimeVersion' });
-    if (typeof parsed.flags.action !== 'string' || typeof parsed.flags.result !== 'string') {
-      fail('Work submit requires --action and --result JSON files.');
-    }
     const fs = dependencies.fs ?? filesystem;
     return emit(parsed, dependencies, await invoke(service(dependencies, 'work', 'submitResult'), 'submitResult', Object.freeze({
       ...input,
-      action: readJson(input.project, parsed.flags.action, fs, 'Work action'),
-      result: readJson(input.project, parsed.flags.result, fs, 'Work result'),
+      action: inputJson(input.project, parsed.flags, 'action', fs, 'Work action'),
+      result: inputJson(input.project, parsed.flags, 'result', fs, 'Work result'),
     })));
   }
   if (parsed.subcommand === 'verify') {
