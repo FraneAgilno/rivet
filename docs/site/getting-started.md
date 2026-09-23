@@ -1,19 +1,23 @@
 # Get started
 
-Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. These commands install from the public GitHub source branch.
+Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. Install the CLI from the public GitHub source branch:
+
+```sh
+npm install --global github:FraneAgilno/rivet#main
+```
 
 ## Connect a project
 
 From your project root, preview the setup:
 
 ```sh
-npx --yes --package=github:FraneAgilno/rivet#main rivet setup
+rivet setup
 ```
 
 Review the detected checks and planned files, then apply:
 
 ```sh
-npx --yes --package=github:FraneAgilno/rivet#main rivet setup --write
+rivet setup --write
 ```
 
 Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.

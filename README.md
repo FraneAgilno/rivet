@@ -6,13 +6,24 @@ Rivet is a **standalone development alpha** with its own CLI, configuration, sta
 
 ## Connect a project
 
-With Node.js 22 or 24, npm and Git installed, run from your project:
+With Node.js 22 or 24, npm and Git installed, install the alpha CLI, then run setup from your project:
 
 ```sh
-npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=.
+npm install --global github:FraneAgilno/rivet#main
+rivet setup
 ```
 
 Review the preview, then repeat with `--write`. This configures project policy and minimal harness instructions; it does not run project scripts or configure model authentication. [Quickstart](https://franeagilno.github.io/rivet/getting-started.html).
+
+After committing the setup files and configuring the required project checks, ask your coding harness to read the Rivet skill and complete a task. With a compatible, authenticated Claude Code or Codex CLI, you can also run from the project root or any folder inside it:
+
+```sh
+rivet run "Add a greeting module"
+rivet task status
+rivet task resume
+```
+
+Rivet discovers the project, shows the plan for approval, and manages internal run IDs and revisions. `--project` is only needed when invoking it from outside the project. The direct terminal adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`; newer versions need qualification before use.
 
 ## Contributor checkout
 
@@ -34,6 +45,7 @@ No public package has been published. The package namespace is provisional, publ
 - Independent `rivet` command, `.rivet` configuration, and private state.
 - Namespaced Claude/Codex skill installation that preserves other frameworks' skills.
 - Harness-neutral host execution for Claude Code, Codex, Gemini CLI, OpenCode, editor agents, and other CLI-capable harnesses.
+- One-command terminal task planning and execution with project discovery, human approval, status, resume, and durable verification evidence for validated Claude/Codex CLI versions.
 - Live project protocols with explicit draft, publish, revision, and digest controls.
 - Extensible model registry with local profile validation for hosted, local, compatible, and harness providers.
 - Imported workflow, Git worktree, provider, and verification modules.

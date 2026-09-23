@@ -4,8 +4,8 @@
 
 ```sh
 npm install --global github:FraneAgilno/rivet#main
-rivet setup --project=.
-rivet setup --project=. --write
+rivet setup
+rivet setup --write
 ```
 
 The source branch is a moving alpha, not a versioned npm release. For reproducible installation, replace `main` with a reviewed commit SHA. Global npm installation uses your existing npm prefix; configure a user-owned prefix/runtime manager if necessary rather than running the installer as root.
