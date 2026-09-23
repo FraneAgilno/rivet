@@ -11,6 +11,7 @@ import { resolveTrackerWorkRequest } from '../work-request/tracker.js';
 import { featurePlanDigest } from './plan-contract.js';
 import { createFeaturePlanner, createHostFeaturePlan } from './planner.js';
 import { createFeatureRunStore } from './run-store.js';
+import { acquireHostRunLock } from './host-run-lock.js';
 
 const INPUT_KEYS = new Set([
   'gitClient', 'planningClientFor', 'trackerAdapterFor', 'executeFeature', 'now', 'loadConfig', 'protocolsFor',
@@ -32,6 +33,7 @@ export class FeatureWorkflowError extends Error {
       'state-conflict': 'Feature run state changed or does not permit this operation.',
       'proposal-mismatch': 'Feature activation does not match the exact stored proposal.',
       'execution-result': 'Feature execution returned an invalid bounded result.',
+      'host-use-work': 'Host runs use work status and work next; blocked host work requires a new reviewed corrective proposal.',
     };
     super(messages[reason] ?? messages['invalid-input']);
     this.name = 'FeatureWorkflowError';
@@ -271,6 +273,7 @@ export function createFeatureWorkflow(input) {
   async function resume(raw) {
     const request = capture(raw, new Set(['project', 'runId', 'expectedVersion']));
     const { store, record } = await readRun(request.project, request.runId);
+    if (record.featurePlan.client === 'host') fail('host-use-work');
     if (!['approved', 'blocked'].includes(record.status) || record.version !== expectedVersion(request.expectedVersion)) {
       fail('state-conflict');
     }
@@ -300,11 +303,21 @@ export function createFeatureWorkflow(input) {
   async function cancel(raw) {
     const request = capture(raw, new Set(['project', 'runId', 'expectedVersion']));
     const { store, record } = await readRun(request.project, request.runId);
-    if (record.version !== expectedVersion(request.expectedVersion)
-      || !['proposed', 'approved', 'running', 'blocked', 'awaiting-final-approval'].includes(record.status)) fail('state-conflict');
-    return lifecycleView(await store.update({
-      status: 'cancelled', updatedAt: now(), runtimeRefs: record.runtimeRefs, evidenceRefs: record.evidenceRefs,
-    }, { expectedVersion: record.version }));
+    const cancelCurrent = async current => {
+      if (current.version !== expectedVersion(request.expectedVersion)
+        || !['proposed', 'approved', 'running', 'blocked', 'awaiting-final-approval'].includes(current.status)) fail('state-conflict');
+      return lifecycleView(await store.update({
+        status: 'cancelled', updatedAt: now(), runtimeRefs: current.runtimeRefs, evidenceRefs: current.evidenceRefs,
+      }, { expectedVersion: current.version }));
+    };
+    if (record.featurePlan.client !== 'host') return cancelCurrent(record);
+    const paths = await resolveFeatureRunPaths(request.project, request.runId);
+    const lock = await acquireHostRunLock(paths);
+    try {
+      const current = await store.read();
+      if (current === null || current.featurePlan.client !== 'host') fail('state-conflict');
+      return await cancelCurrent(current);
+    } finally { await lock.release(); }
   }
 
   return Object.freeze({ propose, start, status, resume, watch: resume, cancel });

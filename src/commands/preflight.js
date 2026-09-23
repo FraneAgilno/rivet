@@ -27,6 +27,14 @@ function defaultGoalState() {
 
 export async function preflight(parsed, dependencies = {}) {
   const json = parsed.flags.json === true;
+  const mode = parsed.flags.mode ?? 'orchestration';
+  if (!['host', 'orchestration'].includes(mode)) {
+    return emit(dependencies.output, json, {
+      ok: false, status: 'fail', checks: [],
+      remediations: ['Use --mode=host or --mode=orchestration.'],
+      error: { code: 'INVALID_INPUT', exitCode: EXIT_CODES.INVALID_INPUT, message: 'Preflight mode is invalid.' },
+    }, EXIT_CODES.INVALID_INPUT);
+  }
   const projectRoot = resolve(parsed.flags.project ?? dependencies.cwd?.() ?? process.cwd());
   let config;
   try {
@@ -46,7 +54,10 @@ export async function preflight(parsed, dependencies = {}) {
   }
   try {
     const packageManager = config.project.stack.packageManager;
-    const doctor = await diagnoseDoctor(projectRoot, dependencies);
+    const doctor = await diagnoseDoctor(projectRoot, {
+      ...dependencies,
+      ...(mode === 'host' ? { hostReadiness: true } : {}),
+    });
     const [git, tools, goalState] = await Promise.all([
       (dependencies.gitDiscovery ?? discoverGit)(projectRoot, {
         runner: dependencies.runner,
@@ -56,7 +67,7 @@ export async function preflight(parsed, dependencies = {}) {
         cwd: projectRoot,
         runner: dependencies.runner,
       }),
-      (dependencies.goalStateReader ?? defaultGoalState)(projectRoot),
+      mode === 'host' ? Promise.resolve(null) : (dependencies.goalStateReader ?? defaultGoalState)(projectRoot),
     ]);
     const capacity = dependencies.runtimeCapacity ?? { available: 1, required: 1 };
     const qualityCommands = doctor.checks?.commands ?? { ready: false, steps: [] };
@@ -67,13 +78,13 @@ export async function preflight(parsed, dependencies = {}) {
       check('head-attached', git.detached === false, 'Switch to a local branch.'),
       check('base-freshness', git.baseFreshness === 'fresh' || git.baseFreshness === 'ahead', 'Update the local default branch from its existing remote-tracking ref.'),
       check('worktree-discovery', git.worktreeCheck?.checked === true, 'Resolve local Git worktree discovery before retrying.'),
-      check('worktree-paths', (git.occupiedCandidatePaths ?? []).length === 0, 'Select an unoccupied worktree path.', {
+      ...(mode === 'host' ? [] : [check('worktree-paths', (git.occupiedCandidatePaths ?? []).length === 0, 'Select an unoccupied worktree path.', {
         occupiedCount: (git.occupiedCandidatePaths ?? []).length,
-      }),
-      check('runtime-capacity', Number(capacity.available) >= Number(capacity.required), 'Increase available runtime capacity.', {
+      })]),
+      ...(mode === 'host' ? [] : [check('runtime-capacity', Number(capacity.available) >= Number(capacity.required), 'Increase available runtime capacity.', {
         available: Number(capacity.available), required: Number(capacity.required),
-      }),
-      check('goal-state', goalState?.status === 'ready', 'Initialize and approve the private goal instance.'),
+      })]),
+      ...(mode === 'host' ? [] : [check('goal-state', goalState?.status === 'ready', 'Initialize and approve the private goal instance.')]),
       check('toolchain', tools.node?.supported === true && tools[packageManager]?.supported === true && tools.git?.supported === true,
         'Install a supported local Node, package manager, and Git toolchain.'),
       check('quality-commands', qualityCommands.ready, 'Define every required quality command as an effective bounded package script.', {
@@ -84,6 +95,7 @@ export async function preflight(parsed, dependencies = {}) {
     const payload = {
       ok: failed.length === 0,
       status: failed.length === 0 ? 'pass' : 'fail',
+      ...(mode === 'host' ? { mode } : {}),
       checks,
       remediations: [...new Set(failed.map(item => item.remediation))],
     };

@@ -114,8 +114,8 @@ export async function diagnoseDoctor(projectRoot, dependencies = {}) {
       ...Object.fromEntries(resolutions),
     });
   }
-  const credentials = providerCredentialStatus(config, environment);
-  const providers = await providerChecks(
+  const credentials = dependencies.hostReadiness === true ? [] : providerCredentialStatus(config, environment);
+  const providers = dependencies.hostReadiness === true ? [] : await providerChecks(
     config,
     dependencies.providerProbe,
     dependencies.providerProbeTimeoutMs,

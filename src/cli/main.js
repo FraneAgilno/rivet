@@ -88,7 +88,7 @@ const USAGE = `Usage:
   rivet init --project <path>      Propose v2 project configuration without writing
   rivet init --project <path> --write [--overwrite]
   rivet doctor [--project <path>] [--json]
-  rivet preflight [--project <path>] [--json]
+  rivet preflight [--project <path>] [--mode=host|orchestration] [--json]
   rivet verify [--json]
   rivet evidence [--json]
   rivet feature propose --project=<path> (--request=<file>|--request-text=<text>|--ticket=<id>) [--tracker=jira|linear] [--client=claude|codex] [--json]

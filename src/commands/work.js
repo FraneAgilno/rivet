@@ -85,7 +85,8 @@ async function invoke(target, method, input) {
   catch (error) {
     if (error instanceof CliError) throw error;
     const code = String(error?.code ?? '');
-    const publicCode = code.includes('STATE_CONFLICT') || code.includes('VERSION') || code.startsWith('ERR_GIT_')
+    const publicCode = code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED' ? 'FAILED_GATE'
+      : code === 'ERR_HOST_EXECUTION_REPOSITORY' || code.startsWith('ERR_HOST_RUN_') || code.includes('STATE_CONFLICT') || code.includes('VERSION') || code.startsWith('ERR_GIT_')
       ? 'REPOSITORY_CONFLICT'
       : code.includes('INVALID') ? 'INVALID_INPUT'
         : code.includes('MISSING') || code.includes('CONFIGURATION') ? 'MISSING_CONFIGURATION' : 'INTERNAL_ERROR';

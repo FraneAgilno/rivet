@@ -66,7 +66,7 @@ const STRICT_OPTIONS = {
   },
   preflight: {
     boolean: new Set(['json']),
-    valued: new Set(['project']),
+    valued: new Set(['project', 'mode']),
   },
   status: {
     boolean: new Set(['json']),

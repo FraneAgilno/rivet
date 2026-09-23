@@ -302,3 +302,9 @@ export function createSnapshotStore(paths, options = {}) {
     },
   });
 }
+
+export async function readSnapshotWithoutLock(paths) {
+  assertPaths(paths);
+  await verifyResolvedStatePaths(paths);
+  return readSnapshot(paths.snapshotPath);
+}
