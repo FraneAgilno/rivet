@@ -20,9 +20,9 @@ The repository is being kept focused on the reusable framework. Retired conferen
 ## Subsequent capabilities
 
 - Configurable MCP integrations and verified Jira/Linear, Figma and knowledge-context workflows.
-- Shared project memory with an Obsidian-compatible provider.
 - GitHub, Bitbucket and GitLab delivery adapters.
 - Bounded execution through more API and local model providers.
 - Recovery improvements and broader evaluation coverage.
+- Shared project memory with an Obsidian-compatible provider, deferred to the final implementation lane.
 
 These remain planned until demonstrated. See [implementation status](./status.md) for current capability and [CI](https://github.com/FraneAgilno/rivet/actions/workflows/ci.yml) for platform verification.
