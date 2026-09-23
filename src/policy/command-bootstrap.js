@@ -101,7 +101,7 @@ function startBootstrap() {
   }
 
   function terminateTarget() {
-    if (!target || target.exitCode !== null || target.signalCode !== null) return;
+    if (!target) return;
     const signalTarget = signal => {
       try {
         if (process.platform !== 'win32' && Number.isSafeInteger(target.pid) && target.pid > 0) process.kill(-target.pid, signal);
@@ -110,7 +110,6 @@ function startBootstrap() {
     };
     signalTarget('SIGTERM');
     killTimer = setTimeout(() => signalTarget('SIGKILL'), KILL_GRACE_MS);
-    killTimer.unref?.();
   }
 
   function shutdown(reason, exitCode = 1) {
@@ -120,7 +119,7 @@ function startBootstrap() {
     clearInterval(anchorTimer);
     terminateTarget();
     send('failed', { reason });
-    setTimeout(() => process.exit(exitCode), target ? KILL_GRACE_MS + 25 : 0).unref?.();
+    setTimeout(() => process.exit(exitCode), target ? KILL_GRACE_MS + 25 : 0);
   }
 
   async function launch() {
@@ -179,8 +178,10 @@ function startBootstrap() {
     }
   });
   process.once('disconnect', () => shutdown('ipc-closed'));
-  process.once('SIGTERM', () => shutdown('terminated'));
-  process.once('SIGINT', () => shutdown('terminated'));
+  // The foreground process group may receive a second signal while shutdown
+  // is waiting to kill the target group. Keep consuming it until cleanup ends.
+  process.on('SIGTERM', () => shutdown('terminated'));
+  process.on('SIGINT', () => shutdown('terminated'));
 }
 
 if (process.argv[2] === '--agilno-command-bootstrap-v1' && typeof process.send === 'function') startBootstrap();

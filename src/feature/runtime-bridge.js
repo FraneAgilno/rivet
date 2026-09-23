@@ -8,6 +8,9 @@ import { compileQualitySteps } from '../config/commands.js';
 import { validateProjectConfiguration } from '../config/validate.js';
 import { prepareIntegrationWorktree } from '../git/integration-worktree.js';
 import { reconcileWorktree } from '../git/reconcile.js';
+import { createAcceptedIntegrationStore } from './accepted-integration.js';
+import { createVerificationReportStore, verificationReport } from './verification-report.js';
+import { acceptedIntegrationPaths, resolveFeatureRunPaths, resolveStatePaths, verificationReportPaths } from '../state/paths.js';
 import { createReservationStore } from '../git/reservations.js';
 import { createReservedWorktree, verifyReservedWorktree } from '../git/worktrees.js';
 import { validatedGraphSnapshot } from '../graph/validate.js';
@@ -15,7 +18,6 @@ import { createApprovalReceipt, createApprovalRegistry } from '../policy/approva
 import { createAuthorityEnvelope } from '../policy/authority.js';
 import { buildLaunchContract } from '../prompts/launch-contract.js';
 import { runQualityGates } from '../quality/runner.js';
-import { resolveStatePaths } from '../state/paths.js';
 import { createRuntimeInstance } from '../runtime/instance-store.js';
 import { createOrchestrator } from '../runtime/orchestrator.js';
 import { validateWorkRequest } from '../work-request/contract.js';
@@ -487,7 +489,12 @@ function blocked(run, state, summary = 'Feature execution is blocked and can be 
 
 export function createFeatureExecutor(input) {
   const configured = captureExecutor(input);
-  return async function executeFeature(request) {
+  return async function executeFeature(request, options = {}) {
+    if (!options || typeof options !== 'object' || Array.isArray(options)
+      || Reflect.ownKeys(options).some(key => key !== 'signal')
+      || (options.signal !== undefined && !(options.signal instanceof AbortSignal))) fail();
+    const signal = options.signal;
+    if (signal?.aborted) fail();
     if (!request || typeof request !== 'object' || Array.isArray(request)
       || Reflect.ownKeys(request).length !== 2 || !Object.hasOwn(request, 'project') || !Object.hasOwn(request, 'run')) fail();
     const project = request.project;
@@ -522,6 +529,7 @@ export function createFeatureExecutor(input) {
     let preparationReason = null;
     let executionReason = null;
     let reconciliationReason = null;
+    let reconciledTip = null;
     const leases = new Map();
     const recoveryWorktrees = new Map();
     const client = Object.freeze({
@@ -640,6 +648,7 @@ export function createFeatureExecutor(input) {
             return Object.freeze({ ...report, status: 'blocked', reason: 'result-evidence-mismatch' });
           }
           reconciliationReason = report.status === 'integrated' ? null : report.reason ?? 'reconciliation-blocked';
+          if (report.status === 'integrated') reconciledTip = report.integrationTip;
           return report;
         } catch (error) {
           reconciliationReason = typeof error?.code === 'string' ? error.code : 'reconciliation-error';
@@ -675,7 +684,7 @@ export function createFeatureExecutor(input) {
       }
       const maximumTicks = run.featurePlan.nodes.length * 4 + 8;
       for (let tick = 0; tick < maximumTicks; tick += 1) {
-        const outcome = await runtime.tick(instance, { expectedVersion: state.version, maxActiveNodes: 1 });
+        const outcome = await runtime.tick(instance, { expectedVersion: state.version, maxActiveNodes: 1, signal });
         state = await inspectFeatureRuntime(instance);
         if (['blocked', 'failed', 'budget-exhausted', 'cancelled'].includes(outcome.terminal)) {
           const stopped = state.graph.nodes.filter(node => ['blocked', 'failed', 'cancelled'].includes(node.status)).map(node => node.id);
@@ -697,29 +706,72 @@ export function createFeatureExecutor(input) {
       return blocked(run, state, `Feature execution stopped safely.${reason} Correct the reported condition and resume the feature run.`);
     }
 
+    if (signal?.aborted) return blocked(run, state, 'Feature execution was interrupted. Inspect the run before resuming.');
+
     const integrated = await configured.gitClient.inspectRepository(integration.path);
     if (integrated.dirty || integrated.branch !== integration.branch) return blocked(run, state);
+    const featurePaths = await resolveFeatureRunPaths(project, run.runId);
+    const accepted = createAcceptedIntegrationStore(await acceptedIntegrationPaths(featurePaths));
+    let identity = await accepted.readOnly();
+    if (reconciledTip !== null) {
+      if (integrated.headSha !== reconciledTip) return blocked(run, state, 'Integration changed after Worker reconciliation. A new reviewed proposal is required.');
+      identity = await accepted.write({
+        schemaVersion: 1, runId: run.runId,
+        baselineCommit: run.featurePlan.baselineCommit,
+        commitSha: reconciledTip,
+        runtimeVersion: state.version,
+        path: integration.path, branch: integration.branch,
+      });
+    }
+    if (identity === null || identity.runId !== run.runId
+      || identity.baselineCommit !== run.featurePlan.baselineCommit
+      || identity.path !== integration.path || identity.branch !== integration.branch
+      || identity.runtimeVersion > state.version || identity.commitSha !== integrated.headSha
+      || identity.commitSha === run.featurePlan.baselineCommit
+      || !(await configured.gitClient.isAncestor(integration.path, run.featurePlan.baselineCommit, identity.commitSha))) {
+      return blocked(run, state, 'Integration does not match the accepted Worker commit. A new reviewed proposal is required.');
+    }
+    const changedPaths = await configured.gitClient.changedPaths(integration.path, run.featurePlan.baselineCommit, identity.commitSha);
+    if (changedPaths.length === 0) return blocked(run, state, 'Accepted Worker commit has no changed paths.');
     let quality;
+    let failure;
     try {
       quality = await runQualityGates({
         projectRoot: integration.path,
-        commitSha: integrated.headSha,
+        commitSha: identity.commitSha,
         authority: featureQualityAuthority(config),
         gates: await configuredFeatureGates(config, configured.resolveCommandExecutable),
         environment: configured.environment,
-      }, { gitClient: configured.gitClient, now: nowMs });
-    } catch {
+      }, { gitClient: configured.gitClient, now: nowMs, signal });
+    } catch (error) {
+      failure = typeof error?.safeMessage === 'string' ? error.safeMessage : 'Configured quality gates could not complete safely.';
+    }
+    const afterChecks = await configured.gitClient.inspectRepository(integration.path);
+    if (afterChecks.dirty || afterChecks.branch !== integration.branch || afterChecks.headSha !== identity.commitSha) {
+      return blocked(run, state, 'Integration changed during verification. A new reviewed proposal is required.');
+    }
+    const reports = createVerificationReportStore(await verificationReportPaths(featurePaths));
+    await reports.write(verificationReport({
+      run, state, integration, commitSha: identity.commitSha, changedPaths,
+      quality, failure, checkedAt: configured.now(),
+    }));
+    if (failure) {
       return blocked(run, state, 'Configured quality gates could not complete safely. Correct the gate failure and resume the feature run.');
     }
+    if (signal?.aborted) return blocked(run, state, 'Feature verification was interrupted. Inspect the run before resuming.');
     if (quality.status !== 'pass') {
       return blocked(run, state, 'One or more required quality gates failed. Correct the failure and resume the feature run.');
+    }
+    const beforeFinal = await configured.gitClient.inspectRepository(integration.path);
+    if (beforeFinal.dirty || beforeFinal.branch !== integration.branch || beforeFinal.headSha !== identity.commitSha) {
+      return blocked(run, state, 'Integration changed before final approval. A new reviewed proposal is required.');
     }
     return immutableJson({
       status: 'awaiting-final-approval',
       summary: 'All approved Workers completed on the isolated local integration branch and required quality gates passed. Final human approval is still required.',
       runtimeRefs: [`runtime:${run.runId}`, `worktree:${run.runId}`],
       evidenceRefs: [
-        `commit:${integrated.headSha}`,
+        `commit:${identity.commitSha}`,
         ...quality.gates.map(gate => `test:${gate.id}`),
         ...state.evidence.map(item => `evidence:${item.id}`),
       ],

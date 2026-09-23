@@ -1,19 +1,23 @@
 # Get started
 
-Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. These commands install from the public GitHub source branch.
+Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. Install the CLI from the public GitHub source branch:
+
+```sh
+npm install --global github:FraneAgilno/rivet#main
+```
 
 ## Connect a project
 
-From your project directory, preview the setup:
+From your project root, preview the setup:
 
 ```sh
-npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=.
+rivet setup
 ```
 
 Review the detected checks and planned files, then apply:
 
 ```sh
-npx --yes --package=github:FraneAgilno/rivet#main rivet setup --project=. --write
+rivet setup --write
 ```
 
 Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.
@@ -32,13 +36,52 @@ Reload your coding harness if necessary, then ask:
 
 > Read the Rivet skill and report this project's configured checks.
 
-This verifies instruction discovery. The installed skill can then use Rivet's host workflow from Claude Code, Codex, Gemini CLI, OpenCode, an editor agent, or another harness that can run the CLI and edit the returned isolated worktree. Rivet compiles the harness-supplied decomposition, seals scope and evidence, and stops again at final human approval; it does not need to launch another model.
+This verifies instruction discovery. The installed skill lets Claude Code, Codex, Gemini CLI, OpenCode, and other capable coding harnesses use Rivet's host workflow. Rivet seals the plan and evidence, then stops again for final human approval.
+
+## Complete a first task
+
+Review and commit the setup files and any package scripts needed by the configured checks. Start from a clean checkout of the configured default branch with a fresh or ahead remote-tracking ref. Run `rivet preflight --mode=host` to check host readiness, or `rivet doctor` for broader diagnostics. Resolve missing required checks before proposing work.
+
+### In your coding harness
+
+Give Claude Code, Codex, or another capable harness a request such as:
+
+> Read the Rivet skill. Add a greeting module that exports a greeting string. Show me the exact plan before activation, perform the approved work in Rivet's isolated checkout, and show the changed files and executed checks for final review.
+
+The harness handles Rivet's internal run ID, versions, digest, and JSON action files. You review the plan before activation and the verified result before delivery. If the harness needs to recover an interrupted action, it follows the skill's `work status` and `work next` instructions. Rivet does not push or merge the result automatically.
+
+### In a terminal
+
+If a compatible Claude or Codex CLI is installed and authenticated, you can start the same governed workflow with one command:
+
+```sh
+rivet run "Add a greeting module that exports a greeting string"
+```
+
+This alpha validates direct terminal adapters for Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`. Check `claude --version` or `codex --version` first. A newer version stops safely with a compatibility message until its adapter is qualified; the coding-harness workflow above still works with the harness you are using.
+
+For script-based CLI installs, Rivet also needs `RIVET_CLAUDE_INTERPRETER` or `RIVET_CODEX_INTERPRETER` set to the canonical native interpreter path. Ctrl-C and SIGTERM stop Rivet's local child process before the command exits; use `rivet task status` to inspect an interrupted run before resuming it.
+
+Run this from the configured project root or any folder inside it. Rivet finds the Git project, discovers a supported installed harness, plans the task, prints the full plan and required checks, and asks for approval in your terminal before starting. If both supported harnesses are installed, select one with `--harness=claude` or `--harness=codex`. Use `--project=<path>` only when you are outside the project or need an explicit root. The command does not treat a ticket ID alone as a verified request; describe the work or use the advanced ticket intake.
+
+Check progress and evidence without copying an internal run ID:
+
+```sh
+rivet task status
+rivet task resume
+```
+
+`task status` shows the next action, integration checkout, changed paths, and executed checks when available. `task resume` continues an approved or blocked spawned run after its cause is corrected. It will not duplicate a run still marked running. If several active tasks exist in the same project, Rivet lists them and asks you to select one with `--run=<id>`; it never guesses. A failed check exits nonzero and leaves its report available in `task status`. You can repair dependencies or the environment in the unchanged integration checkout, then resume verification at the same commit. Source changes require a new reviewed proposal.
+
+The Worker and integration checkouts are isolated Git worktrees. Dependencies from your original checkout, such as `node_modules`, are not copied into them. Rivet's configured checks do not install packages. The result stops at `awaiting-final-approval` for your separate review; it is not a delivery or merge decision.
+
+For the exact `feature` and `work` commands used by coding harnesses and automation, see the [runtime reference](./runtime-reference.md).
 
 Project procedures are managed independently and discovered live:
 
 ```sh
-rivet protocols add database-changes --project="$PWD"
-rivet protocols find database --project="$PWD" --include-drafts
+rivet protocols add database-changes
+rivet protocols find database --include-drafts
 ```
 
 See [runtime reference](./runtime-reference.md) for the host command sequence and [memory and project protocols](./memory-and-protocols.md) for protocol publishing.

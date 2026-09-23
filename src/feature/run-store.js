@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { immutableJson } from '../clients/contract.js';
-import { createSnapshotStore } from '../state/snapshot-store.js';
+import { createSnapshotStore, readSnapshotWithoutLock } from '../state/snapshot-store.js';
 import { assertResolvedStatePaths } from '../state/paths.js';
 import { validateWorkRequest } from '../work-request/contract.js';
 import { featurePlanDigest, validateFeaturePlan } from './plan-contract.js';
@@ -158,6 +158,10 @@ export function createFeatureRunStore(paths) {
 
   return Object.freeze({
     read,
+    async readOnly() {
+      const snapshot = await readSnapshotWithoutLock(paths);
+      return snapshot === null ? null : hydrate(snapshot, paths.runId);
+    },
     async create(input) {
       try {
         exactRecord(input, new Set(['workRequest', 'featurePlan', 'createdAt']));

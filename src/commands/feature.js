@@ -18,9 +18,9 @@ function service(dependencies, method) {
   return feature;
 }
 
-async function invoke(feature, method, input) {
+async function invoke(feature, method, input, options) {
   try {
-    return await feature[method](input);
+    return await feature[method](input, options);
   } catch (error) {
     if (error instanceof CliError) throw error;
     const code = String(error?.code ?? '');
@@ -28,11 +28,11 @@ async function invoke(feature, method, input) {
     if (code === 'ERR_FEATURE_WORKFLOW_CONFIGURATION' || code === 'ERR_APPLICATION_CONFIGURATION'
       || code === 'ERR_TRACKER_PROVIDER_CONFIGURATION') {
       publicCode = 'MISSING_CONFIGURATION';
-    } else if (code === 'ERR_FEATURE_WORKFLOW_REPOSITORY' || code === 'ERR_FEATURE_WORKFLOW_STATE_CONFLICT'
+    } else if (code.startsWith('ERR_HOST_RUN_') || code === 'ERR_FEATURE_WORKFLOW_REPOSITORY' || code === 'ERR_FEATURE_WORKFLOW_STATE_CONFLICT'
       || code === 'ERR_FEATURE_WORKFLOW_PROPOSAL_MISMATCH' || code === 'ERR_FEATURE_RUN_VERSION_CONFLICT'
       || code.startsWith('ERR_GIT_')) {
       publicCode = 'REPOSITORY_CONFLICT';
-    } else if (code === 'ERR_FEATURE_WORKFLOW_INVALID_INPUT' || code === 'ERR_INVALID_WORK_REQUEST'
+    } else if (code === 'ERR_FEATURE_WORKFLOW_HOST_USE_WORK' || code === 'ERR_FEATURE_WORKFLOW_INVALID_INPUT' || code === 'ERR_INVALID_WORK_REQUEST'
       || code === 'ERR_INVALID_FEATURE_PLAN' || code === 'ERR_INVALID_FEATURE_RUN') {
       publicCode = 'INVALID_INPUT';
     } else if (code.startsWith('ERR_PROVIDER_') || code.startsWith('ERR_AGENT_')) {
@@ -43,6 +43,8 @@ async function invoke(feature, method, input) {
     throw new CliError(message, publicCode, { cause: error });
   }
 }
+
+export { invoke as invokeFeature };
 
 function project(value) {
   if (typeof value !== 'string' || value.length < 2 || value.length > 4096 || !isAbsolute(value)

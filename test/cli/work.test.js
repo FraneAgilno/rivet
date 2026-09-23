@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFile as execFileCallback } from 'node:child_process';
+import { access, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 import { main } from '../../src/cli/main.js';
 import { createOutput, EXIT_CODES } from '../../src/cli/output.js';
 import { parseArgs } from '../../src/cli/parse-args.js';
+
+const execFile = promisify(execFileCallback);
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function capture() {
   let stdout = '';
@@ -140,4 +146,223 @@ test('work JSON inputs reject a symlinked parent directory', async t => {
     `--decomposition=${join(root, 'linked', 'plan.json')}`, '--json',
   ], { output: output.output, feature: { async propose() { throw new Error('must not run'); } } });
   assert.equal(exitCode, EXIT_CODES.REPOSITORY_CONFLICT);
+});
+
+test('real CLI completes host work, reports failed checks, and stops at human review', async t => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-first-task-')));
+  const root = join(parent, 'project');
+  const remote = join(parent, 'origin.git');
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  await mkdir(root);
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    name: 'first-task-fixture', private: true,
+    scripts: {
+      build: 'node -e "process.exit(0)"',
+      test: 'node -e "require(\'first-task-local-dep\')"',
+      lint: 'node -e "process.exit(0)"',
+    },
+  }));
+  await writeFile(join(root, 'README.md'), '# First task fixture\n');
+  await writeFile(join(root, '.gitignore'), 'node_modules/\n');
+  await execFile('git', ['init', '--quiet', '--bare', remote]);
+  await execFile('git', ['init', '--quiet', '--initial-branch=main', root]);
+  const setup = JSON.parse((await execFile(process.execPath, [
+    join(PACKAGE_ROOT, 'bin', 'cli.js'), 'setup', `--project=${root}`, '--write', '--json',
+  ], { cwd: PACKAGE_ROOT, env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } })).stdout);
+  assert.equal(setup.status, 'configured');
+  await execFile('git', ['-C', root, 'add', '.']);
+  await execFile('git', ['-C', root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--quiet', '-m', 'fixture']);
+  await execFile('git', ['-C', root, 'remote', 'add', 'origin', remote]);
+  await execFile('git', ['-C', root, 'push', '--quiet', '-u', 'origin', 'main']);
+  const baseline = (await execFile('git', ['-C', root, 'rev-parse', 'HEAD'])).stdout.trim();
+  const remoteRefs = (await execFile('git', ['--git-dir', remote, 'for-each-ref',
+    '--format=%(refname):%(objectname)', 'refs/heads'])).stdout;
+  const environment = {
+    PATH: process.env.PATH ?? '/usr/bin:/bin',
+    TMPDIR: parent,
+    RIVET_GIT_EXECUTABLE: await realpath((await execFile('which', ['git'])).stdout.trim()),
+    RIVET_NPM_EXECUTABLE: await realpath((await execFile('which', ['npm'])).stdout.trim()),
+  };
+  const cli = async args => {
+    const { stdout } = await execFile(process.execPath, [join(PACKAGE_ROOT, 'bin', 'cli.js'), ...args, '--json'], {
+      cwd: PACKAGE_ROOT, env: environment, maxBuffer: 4 * 1024 * 1024,
+    });
+    const response = JSON.parse(stdout);
+    assert.equal(response.ok, true);
+    return response.result;
+  };
+
+  const readiness = JSON.parse((await execFile(process.execPath, [
+    join(PACKAGE_ROOT, 'bin', 'cli.js'), 'preflight', `--project=${root}`, '--mode=host', '--json',
+  ], { cwd: PACKAGE_ROOT, env: environment })).stdout);
+  assert.equal(readiness.status, 'pass');
+  assert.equal(readiness.checks.some(check => check.id === 'goal-state'), false);
+
+  const inputs = join(root, '.git', 'rivet-inputs');
+  await mkdir(inputs);
+  const decompositionPath = join(inputs, 'decomposition.json');
+  await writeFile(decompositionPath, JSON.stringify({
+    schemaVersion: 1, kind: 'agilno.feature-decomposition',
+    workItems: [{
+      objective: 'Add the greeting module.',
+      ownedPaths: ['src/greeting.js'],
+      acceptanceCriterionIndexes: [1],
+    }],
+  }));
+  const proposal = await cli(['work', 'propose', `--project=${root}`,
+    '--request-text=# Add a greeting\n\n## Acceptance criteria\n\n- Add a greeting module.\n',
+    `--decomposition=${decompositionPath}`]);
+  assert.equal(proposal.status, 'proposed');
+  const approved = await cli(['feature', 'start', proposal.runId, `--project=${root}`,
+    `--expected-version=${proposal.version}`, `--proposal-digest=${proposal.proposalDigest}`]);
+  assert.equal(approved.status, 'approved');
+  const unprepared = await cli(['work', 'status', proposal.runId, `--project=${root}`]);
+  assert.equal(unprepared.runtime, null);
+  await assert.rejects(() => access(join(parent, '.rivet-worktrees')));
+  await assert.rejects(() => cli(['work', 'status', 'missing-run', `--project=${root}`]));
+  await assert.rejects(() => access(join(root, '.git', 'rivet', 'feature-runs', 'missing-run')));
+  let resumeError;
+  try {
+    await cli(['feature', 'resume', proposal.runId, `--project=${root}`,
+      `--expected-version=${approved.version}`]);
+  } catch (error) { resumeError = error; }
+  assert.equal(resumeError?.code, EXIT_CODES.INVALID_INPUT);
+  assert.match(JSON.parse(resumeError.stderr).error.message, /work status and work next/);
+  assert.equal((await cli(['work', 'status', proposal.runId, `--project=${root}`])).run.version,
+    approved.version);
+  await assert.rejects(() => access(join(parent, '.rivet-worktrees')));
+  const prepared = await cli(['work', 'prepare', proposal.runId, `--project=${root}`,
+    `--expected-version=${approved.version}`]);
+  assert.equal(prepared.status, 'ready');
+  const next = await cli(['work', 'next', proposal.runId, `--project=${root}`,
+    `--expected-runtime-version=${prepared.runtimeVersion}`]);
+  assert.equal(next.status, 'action');
+  const worktree = JSON.parse(next.action.payload).contract.worktree.path;
+  await mkdir(join(worktree, 'src'));
+  await writeFile(join(worktree, 'src', 'greeting.js'), "export const greeting = 'hello';\n");
+
+  const interrupted = await cli(['work', 'status', proposal.runId, `--project=${root}`]);
+  assert.equal(interrupted.run.status, 'running');
+  assert.equal(interrupted.runtime.version, next.runtimeVersion);
+  const pending = await cli(['work', 'next', proposal.runId, `--project=${root}`,
+    `--expected-runtime-version=${interrupted.runtime.version}`]);
+  assert.equal(pending.status, 'waiting-for-result');
+  assert.deepEqual(pending.action, next.action);
+
+  const actionPath = join(inputs, 'action.json');
+  const resultPath = join(inputs, 'result.json');
+  await writeFile(actionPath, JSON.stringify(pending.action));
+  await writeFile(resultPath, JSON.stringify({
+    version: 1, status: 'success',
+    output: {
+      summary: 'Added the greeting module.',
+      evidence: JSON.parse(pending.action.payload).contract.evidence,
+    },
+    usage: { tokens: 1, costUsd: 0 },
+  }));
+  const submitted = await cli(['work', 'submit', proposal.runId, `--project=${root}`,
+    `--expected-runtime-version=${pending.runtimeVersion}`,
+    `--action=${actionPath}`, `--result=${resultPath}`]);
+  assert.equal(submitted.status, 'accepted');
+  let verificationError;
+  try {
+    await cli(['work', 'verify', proposal.runId, `--project=${root}`,
+      `--expected-version=${prepared.run.version}`,
+      `--expected-runtime-version=${submitted.runtimeVersion}`]);
+  } catch (error) { verificationError = error; }
+  assert.equal(verificationError?.code, EXIT_CODES.FAILED_GATE);
+  assert.equal(JSON.parse(verificationError.stderr).error.code, 'FAILED_GATE');
+  const failed = await cli(['work', 'status', proposal.runId, `--project=${root}`]);
+  assert.equal(failed.run.status, 'running');
+  assert.equal(failed.verification.status, 'fail');
+  assert.match(failed.verification.commitSha, /^[a-f0-9]{40}$/);
+  assert.deepEqual(failed.verification.changedPaths, ['src/greeting.js']);
+  assert.match(failed.verification.integration.branch, /^feature\//);
+  assert.ok(failed.verification.workerClaims.length > 0);
+  const failedCheck = failed.verification.checks.find(check => check.id === 'test');
+  assert.equal(failedCheck?.status, 'failed');
+  assert.equal(failedCheck.cwd, '.');
+  assert.notEqual(failedCheck.exitCode, 0);
+  assert.notEqual(failedCheck.executionStatus, 'success');
+  assert.match(failedCheck.output.stderr, /Cannot find module|MODULE_NOT_FOUND/);
+  assert.ok(failedCheck.output.stderr.length <= 512);
+  assert.match(failed.nextAction, /unchanged integration checkout/);
+  let staleError;
+  try {
+    await cli(['work', 'verify', proposal.runId, `--project=${root}`,
+      `--expected-version=${prepared.run.version}`,
+      `--expected-runtime-version=${submitted.runtimeVersion - 1}`]);
+  } catch (error) { staleError = error; }
+  assert.equal(staleError?.code, EXIT_CODES.REPOSITORY_CONFLICT);
+  assert.equal((await cli(['work', 'status', proposal.runId, `--project=${root}`])).verification.version,
+    failed.verification.version);
+  const testedCommit = failed.verification.commitSha;
+  const integrationPath = failed.verification.integration.path;
+  await mkdir(join(integrationPath, 'node_modules', 'first-task-local-dep'), { recursive: true });
+  await writeFile(join(integrationPath, 'node_modules', 'first-task-local-dep', 'index.js'), 'module.exports = true;\n');
+  assert.equal((await execFile('git', ['-C', integrationPath, 'rev-parse', 'HEAD'])).stdout.trim(), testedCommit);
+  assert.equal((await execFile('git', ['-C', integrationPath, 'status', '--porcelain'])).stdout, '');
+  const verified = await cli(['work', 'verify', proposal.runId, `--project=${root}`,
+    `--expected-version=${prepared.run.version}`,
+    `--expected-runtime-version=${submitted.runtimeVersion}`]);
+  assert.equal(verified.status, 'awaiting-final-approval');
+  const passed = await cli(['work', 'status', proposal.runId, `--project=${root}`]);
+  assert.equal(passed.verification.status, 'pass');
+  assert.equal(passed.verification.commitSha, testedCommit);
+  assert.match(passed.nextAction, /final delivery decision/);
+  const commitRef = verified.evidenceRefs.find(ref => /^commit:[a-f0-9]{40}$/.test(ref));
+  assert.ok(commitRef);
+  assert.equal((await execFile('git', ['-C', root, 'diff', '--name-only', baseline,
+    commitRef.slice('commit:'.length)])).stdout.trim(), 'src/greeting.js');
+  assert.deepEqual(verified.evidenceRefs.filter(ref => ref.startsWith('test:')).sort(),
+    ['test:build', 'test:lint', 'test:test']);
+  const observed = await cli(['work', 'status', proposal.runId, `--project=${root}`]);
+  assert.equal(observed.run.status, 'awaiting-final-approval');
+  assert.equal(observed.runtime.nodes.find(node => node.id === 'final-delivery').status, 'ready');
+
+  const blockedDecomposition = join(inputs, 'blocked-decomposition.json');
+  await writeFile(blockedDecomposition, JSON.stringify({
+    schemaVersion: 1, kind: 'agilno.feature-decomposition',
+    workItems: [{ objective: 'Add another module.', ownedPaths: ['src/another.js'], acceptanceCriterionIndexes: [1] }],
+  }));
+  const blockedProposal = await cli(['work', 'propose', `--project=${root}`,
+    '--request-text=# Add another module\n\n## Acceptance criteria\n\n- Add another module.\n',
+    `--decomposition=${blockedDecomposition}`]);
+  const blockedApproval = await cli(['feature', 'start', blockedProposal.runId, `--project=${root}`,
+    `--expected-version=${blockedProposal.version}`, `--proposal-digest=${blockedProposal.proposalDigest}`]);
+  const blockedPrepared = await cli(['work', 'prepare', blockedProposal.runId, `--project=${root}`,
+    `--expected-version=${blockedApproval.version}`]);
+  const blockedAction = await cli(['work', 'next', blockedProposal.runId, `--project=${root}`,
+    `--expected-runtime-version=${blockedPrepared.runtimeVersion}`]);
+  const blockedWorker = JSON.parse(blockedAction.action.payload).contract.worktree.path;
+  await mkdir(join(blockedWorker, 'src'));
+  await writeFile(join(blockedWorker, 'src', 'another.js'), "export const another = true;\n");
+  await writeFile(actionPath, JSON.stringify(blockedAction.action));
+  await writeFile(resultPath, JSON.stringify({
+    version: 1, status: 'success',
+    output: { summary: 'Claimed unrelated evidence.', evidence: ['wrong-evidence'] },
+    usage: { tokens: 1, costUsd: 0 },
+  }));
+  const blockedSubmission = await cli(['work', 'submit', blockedProposal.runId, `--project=${root}`,
+    `--expected-runtime-version=${blockedAction.runtimeVersion}`,
+    `--action=${actionPath}`, `--result=${resultPath}`]);
+  assert.equal(blockedSubmission.status, 'blocked');
+  const blockedStatus = await cli(['work', 'status', blockedProposal.runId, `--project=${root}`]);
+  assert.equal(blockedStatus.run.status, 'blocked');
+  assert.ok(blockedStatus.blockedNodes.includes(blockedAction.action.nodeId));
+  assert.match(blockedStatus.nextAction, /new reviewed proposal/);
+  let blockedResumeError;
+  try {
+    await cli(['feature', 'resume', blockedProposal.runId, `--project=${root}`,
+      `--expected-version=${blockedStatus.run.version}`]);
+  } catch (error) { blockedResumeError = error; }
+  assert.equal(blockedResumeError?.code, EXIT_CODES.INVALID_INPUT);
+  assert.equal((await cli(['work', 'status', blockedProposal.runId, `--project=${root}`])).run.version,
+    blockedStatus.run.version);
+
+  assert.equal((await execFile('git', ['-C', root, 'rev-parse', 'HEAD'])).stdout.trim(), baseline);
+  assert.equal((await execFile('git', ['--git-dir', remote, 'for-each-ref',
+    '--format=%(refname):%(objectname)', 'refs/heads'])).stdout, remoteRefs);
+  assert.equal((await execFile('git', ['-C', root, 'status', '--porcelain'])).stdout, '');
 });

@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath, readdir } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { runArgv } from '../discovery/tools.js';
@@ -62,6 +62,17 @@ async function createPrivateDirectory(candidate, gitCommonDir) {
     await handle?.close();
   }
   return resolved;
+}
+
+async function existingPrivateDirectory(candidate, gitCommonDir) {
+  let metadata;
+  try { metadata = await lstat(candidate); }
+  catch (error) { if (error?.code === 'ENOENT') return false; throw error; }
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || (metadata.mode & 0o777) !== 0o700
+    || !isWithin(gitCommonDir, await realpath(candidate))) {
+    throw new Error('Private state path is unsafe');
+  }
+  return true;
 }
 
 async function resolveGitCommonDirectory(projectRoot, options, platformError) {
@@ -137,6 +148,82 @@ export async function resolveFeatureRunPaths(projectRoot, runId, options = {}) {
     lockPath: join(runDir, 'run.lock'),
   });
   return registerPaths(paths);
+}
+
+export async function resolveExistingFeatureRunPaths(projectRoot, runId, options = {}) {
+  if (typeof runId !== 'string' || runId.length > 64 || !INSTANCE_ID.test(runId)) {
+    throw new TypeError('Invalid feature run identifier');
+  }
+  const gitCommonDir = await resolveGitCommonDirectory(projectRoot, options, 'Unable to resolve the Git common directory');
+  const featureRoot = join(gitCommonDir, 'rivet');
+  const featureRunsRoot = join(featureRoot, 'feature-runs');
+  const runDir = join(featureRunsRoot, runId);
+  for (const path of [featureRoot, featureRunsRoot, runDir]) {
+    if (!(await existingPrivateDirectory(path, gitCommonDir))) return null;
+  }
+  return registerPaths(Object.freeze({
+    gitCommonDir, featureRoot, featureRunsRoot, runId, runDir,
+    stateRoot: featureRunsRoot, instanceDir: runDir,
+    snapshotPath: join(runDir, 'run.json'), lockPath: join(runDir, 'run.lock'),
+  }));
+}
+
+export async function listExistingFeatureRunPaths(projectRoot, options = {}) {
+  const gitCommonDir = await resolveGitCommonDirectory(projectRoot, options, 'Unable to resolve the Git common directory');
+  const featureRoot = join(gitCommonDir, 'rivet');
+  const featureRunsRoot = join(featureRoot, 'feature-runs');
+  if (!(await existingPrivateDirectory(featureRoot, gitCommonDir))
+    || !(await existingPrivateDirectory(featureRunsRoot, gitCommonDir))) return Object.freeze([]);
+  const entries = await readdir(featureRunsRoot);
+  if (entries.length > 256 || entries.some(name => !INSTANCE_ID.test(name) || name.length > 64)) {
+    throw new Error('Private feature-run directory contains invalid or excessive entries');
+  }
+  const paths = [];
+  for (const name of entries.sort()) {
+    const value = await resolveExistingFeatureRunPaths(projectRoot, name, options);
+    if (value === null) throw new Error('Private feature-run state changed during discovery');
+    paths.push(value);
+  }
+  return Object.freeze(paths);
+}
+
+export async function resolveExistingStatePaths(projectRoot, instance, options = {}) {
+  if (typeof instance !== 'string' || instance.length > 64 || !INSTANCE_ID.test(instance)) {
+    throw new TypeError('Invalid state instance identifier');
+  }
+  const gitCommonDir = await resolveGitCommonDirectory(projectRoot, options, 'Unable to resolve the Git common directory');
+  const stateRoot = join(gitCommonDir, 'rivet');
+  const instanceDir = join(stateRoot, instance);
+  for (const path of [stateRoot, instanceDir]) {
+    if (!(await existingPrivateDirectory(path, gitCommonDir))) return null;
+  }
+  return registerPaths(Object.freeze({
+    gitCommonDir, stateRoot, instanceDir,
+    eventsPath: join(instanceDir, 'events.jsonl'),
+    snapshotPath: join(instanceDir, 'snapshot.json'),
+    lockPath: join(instanceDir, 'state.lock'),
+    runtimeLockPath: join(instanceDir, 'runtime.lock'),
+  }));
+}
+
+export function verificationReportPaths(featurePaths) {
+  assertResolvedStatePaths(featurePaths);
+  if (featurePaths.runDir !== featurePaths.instanceDir) throw new TypeError('Invalid feature run paths');
+  return registerPaths(Object.freeze({
+    ...featurePaths,
+    snapshotPath: join(featurePaths.runDir, 'verification.json'),
+    lockPath: join(featurePaths.runDir, 'verification.lock'),
+  }));
+}
+
+export function acceptedIntegrationPaths(featurePaths) {
+  assertResolvedStatePaths(featurePaths);
+  if (featurePaths.runDir !== featurePaths.instanceDir) throw new TypeError('Invalid feature run paths');
+  return registerPaths(Object.freeze({
+    ...featurePaths,
+    snapshotPath: join(featurePaths.runDir, 'accepted-integration.json'),
+    lockPath: join(featurePaths.runDir, 'accepted-integration.lock'),
+  }));
 }
 
 export function assertResolvedStatePaths(paths) {

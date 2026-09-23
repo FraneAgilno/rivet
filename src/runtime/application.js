@@ -25,6 +25,7 @@ import { collectEvidenceBundle } from '../evidence/collect.js';
 import { createFeatureRunStore } from '../feature/run-store.js';
 import { createFeatureExecutor } from '../feature/runtime-bridge.js';
 import { createHostExecution } from '../feature/host-execution.js';
+import { discoverHarnesses } from './harness-discovery.js';
 import { createFeatureWorkflow } from '../feature/workflow.js';
 import { createGitClient } from '../git/client.js';
 import { createReservedWorktree } from '../git/worktrees.js';
@@ -126,6 +127,28 @@ export function createRivetApplication(input = {}) {
   let workflowPromise;
   let executorPromise;
   let hostExecutionPromise;
+  const selectedHarnesses = new Map();
+  const harnessSettings = kind => {
+    const selected = selectedHarnesses.get(kind);
+    return selected ? {
+      executable: selected.executable,
+      ...(selected.interpreter ? { interpreter: selected.interpreter } : {}),
+    } : {
+      executable: executable(env[`RIVET_${kind.toUpperCase()}_EXECUTABLE`]),
+      ...clientInterpreter(kind),
+    };
+  };
+  const harnesses = Object.freeze({
+    discover(projectRoot, { signal } = {}) { return discoverHarnesses({ env, projectRoot, signal }); },
+    async select(kind, projectRoot, { signal } = {}) {
+      if (!['claude', 'codex'].includes(kind)) fail();
+      const found = await discoverHarnesses({ env, projectRoot, signal });
+      const selected = found.find(item => item.kind === kind && item.executable);
+      if (!selected) fail();
+      selectedHarnesses.set(kind, selected);
+      return selected;
+    },
+  });
   const clientEnvironment = Object.freeze(Object.fromEntries(
     ['PATH', 'LANG', 'LC_ALL', 'TZ', 'TERM', 'TMPDIR', 'HOME', 'USER', 'LOGNAME', 'SHELL']
       .filter(key => env[key] !== undefined)
@@ -141,8 +164,7 @@ export function createRivetApplication(input = {}) {
       || !Object.hasOwn(request, 'client') || !Object.hasOwn(request, 'project')) fail();
     if (request.client === 'claude') {
       return createClaudePlanningClient({
-        executable: executable(env.RIVET_CLAUDE_EXECUTABLE),
-        ...clientInterpreter('claude'),
+        ...harnessSettings('claude'),
         expectedVersion: CLAUDE_ADAPTER_SYNTAX.observedVersion,
         worktree: executable(request.project),
         environment: clientEnvironment,
@@ -151,8 +173,7 @@ export function createRivetApplication(input = {}) {
     }
     if (request.client === 'codex') {
       return createCodexPlanningClient({
-        executable: executable(env.RIVET_CODEX_EXECUTABLE),
-        ...clientInterpreter('codex'),
+        ...harnessSettings('codex'),
         expectedVersion: CODEX_ADAPTER_SYNTAX.observedVersion,
         worktree: executable(request.project),
         environment: clientEnvironment,
@@ -164,8 +185,7 @@ export function createRivetApplication(input = {}) {
   const agentClientFor = (kind, clientProfile) => {
     if (!matchesClientProfile(kind, clientProfile)) fail();
     if (kind === 'claude') return createClaudeClient({
-      executable: executable(env.RIVET_CLAUDE_EXECUTABLE),
-      ...clientInterpreter('claude'),
+      ...harnessSettings('claude'),
       expectedVersion: CLAUDE_ADAPTER_SYNTAX.observedVersion,
       args: [
         ...CLAUDE_ADAPTER_SYNTAX.args.slice(0, -1),
@@ -177,8 +197,7 @@ export function createRivetApplication(input = {}) {
       environment: clientEnvironment,
     });
     if (kind === 'codex') return createCodexClient({
-      executable: executable(env.RIVET_CODEX_EXECUTABLE),
-      ...clientInterpreter('codex'),
+      ...harnessSettings('codex'),
       expectedVersion: CODEX_ADAPTER_SYNTAX.observedVersion,
       args: [...CODEX_ADAPTER_SYNTAX.args.slice(0, -1), '--sandbox', 'workspace-write', '{stdin}'],
       environment: clientEnvironment,
@@ -194,7 +213,7 @@ export function createRivetApplication(input = {}) {
     }
     fail();
   };
-  const executeFeature = async request => {
+  const executeFeature = async (request, options) => {
     executorPromise ??= gitClient().then(client => createFeatureExecutor({
       gitClient: client,
       clientFor: agentClientFor,
@@ -202,7 +221,7 @@ export function createRivetApplication(input = {}) {
       now,
       environment: clientEnvironment,
     }));
-    return (await executorPromise)(request);
+    return (await executorPromise)(request, options);
   };
   const resolvedWorkflow = () => {
     if (configured.featureWorkflow !== undefined) return Promise.resolve(captureFeatureWorkflow(configured.featureWorkflow));
@@ -265,5 +284,5 @@ export function createRivetApplication(input = {}) {
     },
   });
 
-  return Object.freeze({ cwd, env, fs, fetch, feature, work: hostExecution, resolveCommandExecutable });
+  return Object.freeze({ cwd, env, fs, fetch, feature, work: hostExecution, harnesses, resolveCommandExecutable });
 }

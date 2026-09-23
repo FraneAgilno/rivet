@@ -206,6 +206,39 @@ test('reports not-initialized private goal state honestly without writing', asyn
   assert.ok(JSON.parse(result.writes[0][1]).remediations.length > 0);
 });
 
+test('host readiness checks repository, tools, and scripts without private goal or provider credentials', async () => {
+  const root = await project();
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, mode: 'host', json: true } }, {
+    output: result.output,
+    env: {},
+    toolDiscovery: async () => readyTools,
+    gitDiscovery: async () => readyGit,
+    goalStateReader: async () => { throw new Error('host mode must not read goal state'); },
+    runtimeCapacity: { available: 0, required: 1 },
+  });
+  assert.equal(exitCode, EXIT_CODES.SUCCESS);
+  const payload = JSON.parse(result.writes[0][1]);
+  assert.equal(payload.mode, 'host');
+  assert.deepEqual(payload.checks.filter(item => item.status === 'fail'), []);
+  assert.equal(payload.checks.some(item => item.id === 'goal-state'), false);
+  assert.equal(payload.checks.some(item => item.id === 'quality-commands'), true);
+});
+
+test('host readiness still fails when a required package script is missing', async () => {
+  const root = await project();
+  await writeFile(join(root, 'package.json'), JSON.stringify({ scripts: { build: 'x' } }));
+  const result = capture();
+  const exitCode = await preflight({ flags: { project: root, mode: 'host', json: true } }, {
+    output: result.output, env: {},
+    toolDiscovery: async () => readyTools,
+    gitDiscovery: async () => readyGit,
+  });
+  assert.equal(exitCode, EXIT_CODES.FAILED_GATE);
+  const quality = JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'quality-commands');
+  assert.equal(quality.status, 'fail');
+});
+
 test('distinguishes an internal discovery failure from missing configuration without leaking details', async () => {
   const root = await project();
   const result = capture();

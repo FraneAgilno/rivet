@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { access, chmod, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
 import { createWorkAction, validateWorkAction } from '../../src/feature/actions.js';
@@ -11,7 +12,10 @@ import { createHostExecution } from '../../src/feature/host-execution.js';
 import { createFeatureWorkflow } from '../../src/feature/workflow.js';
 import { createGitClient } from '../../src/git/client.js';
 import { createReservedWorktree } from '../../src/git/worktrees.js';
-import { resolveStatePaths } from '../../src/state/paths.js';
+import { resolveFeatureRunPaths, resolveStatePaths } from '../../src/state/paths.js';
+import { acquireLock } from '../../src/state/lock.js';
+import { verificationReportPaths } from '../../src/state/paths.js';
+import { createVerificationReportStore } from '../../src/feature/verification-report.js';
 
 const execFile = promisify(execFileCallback);
 const CONFIG = new URL('../fixtures/config/valid/.rivet/', import.meta.url);
@@ -137,7 +141,7 @@ async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'] } =
   const gate = join(parent, 'gate');
   await writeFile(gate, '#!/bin/sh\nexit 0\n');
   await chmod(gate, 0o700);
-  return { root, gitClient, approved, gate };
+  return { root, gitClient, approved, gate, workflow };
 }
 
 function resultFor(action, overrides = {}) {
@@ -149,6 +153,43 @@ function resultFor(action, overrides = {}) {
     usage: { tokens: 10, costUsd: 0 },
     ...overrides,
   };
+}
+
+async function completedWorker(t) {
+  const fixtureValue = await fixture(t);
+  const { root, gitClient, approved, gate } = fixtureValue;
+  const execution = createHostExecution({
+    gitClient, now: () => NOW,
+    resolveCommandExecutable: async () => gate,
+    environment: { PATH: process.env.PATH },
+  });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({
+    project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion,
+  });
+  const worktree = JSON.parse(next.action.payload).contract.worktree.path;
+  await mkdir(join(worktree, 'app'), { recursive: true });
+  await writeFile(join(worktree, 'app', 'agenda.js'), 'export const agenda = true;\n');
+  const submitted = await execution.submitResult({
+    project: root, runId: approved.runId,
+    expectedRuntimeVersion: next.runtimeVersion,
+    action: next.action, result: resultFor(next.action),
+  });
+  assert.equal(submitted.status, 'accepted');
+  const verifyInput = {
+    project: root, runId: approved.runId,
+    expectedRunVersion: prepared.run.version,
+    expectedRuntimeVersion: submitted.runtimeVersion,
+  };
+  return { ...fixtureValue, execution, verifyInput };
+}
+
+async function waitForFile(path) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try { await access(path); return; } catch {}
+    await delay(25);
+  }
+  throw new Error('Gate start marker was not written');
 }
 
 test('prepare and nextAction durably hand one Worker to the host without a model client', async t => {
@@ -322,7 +363,12 @@ test('host verification rejects deleted and symlinked child manifests before exe
         runId: approved.runId,
         expectedRunVersion: prepared.run.version,
         expectedRuntimeVersion: submitted.runtimeVersion,
-      }), error => error.code === 'ERR_QUALITY_GATE');
+      }), error => error.code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED');
+      const observed = await execution.status({ project: root, runId: approved.runId });
+      assert.equal(observed.run.status, 'running');
+      assert.equal(observed.verification.status, 'fail');
+      assert.match(observed.verification.failure, /quality gate/i);
+      assert.deepEqual(observed.verification.checks, []);
       const integration = (await gitClient.listWorktrees(root))
         .find(item => item.branch.includes(approved.runId));
       await assert.rejects(() => access(join(integration.path, 'fallback-ran')));
@@ -377,6 +423,11 @@ test('submitResult rejects stale actions and blocks mismatched evidence before i
     }),
   });
   assert.equal(blocked.status, 'blocked');
+  const observed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(observed.run.status, 'blocked');
+  assert.equal(observed.runtime.graphStatus, 'blocked');
+  assert.ok(observed.blockedNodes.includes(next.action.nodeId));
+  assert.match(observed.nextAction, /new reviewed proposal/);
   const integrationAfter = (await gitClient.listWorktrees(root))
     .find(item => item.branch.includes(approved.runId)).head;
   assert.equal(integrationAfter, integrationBefore);
@@ -470,4 +521,201 @@ test('nextAction reuses an active worker checkout left by an interrupted prepara
   });
   assert.equal(next.status, 'action');
   assert.equal(JSON.parse(next.action.payload).contract.worktree.path, join(dirname(integration.path), 'workers', nodeId));
+});
+
+test('verification rejects committed and dirty source drift beyond the reconciled worker commit', async t => {
+  const { root, approved, gate, execution, verifyInput } = await completedWorker(t);
+  await writeFile(gate, '#!/bin/sh\nexit 1\n');
+  await assert.rejects(() => execution.verify(verifyInput),
+    error => error.code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED');
+  const failed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(failed.verification.status, 'fail');
+  assert.equal(failed.checkout.status, 'clean');
+  const acceptedCommit = failed.checkout.acceptedCommit;
+  const integration = failed.checkout.path;
+  await writeFile(join(integration, 'UNAPPROVED.txt'), 'outside the reviewed scope\n');
+  await git(integration, 'add', 'UNAPPROVED.txt');
+  await git(integration, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--quiet', '-m', 'unapproved');
+  await writeFile(gate, '#!/bin/sh\nexit 0\n');
+  await assert.rejects(() => execution.verify(verifyInput),
+    error => error.code === 'ERR_HOST_EXECUTION_REPOSITORY');
+  const stale = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(stale.checkout.status, 'stale');
+  assert.equal(stale.checkout.acceptedCommit, acceptedCommit);
+  assert.notEqual(stale.checkout.observedCommit, acceptedCommit);
+  assert.equal(stale.run.status, 'running');
+  assert.equal(stale.verification.commitSha, acceptedCommit);
+  assert.match(stale.nextAction, /Do not deliver/);
+  await writeFile(join(integration, 'UNAPPROVED.txt'), 'dirty after commit\n');
+  const dirty = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(dirty.checkout.status, 'stale');
+  assert.equal(dirty.checkout.dirty, true);
+  assert.match(dirty.nextAction, /Do not deliver/);
+});
+
+test('verification rejects source changes made while configured gates run', async t => {
+  const { root, approved, gate, execution, verifyInput } = await completedWorker(t);
+  const before = await execution.status({ project: root, runId: approved.runId });
+  const integration = before.checkout.path;
+  const marker = join(dirname(root), 'gate-started');
+  await writeFile(gate, [
+    '#!/usr/bin/env node',
+    "const fs = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    "if (!fs.existsSync(marker)) { fs.writeFileSync(marker, 'started'); setTimeout(() => process.exit(0), 2000); }",
+    'else process.exit(0);',
+    '',
+  ].join('\n'));
+  const verification = execution.verify(verifyInput);
+  await waitForFile(marker);
+  await writeFile(join(integration, 'UNAPPROVED.txt'), 'changed during checks\n');
+  await git(integration, 'add', 'UNAPPROVED.txt');
+  await git(integration, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+    'commit', '--quiet', '-m', 'mid-gate drift');
+  await assert.rejects(verification, error => error.code === 'ERR_HOST_EXECUTION_REPOSITORY');
+  const observed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(observed.run.status, 'running');
+  assert.equal(observed.verification, null);
+  assert.equal(observed.checkout.status, 'stale');
+  assert.match(observed.nextAction, /Do not deliver/);
+});
+
+test('status rejects corrupt and symlinked private reports without preparing a checkout', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const reportPath = join(paths.runDir, 'verification.json');
+  const unprepared = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(unprepared.runtime, null);
+  assert.equal(unprepared.verification, null);
+  await assert.rejects(() => access(join(dirname(root), '.rivet-worktrees')));
+  await writeFile(reportPath, '{corrupt\n', { mode: 0o600 });
+  await assert.rejects(() => execution.status({ project: root, runId: approved.runId }),
+    /Invalid state snapshot/);
+  await rm(reportPath);
+  const outside = join(dirname(root), 'outside-report');
+  await writeFile(outside, 'private outside content\n');
+  await symlink(outside, reportPath);
+  await assert.rejects(() => execution.status({ project: root, runId: approved.runId }),
+    /Unsafe state snapshot/);
+  await assert.rejects(() => access(join(dirname(root), '.rivet-worktrees')));
+});
+
+test('missing accepted commit identity fails closed after a completed worker', async t => {
+  const { root, approved, execution, verifyInput } = await completedWorker(t);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  await rm(join(paths.runDir, 'accepted-integration.json'));
+  await assert.rejects(() => execution.verify(verifyInput),
+    error => error.code === 'ERR_HOST_EXECUTION_REPOSITORY');
+  const observed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(observed.run.status, 'running');
+  assert.equal(observed.checkout, null);
+  assert.match(observed.nextAction, /identity is missing/);
+});
+
+test('an idle work next after submission preserves the accepted commit for verification', async t => {
+  const { root, approved, execution, verifyInput } = await completedWorker(t);
+  const next = await execution.nextAction({
+    project: root,
+    runId: approved.runId,
+    expectedRuntimeVersion: verifyInput.expectedRuntimeVersion,
+  });
+  assert.equal(next.status, 'idle');
+  assert.ok(next.runtimeVersion >= verifyInput.expectedRuntimeVersion);
+  const verified = await execution.verify({
+    ...verifyInput,
+    expectedRuntimeVersion: next.runtimeVersion,
+  });
+  assert.equal(verified.status, 'awaiting-final-approval');
+});
+
+test('final approval status requires its private report and accepted commit identity', async t => {
+  const { root, approved, execution, verifyInput } = await completedWorker(t);
+  await execution.verify(verifyInput);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const acceptedPath = join(paths.runDir, 'accepted-integration.json');
+  const reportPath = join(paths.runDir, 'verification.json');
+  const acceptedBytes = await readFile(acceptedPath);
+  const reportBytes = await readFile(reportPath);
+  for (const missing of [[reportPath], [acceptedPath], [reportPath, acceptedPath]]) {
+    for (const path of missing) await rm(path);
+    const observed = await execution.status({ project: root, runId: approved.runId });
+    assert.equal(observed.run.status, 'awaiting-final-approval');
+    assert.match(observed.nextAction, /Do not deliver/);
+    await writeFile(acceptedPath, acceptedBytes, { mode: 0o600 });
+    await writeFile(reportPath, reportBytes, { mode: 0o600 });
+  }
+  const reports = createVerificationReportStore(await verificationReportPaths(paths));
+  const current = await reports.readOnly();
+  await reports.write({ ...current, commitSha: 'a'.repeat(40) });
+  const mismatched = await execution.status({ project: root, runId: approved.runId });
+  assert.match(mismatched.nextAction, /Do not deliver/);
+});
+
+test('verification holds the host lock through final run publication', async t => {
+  const { root, approved, gate, execution, verifyInput } = await completedWorker(t);
+  const marker = join(dirname(root), 'publication-gate-started');
+  await writeFile(gate, [
+    '#!/usr/bin/env node',
+    "const fs = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    "if (!fs.existsSync(marker)) { fs.writeFileSync(marker, 'started'); setTimeout(() => process.exit(0), 700); }",
+    'else process.exit(0);',
+    '',
+  ].join('\n'));
+  let settled = false;
+  const verifying = execution.verify(verifyInput).finally(() => { settled = true; });
+  await waitForFile(marker);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const stateLock = await acquireLock(paths.lockPath);
+  try {
+    await waitForFile(join(paths.runDir, 'verification.json'));
+    assert.equal(settled, false);
+    const observed = await execution.status({ project: root, runId: approved.runId });
+    assert.equal(observed.run.status, 'running');
+    await assert.rejects(() => acquireLock(join(paths.runDir, 'host-operation.lock')),
+      error => error.code === 'ERR_STATE_LOCKED');
+  } finally { await stateLock.release(); }
+  const verified = await verifying;
+  assert.equal(verified.status, 'awaiting-final-approval');
+});
+
+test('concurrent failed verify and host cancellation cannot overwrite a passing final report', async t => {
+  const { root, approved, gate, gitClient, workflow, execution, verifyInput } = await completedWorker(t);
+  const marker = join(dirname(root), 'slow-gate-started');
+  await writeFile(gate, [
+    '#!/usr/bin/env node',
+    "const fs = require('node:fs');",
+    `const marker = ${JSON.stringify(marker)};`,
+    "if (!fs.existsSync(marker)) { fs.writeFileSync(marker, 'started'); setTimeout(() => process.exit(0), 4000); }",
+    'else process.exit(0);',
+    '',
+  ].join('\n'));
+  const failingGate = join(dirname(root), 'failing-gate');
+  await writeFile(failingGate, '#!/bin/sh\nexit 1\n', { mode: 0o700 });
+  await chmod(failingGate, 0o700);
+  const failing = createHostExecution({
+    gitClient, now: () => NOW,
+    resolveCommandExecutable: async () => failingGate,
+    environment: { PATH: process.env.PATH },
+  });
+  const passingAttempt = execution.verify(verifyInput);
+  await waitForFile(marker);
+  const outcomes = await Promise.allSettled([
+    failing.verify(verifyInput),
+    workflow.cancel({ project: root, runId: approved.runId, expectedVersion: verifyInput.expectedRunVersion }),
+    execution.nextAction({
+      project: root, runId: approved.runId, expectedRuntimeVersion: verifyInput.expectedRuntimeVersion,
+    }),
+  ]);
+  assert.deepEqual(outcomes.map(item => item.status), ['rejected', 'rejected', 'rejected']);
+  assert.ok(outcomes.every(item => item.reason.code === 'ERR_HOST_RUN_BUSY'));
+  const passed = await passingAttempt;
+  assert.equal(passed.status, 'awaiting-final-approval');
+  const observed = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(observed.run.status, 'awaiting-final-approval');
+  assert.equal(observed.verification.status, 'pass');
+  assert.equal(observed.checkout.status, 'clean');
+  assert.match(observed.nextAction, /final delivery decision/);
 });
