@@ -29,7 +29,7 @@ function diagnostic(value) {
 function nextAction(status) {
   return status === 'pass'
     ? 'Review the integration diff and executed checks, then make the separate final delivery decision.'
-    : 'Repair environment or dependencies in the unchanged integration checkout and retry work verify. Source fixes require a new reviewed proposal.';
+    : 'If locked dependencies are missing, run rivet task deps in the project and approve the shown install. Then retry verification in the unchanged integration checkout at the same commit. Source fixes require a new reviewed proposal.';
 }
 
 function checkResult(value) {

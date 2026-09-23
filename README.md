@@ -21,9 +21,10 @@ After committing the setup files and configuring the required project checks, as
 rivet run "Add a greeting module"
 rivet task status
 rivet task resume
+rivet task deps
 ```
 
-Rivet discovers the project, shows the plan for approval, and manages internal run IDs and revisions. `--project` is only needed when invoking it from outside the project. The direct terminal adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`; newer versions need qualification before use.
+Rivet discovers the project, shows the plan for approval, and manages internal run IDs and revisions. `task deps` asks before installing locked dependencies in the accepted integration checkout when verification needs them. `--project` is only needed when invoking it from outside the project. The direct terminal adapters currently validate Claude Code `2.1.207` and Codex CLI `0.148.0-alpha.9`; newer versions need qualification before use.
 
 ## Contributor checkout
 

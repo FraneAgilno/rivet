@@ -1,7 +1,10 @@
 import { resolveConfiguredProject } from '../cli/project-discovery.js';
 import { withTerminalInterruption } from '../cli/interrupt.js';
 import { CliError, EXIT_CODES } from '../cli/output.js';
+import { loadProjectConfig } from '../config/load.js';
 import { createFeatureRunStore } from '../feature/run-store.js';
+import { createGitClient } from '../git/client.js';
+import { bootstrapWorktreeDependencies } from '../runtime/worktree-bootstrap.js';
 import { listExistingFeatureRunPaths } from '../state/paths.js';
 import { invokeFeature } from './feature.js';
 
@@ -60,13 +63,68 @@ async function selectedRun(project, wanted, operation, output) {
   return eligible[0];
 }
 
+async function dependencyCommand(project, record, dependencies) {
+  if (dependencies.terminalIsInteractive?.() !== true || typeof dependencies.confirmDependencyInstall !== 'function') {
+    fail('Run rivet task deps in an interactive terminal to approve dependency installation.');
+  }
+  if (typeof dependencies.work?.status !== 'function'
+    || typeof dependencies.resolveCommandExecutable !== 'function') fail('Dependency setup is unavailable.', 'MISSING_CONFIGURATION');
+  const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
+  if (!['running', 'blocked'].includes(record.status) || status.checkout?.status !== 'clean') {
+    fail('This task has no clean accepted integration checkout yet. Continue the task, then retry dependency setup.', 'REPOSITORY_CONFLICT');
+  }
+  const config = await loadProjectConfig(project.root);
+  let gitClient;
+  try { gitClient = await createGitClient({ gitExecutable: await dependencies.resolveCommandExecutable('git') }); }
+  catch { fail('A supported Git executable is required for dependency setup.', 'PROVIDER_UNAVAILABLE'); }
+  return withTerminalInterruption(async signal => {
+    let result;
+    try {
+      result = await bootstrapWorktreeDependencies({
+        projectRoot: project.root,
+        worktreePath: status.checkout.path,
+        expectedCommit: status.checkout.acceptedCommit,
+        expectedBranch: status.checkout.branch,
+        manager: config.project.stack.packageManager,
+      }, {
+        gitClient,
+        resolveCommandExecutable: dependencies.resolveCommandExecutable,
+        confirm: plan => {
+          dependencies.output.log(`Install locked dependencies in ${visible(plan.worktreePath)}?`);
+          dependencies.output.log(`Command: ${visible(plan.executable)} ${plan.args.map(visible).join(' ')}`);
+          dependencies.output.log('Package installation may run scripts supplied by the project or its dependencies.');
+          return dependencies.confirmDependencyInstall(plan, { signal });
+        },
+        signal,
+      });
+    } catch (error) {
+      fail(error?.safeMessage ?? 'Dependency setup failed safely.', 'FAILED_GATE');
+    }
+    if (result.status === 'declined') {
+      dependencies.output.log('Dependency setup was declined.');
+      return EXIT_CODES.SUCCESS;
+    }
+    if (result.status !== 'ready') {
+      dependencies.output.error(`Dependency setup failed (${visible(result.result.status)}).`);
+      if (result.result.stdout) dependencies.output.error(`stdout:\n${diagnostic(result.result.stdout)}`);
+      if (result.result.stderr) dependencies.output.error(`stderr:\n${diagnostic(result.result.stderr)}`);
+      return EXIT_CODES.FAILED_GATE;
+    }
+    dependencies.output.log(record.featurePlan.client === 'host'
+      ? 'Dependencies are ready in the isolated checkout. Continue in the owning harness and retry work verify.'
+      : 'Dependencies are ready in the isolated checkout. Use rivet task resume to retry verification.');
+    return EXIT_CODES.SUCCESS;
+  });
+}
+
 export async function humanTaskCommand(parsed, dependencies) {
-  if (parsed.command !== 'task' || !['status', 'resume'].includes(parsed.subcommand)
+  if (parsed.command !== 'task' || !['status', 'resume', 'deps'].includes(parsed.subcommand)
     || parsed.operands.length !== 0 || Object.keys(parsed.flags).some(key => !['project', 'run'].includes(key))) {
-    fail('Use rivet task status|resume [--project=<path>] [--run=<id>].');
+    fail('Use rivet task status|resume|deps [--project=<path>] [--run=<id>].');
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), parsed.flags.project, { env: dependencies.env });
   const record = await selectedRun(project.root, parsed.flags.run, parsed.subcommand, dependencies.output);
+  if (parsed.subcommand === 'deps') return dependencyCommand(project, record, dependencies);
   if (parsed.subcommand === 'status') {
     if (typeof dependencies.work?.status !== 'function') fail('Task status is unavailable.', 'MISSING_CONFIGURATION');
     const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });

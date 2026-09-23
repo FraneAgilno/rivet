@@ -69,11 +69,12 @@ Check progress and evidence without copying an internal run ID:
 ```sh
 rivet task status
 rivet task resume
+rivet task deps
 ```
 
-`task status` shows the next action, integration checkout, changed paths, and executed checks when available. `task resume` continues an approved or blocked spawned run after its cause is corrected. It will not duplicate a run still marked running. If several active tasks exist in the same project, Rivet lists them and asks you to select one with `--run=<id>`; it never guesses. A failed check exits nonzero and leaves its report available in `task status`. You can repair dependencies or the environment in the unchanged integration checkout, then resume verification at the same commit. Source changes require a new reviewed proposal.
+`task status` shows the next action, integration checkout, changed paths, and executed checks when available. `task resume` continues an approved or blocked spawned run after its cause is corrected. It will not duplicate a run still marked running. If several active tasks exist in the same project, Rivet lists them and asks you to select one with `--run=<id>`; it never guesses. A failed check exits nonzero and leaves its report available in `task status`. If the accepted integration checkout is missing locked dependencies, run `rivet task deps` from anywhere inside the project. Rivet shows the exact frozen package-manager command and asks before running it in that checkout. Then use `rivet task resume` to retry verification at the same commit. Source changes require a new reviewed proposal.
 
-The Worker and integration checkouts are isolated Git worktrees. Dependencies from your original checkout, such as `node_modules`, are not copied into them. Rivet's configured checks do not install packages. The result stops at `awaiting-final-approval` for your separate review; it is not a delivery or merge decision.
+The Worker and integration checkouts are isolated Git worktrees. Dependencies from your original checkout, such as `node_modules`, are not copied into them. `task deps` currently prepares the accepted integration checkout after Worker work; Worker checkout dependencies still need preparation in their own checkout when editing requires them. Rivet's configured checks do not install packages. The result stops at `awaiting-final-approval` for your separate review; it is not a delivery or merge decision.
 
 For the exact `feature` and `work` commands used by coding harnesses and automation, see the [runtime reference](./runtime-reference.md).
 

@@ -215,7 +215,7 @@ export function parseArgs(argv) {
   if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported work subcommand');
   }
-  if (command === 'task' && !['status', 'resume'].includes(positionals[0])) {
+  if (command === 'task' && !['status', 'resume', 'deps'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported task subcommand');
   }
 

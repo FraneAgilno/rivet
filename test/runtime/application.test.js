@@ -61,6 +61,18 @@ test('constructs one inert narrow application surface with explicit host work ca
   assert.equal(Object.isFrozen(application.work), true);
 });
 
+test('resolves package managers from absolute runtime-manager PATH entries', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'rivet-path-manager-')));
+  const manager = join(root, 'pnpm');
+  await writeFile(manager, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const application = createRivetApplication({
+    cwd: () => root,
+    env: { PATH: `.:${root}` },
+    fs: {}, fetch: async () => {}, spawn: () => {}, now: () => '2029-01-01T00:00:00.000Z',
+  });
+  assert.equal(await application.resolveCommandExecutable('pnpm'), manager);
+});
+
 test('constructs only pinned Claude or Codex clients and fails closed when executable configuration is absent', () => {
   const application = createRivetApplication({
     cwd: () => '/project',

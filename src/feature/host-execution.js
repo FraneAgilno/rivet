@@ -516,7 +516,7 @@ export function createHostExecution(input) {
         ? hostRun
           ? 'Inspect the blocked nodes and last submission response. Source correction requires a new reviewed proposal.'
           : verification?.status === 'fail'
-            ? 'Repair the environment in the unchanged integration checkout, then use rivet task resume. Source changes require a new reviewed proposal.'
+            ? 'For missing locked dependencies, run rivet task deps and approve the shown install, then use rivet task resume. Source changes require a new reviewed proposal.'
             : 'Inspect the blocked spawned run. Use rivet task resume only after its cause is corrected.'
         : readyForVerification && accepted === null
           ? 'Accepted integration identity is missing. Do not verify this run; create a new reviewed proposal.'
