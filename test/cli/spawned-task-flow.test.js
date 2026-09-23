@@ -19,6 +19,13 @@ const execFile = promisify(execFileCallback);
 const NOW = '2029-01-01T00:00:00.000Z';
 const CONFIG = new URL('../fixtures/config/valid/.rivet/', import.meta.url);
 
+async function systemGit() {
+  for (const path of ['/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git']) {
+    try { return await realpath(path); } catch {}
+  }
+  throw new Error('Git executable is unavailable for this test');
+}
+
 async function fixture(t) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-spawned-flow-')));
   const root = join(parent, 'project');
@@ -43,7 +50,7 @@ async function fixture(t) {
 
 test('one terminal task retains failed checks and resumes verification at the accepted commit', async t => {
   const { root, nested, gate } = await fixture(t);
-  const gitClient = await createGitClient({ gitExecutable: await realpath('/opt/homebrew/bin/git') });
+  const gitClient = await createGitClient({ gitExecutable: await systemGit() });
   const resolveCommandExecutable = async runner => {
     assert.equal(runner, 'npm');
     return gate;
