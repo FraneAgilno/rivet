@@ -97,7 +97,9 @@ async function invoke(target, method, input) {
     if (code === 'EPERM' || code === 'EACCES') {
       throw new CliError('Rivet lacks filesystem permission for this host operation. Request approval for this exact command through your harness, including private Git state and isolated worktree access. If approval is unavailable, use an approved interactive session or the terminal workflow.', 'REPOSITORY_CONFLICT', { cause: error });
     }
-    const publicCode = code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED' ? 'FAILED_GATE'
+    const publicCode = code === 'ERR_INTEGRATION_INPUT' ? 'INVALID_INPUT'
+      : code.startsWith('ERR_INTEGRATION_') ? 'PROVIDER_UNAVAILABLE'
+      : code === 'ERR_HOST_EXECUTION_VERIFICATION_FAILED' ? 'FAILED_GATE'
       : code === 'ERR_HOST_EXECUTION_REPOSITORY' || code.startsWith('ERR_HOST_RUN_') || code.includes('STATE_CONFLICT') || code.includes('VERSION') || code.startsWith('ERR_GIT_')
       ? 'REPOSITORY_CONFLICT'
       : code.includes('INVALID') ? 'INVALID_INPUT'
@@ -116,7 +118,7 @@ function emit(parsed, dependencies, result) {
 function proposalInput(parsed, dependencies) {
   if (parsed.operands.length !== 0) fail('Work propose does not accept a run ID.');
   const project = absolute(parsed.flags.project, 'Work project');
-  const selectors = ['request', 'request-text', 'ticket'].filter(key => parsed.flags[key] !== undefined);
+  const selectors = ['request', 'request-text', 'ticket', 'host-context-json'].filter(key => parsed.flags[key] !== undefined);
   if (selectors.length !== 1) {
     fail('Work propose requires one request source.');
   }
@@ -124,7 +126,10 @@ function proposalInput(parsed, dependencies) {
   let source;
   if (selected === 'request') source = { kind: 'file', value: absolute(parsed.flags.request, 'Work request path') };
   else if (selected === 'request-text') source = { kind: 'inline', value: parsed.flags['request-text'] };
-  else source = { kind: 'ticket', value: parsed.flags.ticket };
+  else if (selected === 'host-context-json') {
+    source = { kind: 'host-observation', value: inputJson(project, parsed.flags, 'host-context', dependencies.fs ?? filesystem, 'Host context') };
+  } else source = { kind: 'ticket', value: parsed.flags.ticket };
+  if (selected !== 'ticket' && parsed.flags.tracker !== undefined) fail('--tracker is only valid with --ticket.');
   return Object.freeze({
     project,
     source: Object.freeze(source),
@@ -145,7 +150,7 @@ export async function workCommand(parsed, dependencies) {
   if (!parsed || parsed.command !== 'work' || !SUBCOMMANDS.has(parsed.subcommand)
     || !Array.isArray(parsed.operands) || !parsed.flags || typeof parsed.flags !== 'object') fail('Work command is invalid.');
   const allowedFlags = {
-    propose: ['project', 'request', 'request-text', 'ticket', 'tracker', 'decomposition', 'decomposition-json', 'json'],
+    propose: ['project', 'request', 'request-text', 'host-context-json', 'ticket', 'tracker', 'decomposition', 'decomposition-json', 'json'],
     prepare: ['project', 'expected-version', 'json'],
     next: ['project', 'expected-runtime-version', 'json'],
     status: ['project', 'json'],

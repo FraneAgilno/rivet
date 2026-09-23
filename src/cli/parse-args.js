@@ -6,6 +6,7 @@ const COMMANDS = new Set([
   'init',
   'install',
   'models',
+  'integrations',
   'orchestrate',
   'preflight',
   'protocols',
@@ -20,7 +21,7 @@ const COMMANDS = new Set([
 ]);
 
 const LEGACY_COMMANDS = new Set(['init', 'install', 'uninstall']);
-const NESTED_COMMANDS = new Set(['feature', 'goals', 'models', 'orchestrate', 'protocols', 'task', 'work', 'worktrees']);
+const NESTED_COMMANDS = new Set(['feature', 'goals', 'integrations', 'models', 'orchestrate', 'protocols', 'task', 'work', 'worktrees']);
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
@@ -37,6 +38,7 @@ const LEGACY_OPTIONS = {
   },
 };
 const STRICT_OPTIONS = {
+  integrations: { boolean: new Set(['json']), valued: new Set(['project', 'host-inventory-json']) },
   protocols: {
     boolean: new Set(['json', 'include-drafts', 'publish']),
     valued: new Set(['expected-revision', 'from', 'project']),
@@ -45,7 +47,7 @@ const STRICT_OPTIONS = {
     boolean: new Set(['json']),
     valued: new Set([
       'action', 'action-json', 'decomposition', 'decomposition-json', 'result-json', 'expected-runtime-version', 'expected-version', 'project', 'result',
-      'request', 'request-text', 'ticket', 'tracker',
+      'request', 'request-text', 'ticket', 'tracker', 'host-context-json',
     ]),
   },
   run: {
@@ -166,7 +168,7 @@ export function parseArgs(argv) {
           throw new ArgumentError(`Flag '--${name}' does not take a value`);
         }
         if (commandOptions.valued.has(name) && value === true) {
-          if (command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
+          if (command === 'integrations' || command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
             const next = tokens[index + 1];
             if (typeof next === 'string' && next.length > 0 && !next.startsWith('-')) {
               value = next;

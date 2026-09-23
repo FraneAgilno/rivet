@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import YAML from 'yaml';
 
 import { createWorkAction, validateWorkAction } from '../../src/feature/actions.js';
 import { main } from '../../src/cli/main.js';
@@ -33,7 +34,7 @@ async function npmExecutable() {
   return realpath(stdout.trim());
 }
 
-async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false } = {}) {
+async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false, hostContext = false } = {}) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-host-execution-')));
   const root = join(parent, 'project');
   await mkdir(root);
@@ -112,6 +113,22 @@ async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lo
       scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
     }));
   }
+  let hostSource;
+  if (hostContext) {
+    const providerPath = join(root, '.rivet', 'providers.yaml');
+    const providers = YAML.parse(await readFile(providerPath, 'utf8'));
+    const jira = providers.providers.find(p => p.kind === 'jira');
+    Object.assign(jira, { transport: 'harness-mcp', tools: ['get_issue'], endpoint: 'https://jira.example.test', resourceIds: ['DEMO-1'] });
+    await writeFile(providerPath, YAML.stringify(providers));
+    const project = YAML.parse(await readFile(join(root, '.rivet', 'project.yaml'), 'utf8'));
+    hostSource = { kind: 'host-observation', value: { schemaVersion: 1, projectId: project.id,
+      host: { projectId: project.id, providers: [{ id: jira.id, authenticated: true, tools: ['get_issue'] }] },
+      request: { providerId: jira.id, resourceId: 'DEMO-1' },
+      observations: [{ schemaVersion: 1, projectId: project.id, providerId: jira.id, tool: 'get_issue',
+        resourceId: 'DEMO-1', sourceUrl: 'https://jira.example.test/browse/DEMO-1', revision: '1', capturedAt: NOW,
+        content: { title: 'Add agenda', description: 'Add the agenda implementation.', acceptanceCriteria: ['Add the agenda implementation.'] } }],
+    } };
+  }
   await execFile('/usr/bin/git', ['init', '--quiet', '--initial-branch=main', root]);
   await git(root, 'add', '.');
   await git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture');
@@ -126,7 +143,7 @@ async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lo
   });
   const proposal = await workflow.propose({
     project: root,
-    source: { kind: 'inline', value: '# Add agenda\n\n## Acceptance criteria\n\n- Add the agenda implementation.\n' },
+    source: hostSource ?? { kind: 'inline', value: '# Add agenda\n\n## Acceptance criteria\n\n- Add the agenda implementation.\n' },
     client: 'host',
     decomposition: {
       schemaVersion: 1,
@@ -161,8 +178,8 @@ function resultFor(action, overrides = {}) {
   };
 }
 
-async function completedWorker(t) {
-  const fixtureValue = await fixture(t);
+async function completedWorker(t, options = {}) {
+  const fixtureValue = await fixture(t, options);
   const { root, gitClient, approved, gate } = fixtureValue;
   const execution = createHostExecution({
     gitClient, now: () => NOW,
@@ -748,4 +765,16 @@ test('concurrent failed verify and host cancellation cannot overwrite a passing 
   assert.equal(observed.verification.status, 'pass');
   assert.equal(observed.checkout.status, 'clean');
   assert.match(observed.nextAction, /final delivery decision/);
+});
+
+
+test('host-observed tracker context survives activation, isolated work and verification', async t => {
+  const { root, execution, verifyInput } = await completedWorker(t, {hostContext:true});
+  const result = await execution.verify(verifyInput);
+  const status = await execution.status({project:root,runId:verifyInput.runId});
+  assert.equal(status.run.status,'awaiting-final-approval');
+  assert.equal(status.run.workRequest.source.kind,'host-observation');
+  assert.equal(status.run.workRequest.context.sources[0].assurance,'harness-observed');
+  assert.ok(status.run.workRequest.contextRefs.includes(PROTOCOL_REF));
+  assert.equal(await git(root,'status','--porcelain'),'');
 });

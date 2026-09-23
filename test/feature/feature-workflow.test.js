@@ -269,3 +269,24 @@ test('accepts a harness-supplied decomposition without resolving a planning clie
     'protocol:database-changes:3:sha256:' + 'a'.repeat(64),
   ]);
 });
+
+test('direct ticket inference ignores harness and out-of-project providers', async () => {
+  for (const patch of ['    transport: harness-mcp\n    tools: [get_issue]\n', '    projectIds: [another-project]\n']) {
+    const target = await fixture();
+    const path = join(target.root, '.rivet', 'providers.yaml');
+    const source = await readFile(path, 'utf8');
+    await writeFile(path, source.replace('  - id: linear-main\n', `  - id: linear-main\n${patch}`));
+    await git(target.root, 'add', '.rivet/providers.yaml');
+    await git(target.root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'Scope other provider');
+    const {stdout:gitPath}=await execFile('which',['git']);
+    const gitClient = await createGitClient({gitExecutable:await realpath(gitPath.trim())});
+    let selected;
+    const workflow = createFeatureWorkflow({gitClient,now:()=>NOW,
+      planningClientFor:async()=>({async propose(contract){return proposal(contract);}}),
+      trackerAdapterFor:async({provider})=>{selected=provider;return trackerAdapter('jira','DEMO-42','Implement agenda.');},
+      executeFeature:async()=>{throw new Error('must not execute');},
+    });
+    await workflow.propose({project:target.root,source:{kind:'ticket',value:'DEMO-42'}});
+    assert.equal(selected,'jira');
+  }
+});

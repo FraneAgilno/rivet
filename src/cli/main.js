@@ -15,6 +15,7 @@ import {
   install,
   withPinnedTargetDirectory,
 } from '../commands/install.js';
+import { integrationsCommand } from '../commands/integrations.js';
 import { doctor } from '../commands/doctor.js';
 import { modelsCommand } from '../commands/models.js';
 import { setupCommand } from '../commands/setup.js';
@@ -54,6 +55,7 @@ const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
+  rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
   rivet models list [--json]                List model adapters and implementation status
   rivet models check --profile=<file> [--json]  Validate a model profile without calling a model
   rivet install                    Interactive — pick which skills to install (project)
@@ -69,7 +71,7 @@ const USAGE = `Usage:
   rivet protocols find <query> [--include-drafts] [--project=<path>] [--json]
   rivet protocols show <slug> [--include-drafts] [--project=<path>] [--json]
   rivet protocols update <slug> --from=<path> --expected-revision=<n> [--publish] [--project=<path>] [--json]
-  rivet work propose --project=<path> (--request=<file>|--request-text=<text>|--ticket=<id>) (--decomposition=<file>|--decomposition-json=<json>) [--tracker=jira|linear] [--json]
+  rivet work propose --project=<path> (--request=<file>|--request-text=<text>|--ticket=<id>|--host-context-json=<json>) (--decomposition=<file>|--decomposition-json=<json>) [--tracker=jira|linear] [--json]
   rivet work prepare <run-id> --project=<path> --expected-version=<n> [--json]
   rivet work next <run-id> --project=<path> --expected-runtime-version=<n> [--json]
   rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> (--action=<file>|--action-json=<json>) (--result=<file>|--result-json=<json>) [--json]
@@ -192,6 +194,7 @@ function resolveDependencies(overrides = {}) {
     status: overrides.status,
     runGit: overrides.runGit,
     setup: overrides.setup,
+    integrationHost: overrides.integrationHost,
     resolveCommandExecutable: overrides.resolveCommandExecutable,
     commands: {
       doctor,
@@ -201,6 +204,7 @@ function resolveDependencies(overrides = {}) {
       init,
       install,
       models: modelsCommand,
+      integrations: integrationsCommand,
       setup: setupCommand,
       orchestrate: orchestrateCommand,
       preflight,

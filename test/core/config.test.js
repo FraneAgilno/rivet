@@ -1278,3 +1278,13 @@ test('rejects oversized and symlinked configuration files', async t => {
     await assert.rejects(() => loadProjectConfig(root), ConfigurationError);
   });
 });
+
+test('existing four-file config accepts scoped MCP descriptors without credentials', async () => {
+  const config = structuredClone(await loadProjectConfig(fixture('valid')));
+  config.providers.providers[0] = {...config.providers.providers[0],transport:'harness-mcp',projectIds:[config.project.id],tools:['get_issue']};
+  delete config.providers.providers[0].credentials;
+  assert.doesNotThrow(()=>validateProjectConfiguration(config));
+  assert.equal(Object.keys(CONFIG_FILES).length,4);
+  config.providers.providers[0].transport='invented';
+  assert.throws(()=>validateProjectConfiguration(config),ConfigurationError);
+});

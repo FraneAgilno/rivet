@@ -442,3 +442,29 @@ test('host filesystem permission failures give an actionable sanitized error', a
     assert.doesNotMatch(message, /secret filesystem details/);
   }
 });
+
+test('host context is an exclusive bounded proposal source', async () => {
+  const bundle = { schemaVersion: 1, projectId: 'demo' };
+  let received;
+  const dependencies = { feature: { async propose(input) { received = input; return {runId:'demo'}; } } };
+  const args = ['work','propose','--project=/repo',`--host-context-json=${JSON.stringify(bundle)}`,'--decomposition-json={}','--json'];
+  let output = capture();
+  assert.equal(await main(args,{...dependencies,output:output.output}),0);
+  assert.deepEqual(received.source,{kind:'host-observation',value:bundle});
+  output=capture();
+  assert.equal(await main([...args,'--request-text=other'],{...dependencies,output:output.output}),EXIT_CODES.INVALID_INPUT);
+  output=capture();
+  assert.equal(await main(args.map(a=>a.startsWith('--host-context-json=')?'--host-context-json='+ 'x'.repeat(65537):a),{...dependencies,output:output.output}),EXIT_CODES.INVALID_INPUT);
+});
+
+test('integration input and readiness errors keep actionable CLI exit codes', async () => {
+  for (const [code, expected] of [['ERR_INTEGRATION_INPUT', EXIT_CODES.INVALID_INPUT], ['ERR_INTEGRATION_UNAVAILABLE', EXIT_CODES.PROVIDER_UNAVAILABLE], ['ERR_INTEGRATION_AMBIGUOUS', EXIT_CODES.PROVIDER_UNAVAILABLE]]) {
+    const output = capture();
+    const result = await main(['work','propose','--project=/repo','--host-context-json={}','--decomposition-json={}','--json'], {
+      output:output.output,
+      feature:{async propose(){throw Object.assign(new Error('private details'),{code,safeMessage:'Check the configured integration.'});}},
+    });
+    assert.equal(result,expected);
+    assert.doesNotMatch(output.stderr(),/private details/);
+  }
+});

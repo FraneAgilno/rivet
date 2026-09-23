@@ -219,7 +219,7 @@ export function providerCredentialStatus(config, environment = process.env) {
           provider: provider.id,
           name,
           present: typeof value === 'string' && value.length > 0,
-          required: provider.mode !== 'disabled',
+          required: (!provider.projectIds?.length || provider.projectIds.includes(config.project?.id)) && provider.mode !== 'disabled' && provider.transport !== 'harness-mcp' && provider.transport !== 'local-cli',
         };
       })));
   } catch {

@@ -90,3 +90,5 @@ rivet protocols find database --include-drafts
 See [runtime reference](./runtime-reference.md) for the host command sequence and [memory and project protocols](./memory-and-protocols.md) for protocol publishing.
 
 For global installation, updates, removal and contributor setup, see [installation details](./installation.md).
+
+For a measured first-use acceptance run, follow the [first-task trial](./first-task-trial.md).

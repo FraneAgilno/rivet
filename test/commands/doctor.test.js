@@ -245,3 +245,32 @@ test('accepts a schema-version-1 quality command that uses a runner distinct fro
   assert.equal(payload.checks.tools.yarn.runtimeResolved, true);
   assert.equal(payload.checks.commands.steps.find(step => step.logicalId === 'build').status, 'ready');
 });
+
+test('optional host integrations do not require local credentials or trigger provider probes', async () => {
+  const root=await configuredProject();
+  const {loadProjectConfig}=await import('../../src/config/load.js');
+  const config=structuredClone(await loadProjectConfig(root));
+  for(const provider of config.providers.providers) provider.transport='harness-mcp';
+  let probes=0;const result=capture();
+  const exitCode=await doctor({flags:{project:root,json:true}},{
+    output:result.output,env:{},configLoader:async()=>config,
+    providerProbe:async()=>{probes+=1;throw new Error('should not probe');},
+    toolDiscovery:async()=>({node:{present:true,version:'22.1.0',supported:true},npm:{present:true,version:'10.1.0',supported:true},git:{present:true,version:'2.45.0',supported:true}}),
+  });
+  assert.equal(exitCode,EXIT_CODES.SUCCESS);assert.equal(probes,0);
+  assert.ok(JSON.parse(result.writes[0][1]).checks.integrations.every(item=>item.readiness==='host-unavailable'||item.readiness==='disabled'));
+});
+
+test('out-of-scope direct integrations do not block doctor or trigger probes', async () => {
+  const root=await configuredProject();
+  const {loadProjectConfig}=await import('../../src/config/load.js');
+  const config=structuredClone(await loadProjectConfig(root));
+  for(const provider of config.providers.providers) provider.projectIds=['another-project'];
+  let probes=0;const result=capture();
+  const exitCode=await doctor({flags:{project:root,json:true}},{
+    output:result.output,env:{},configLoader:async()=>config,
+    providerProbe:async()=>{probes+=1;throw new Error('should not probe');},
+    toolDiscovery:async()=>({node:{present:true,version:'22.1.0',supported:true},npm:{present:true,version:'10.1.0',supported:true},git:{present:true,version:'2.45.0',supported:true}}),
+  });
+  assert.equal(exitCode,EXIT_CODES.SUCCESS);assert.equal(probes,0);
+});
