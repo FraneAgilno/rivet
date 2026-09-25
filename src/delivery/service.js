@@ -142,8 +142,11 @@ export function createDeliveryService(config) {
           ),
         'not-ready'
       );
-    else if (action === 'deploy') ensure(state.stage === 'merged', 'not-ready');
-    else ensure(['merged', 'deployed'].includes(state.stage), 'not-ready');
+    else ensure(
+      state.operations.some((value) => value.action === 'merge' && value.state === 'succeeded') &&
+        !state.operations.some((value) => value.action === action && value.state === 'succeeded'),
+      'not-ready'
+    );
   }
   async function initialize(input) {
     const target = candidate(input);
@@ -226,8 +229,16 @@ export function createDeliveryService(config) {
       });
     });
   }
+  function validateOutcome(receipt, operation) {
+    const result = validateReceipt(receipt, operation);
+    // Historical schema-v1 snapshots remain readable. New post-merge completion
+    // must attest to the actual merge result, including squash/rebase commits.
+    if (['deploy', 'tracker-update'].includes(operation.action))
+      ensure(result.commitSha === operation.mergeReceipt?.commitSha, 'invalid-receipt');
+    return result;
+  }
   async function finish(state, operation, receipt) {
-    const success = validateReceipt(receipt, operation);
+    const success = validateOutcome(receipt, operation);
     const operations = state.operations.map((item) =>
       item.digest === operation.digest ? { ...item, state: 'succeeded', receipt: success } : item
     );
@@ -324,7 +335,7 @@ export function createDeliveryService(config) {
           );
           return promise;
         });
-        validateReceipt(receipt, operation);
+        validateOutcome(receipt, operation);
       } catch {
         return save(state, {
           operations: state.operations.map((value) =>
@@ -344,6 +355,12 @@ export function createDeliveryService(config) {
         ['dispatching', 'indeterminate'].includes(value.state)
       );
       ensure(operation, 'nothing-to-reconcile');
+      // Pending operations retain the exact approved proposal. Bind recovery to
+      // its provider as well as the repository kind before any external read.
+      ensure(state.proposal?.digest === operation.digest && state.proposal.providerId === providerId,
+        'provider-mismatch');
+      ensure(executor.capabilities.some((value) => value.action === operation.action && value.reconcile),
+        'unsupported-action');
       let result;
       try {
         result = inFlight.has(operation.digest)
@@ -351,7 +368,7 @@ export function createDeliveryService(config) {
           : plain(await bounded(() => executor.reconcile(operation)));
         if (result.status === 'succeeded') {
           exact(result, ['status', 'receipt']);
-          validateReceipt(result.receipt, operation);
+          validateOutcome(result.receipt, operation);
         } else {
           exact(result, ['status']);
           ensure(['not-applied', 'unknown'].includes(result.status));
