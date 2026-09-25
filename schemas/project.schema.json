@@ -29,6 +29,17 @@
         "sensitivePaths": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/relativePath" } }
       }
     },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId", "workflow", "environment", "productionEnvironment"],
+      "properties": {
+        "providerId": { "$ref": "#/$defs/id" },
+        "workflow": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\\.ya?ml$" },
+        "environment": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+        "productionEnvironment": { "type": "boolean" }
+      }
+    },
     "commands": {}
   },
   "allOf": [

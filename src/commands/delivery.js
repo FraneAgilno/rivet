@@ -1,3 +1,4 @@
+import { loadProjectConfig } from '../config/load.js';
 import { gitExecutable, resolveConfiguredProject } from '../cli/project-discovery.js';
 import { CliError, EXIT_CODES } from '../cli/output.js';
 import { runArgv } from '../discovery/tools.js';
@@ -44,7 +45,7 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'merge', 'reconcile', 'recover'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'merge', 'deploy', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
       (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
@@ -53,14 +54,14 @@ export async function deliveryCommand(parsed, dependencies) {
     flags.run?.length > 64 ||
     (subcommand !== 'prepare' && flags.remote !== undefined) ||
     (flags.provider !== undefined &&
-      (!['refresh', 'merge', 'reconcile'].includes(subcommand) ||
+      (!['refresh', 'merge', 'deploy', 'reconcile'].includes(subcommand) ||
         !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
     (flags.method !== undefined &&
       (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
-    (subcommand === 'merge' && flags.json)
+    (['merge', 'deploy'].includes(subcommand) && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|merge|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge.'
+      'Use rivet delivery prepare|status|refresh|merge|deploy|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge/deploy.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -131,11 +132,12 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
-    if (['refresh', 'merge', 'reconcile'].includes(subcommand)) {
+    if (['refresh', 'merge', 'deploy', 'reconcile'].includes(subcommand)) {
       result = await runRemoteDelivery({
         action: subcommand,
         store,
         config: project.config,
+        reloadConfig: () => loadProjectConfig(project.root),
         flags,
         dependencies,
         validateLocal: async (expected) => {
@@ -182,10 +184,10 @@ export async function deliveryCommand(parsed, dependencies) {
     );
   }
   const incomplete =
-    ['merge', 'reconcile'].includes(subcommand) &&
+    ['merge', 'deploy', 'reconcile'].includes(subcommand) &&
     (result.operations.some((op) => ['dispatching', 'indeterminate'].includes(op.state)) ||
-      (subcommand === 'merge' &&
-        !result.operations.some((op) => op.action === 'merge' && op.state === 'succeeded')));
+      (['merge', 'deploy'].includes(subcommand) &&
+        !result.operations.some((op) => op.action === subcommand && op.state === 'succeeded')));
   if (flags.json) dependencies.output.json({ ok: !incomplete, result });
   else {
     dependencies.output.log(`Recorded delivery stage: ${result.stage}`);
@@ -194,8 +196,8 @@ export async function deliveryCommand(parsed, dependencies) {
     dependencies.output.log(`Commit: ${result.candidate.headSha}`);
     dependencies.output.log(
       incomplete
-        ? 'Outcome is not confirmed. Run rivet delivery reconcile; do not repeat the merge.'
-        : 'Status records confirmed stages. Native merge requires supported provider policy and interactive approval.'
+        ? 'Outcome is not confirmed. Run rivet delivery reconcile; do not repeat the write.'
+        : 'Status records confirmed stages. Delivery writes require configured provider support and interactive approval.'
     );
   }
   return incomplete ? EXIT_CODES.PROVIDER_UNAVAILABLE : EXIT_CODES.SUCCESS;

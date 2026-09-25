@@ -58,6 +58,7 @@ const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
   rivet delivery prepare|status|refresh|reconcile|recover [--run=<id>] [--project=<path>] [--json]
+  rivet delivery deploy [--run=<id>] [--project=<path>]
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
@@ -172,12 +173,12 @@ async function defaultConfirmDependencyInstall(_plan, options = {}) {
   finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
 }
 
-async function defaultConfirmDelivery() {
+async function defaultConfirmDelivery(preview) {
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   let timer;
   try {
     const answer = await Promise.race([
-      readline.question('Merge this exact commit using the method shown above? [y/N] '),
+      readline.question(preview?.proposal?.action === 'deploy' ? 'Deploy this exact commit to the environment shown above? [y/N] ' : 'Merge this exact commit using the method shown above? [y/N] '),
       new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
     ]);
     return /^(?:y|yes)$/i.test(String(answer).trim());

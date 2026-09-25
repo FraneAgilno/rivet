@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -131,7 +131,7 @@ async function fixture(t, provider = 'github') {
       calls.local++;
     },
   };
-  return { input, calls, store };
+  return { input, calls, store, root };
 }
 test('remote merge requires scoped provider and exact interactive approval then persists actual result', async (t) => {
   const f = await fixture(t);
@@ -225,4 +225,84 @@ test('GitLab refuses unsupported methods and mismatched provider endpoint before
   f.input.config.providers.providers[0].endpoint = 'https://api.github.com';
   await assert.rejects(() => runRemoteDelivery(f.input));
   assert.equal(f.calls.observe, 0);
+});
+
+async function deploymentFixture(t) {
+  const f = await fixture(t);
+  await runRemoteDelivery(f.input);
+  f.input.action = 'deploy';
+  f.input.config.project.deployment = { providerId: 'github-team', workflow: 'rivet-deploy.yml', environment: 'staging', productionEnvironment: false };
+  f.input.config.providers.providers[0].capabilities.push('deploy', 'deployments-read', 'actions-read');
+  f.input.dependencies.confirmDelivery = async state => {
+    f.calls.confirm++;
+    assert.equal(state.proposal.action, 'deploy');
+    assert.equal(state.proposal.mergeReceipt.commitSha, BASE);
+    assert.deepEqual(state.proposal.payload, {workflow:'rivet-deploy.yml',environment:'staging',productionEnvironment:false});
+    return true;
+  };
+  f.input.dependencies.delivery.deploymentExecutorFactory = config => {
+    assert.equal(config.mergeReceipt.commitSha, BASE);
+    return createTrustedDeliveryExecutor({provider:'github',capabilities:[{action:'deploy',conditionalHead:true,reconcile:true}],
+      observe:async()=> ({...(await f.store.read()).observation,review:{number:7,state:'merged',url:githubRepository.url+'/pull/7',headSha:SHA},observedAt:new Date().toISOString()}),
+      dispatch:async op=> {f.calls.dispatch++; throw new Error('deployment running');},
+      reconcile:async op=>({status:'succeeded',receipt:{status:'succeeded',operationDigest:op.digest,headSha:SHA,evidenceDigest:DIGEST,resourceUrl:githubRepository.url+'/actions/runs/1',commitSha:BASE}})});
+  };
+  return f;
+}
+test('deployment uses configured target and separate approval, then reconciles without dispatching again', async t => {
+  const f = await deploymentFixture(t);
+  let state = await runRemoteDelivery(f.input);
+  assert.equal(state.stage, 'merged');
+  assert.equal(state.operations.at(-1).state, 'indeterminate');
+  assert.equal(f.calls.confirm, 2);
+  assert.equal(f.calls.dispatch, 2);
+  assert.equal(f.calls.local, 2);
+  f.input.action = 'reconcile';
+  f.input.config.providers.providers[0].mode = 'read-only';
+  state = await runRemoteDelivery(f.input);
+  assert.equal(state.stage, 'deployed');
+  assert.equal(f.calls.dispatch, 2);
+});
+test('deployment rejects unattended approval, missing configuration, unsupported authority and provider override', async t => {
+  for (const edit of [
+    i => {i.dependencies.terminalIsInteractive=()=>false;},
+    i => {i.flags.json=true;},
+    i => {delete i.config.project.deployment;},
+    i => {i.config.providers.providers[0].capabilities=['repository-read','checks-read','merge'];},
+    i => {i.config.providers.providers[0].mode='read-only';},
+    i => {i.flags.provider='another-provider';},
+  ]) {
+    const f=await deploymentFixture(t); edit(f.input);
+    await assert.rejects(runRemoteDelivery(f.input));
+    assert.equal(f.calls.dispatch,1);
+    assert.equal(f.calls.confirm,1);
+  }
+});
+test('deployment denial and configuration drift after approval never dispatch', async t => {
+  for (const drift of [false,true]) {
+    const f=await deploymentFixture(t);
+    f.input.dependencies.confirmDelivery=async()=> {
+      if(drift) f.input.config.project.deployment.environment='production';
+      return drift;
+    };
+    await assert.rejects(runRemoteDelivery(f.input));
+    assert.equal(f.calls.dispatch,1);
+  }
+});
+
+test('deployment reloads disk configuration after approval and rejects changed target or authority', async t => {
+  for (const edit of [c=>{c.project.deployment.environment='production';}, c=>{c.providers.providers[0].mode='read-only';}]) {
+    const f=await deploymentFixture(t);
+    const path=join(f.root,'reload-config.json');
+    await writeFile(path,JSON.stringify(f.input.config));
+    let reloads=0;
+    f.input.reloadConfig=async()=> {reloads++;return JSON.parse(await readFile(path,'utf8'));};
+    f.input.dependencies.confirmDelivery=async()=>{
+      const changed=structuredClone(f.input.config);edit(changed);
+      await writeFile(path,JSON.stringify(changed));return true;
+    };
+    await assert.rejects(runRemoteDelivery(f.input));
+    assert.equal(reloads,1);
+    assert.equal(f.calls.dispatch,1);
+  }
 });

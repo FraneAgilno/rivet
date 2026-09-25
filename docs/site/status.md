@@ -16,6 +16,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
 - Local delivery preparation/status from accepted host verification, plus a durable service for separately approved delivery operations. Native GitHub PR and GitLab MR merging is implemented for documented bounded policy subsets, with interactive approval and read-only reconciliation. Other native operations and live qualification remain pending. See [delivery lifecycle](./delivery.md).
+- Project-configured GitHub Actions deployment of a confirmed merge SHA, with separate approval, mandatory workflow verification and correlated status/run reconciliation. Live deployment qualification remains open.
 - Explicit delivery lock recovery for stale same-machine dead owners, preserving operation evidence before read-only reconciliation. Broader crash/live recovery qualification remains open.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
@@ -32,7 +33,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Bitbucket/GitLab repository delivery and expanded model executors.
 - External pilot, evaluations, and release qualification.
 
-The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native deployment and tracker executors remain pending.
+The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native GitHub Actions deployment is implemented for a configured workflow; tracker executors and live deployment qualification remain pending.
 
 See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation planning is maintained outside this repository.
 

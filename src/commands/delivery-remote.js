@@ -3,20 +3,21 @@ import { CliError } from '../cli/output.js';
 import { createNodeProviderTransport } from '../adapters/node-transport.js';
 import { createApprovalReceipt, createApprovalRegistry } from '../policy/approvals.js';
 import { createAuthorityEnvelope } from '../policy/authority.js';
+import { hash, plain } from '../delivery/contract.js';
 import { createDeliveryService } from '../delivery/service.js';
 
 function fail(message, code = 'REPOSITORY_CONFLICT') {
   throw new CliError(message, code);
 }
 const ENDPOINTS = Object.freeze({ github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4' });
-function providerFor(config, repository, flags, writing) {
+function providerFor(config, repository, flags, writing, operation = 'merge') {
   const providers = config.providers.providers.filter(
     (provider) =>
       provider.kind === 'git-ci' &&
       provider.mode !== 'disabled' &&
       (!writing || provider.mode === 'read-write-with-approval') &&
       (provider.transport ?? 'direct-api') === 'direct-api' &&
-      ['repository-read', 'checks-read', ...(writing ? ['merge'] : [])].every((cap) =>
+      ['repository-read', ...(operation === 'deploy' ? ['deployments-read', 'actions-read'] : ['checks-read']), ...(writing ? [operation] : [])].every((cap) =>
         provider.capabilities.includes(cap)
       ) &&
       (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
@@ -26,7 +27,7 @@ function providerFor(config, repository, flags, writing) {
   );
   if (providers.length !== 1)
     fail(
-      'Configure one scoped repository API provider with repository-read and checks-read. Merge also requires merge capability and read-write-with-approval mode. Use --provider=<id> when ambiguous.',
+      'Configure one scoped repository API provider. Merge needs repository-read/checks-read; deployment needs repository-read/deployments-read/actions-read. Writes require the action capability and read-write-with-approval mode.',
       'MISSING_CONFIGURATION'
     );
   return providers[0];
@@ -66,9 +67,9 @@ async function confirm(dependencies, preview) {
   }
 }
 
-export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal }) {
-  const writing = action === 'merge';
-  if (!['merge', 'refresh', 'reconcile'].includes(action))
+export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, reloadConfig = async () => config }) {
+  const writing = ['merge', 'deploy'].includes(action);
+  if (!['merge', 'deploy', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -77,7 +78,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
       typeof dependencies.confirmDelivery !== 'function')
   )
     fail(
-      'Run rivet delivery merge in an interactive terminal to review and approve the exact merge. JSON and unattended merge are unavailable.',
+      'Run delivery writes in an interactive terminal to review and approve the exact operation. JSON and unattended writes are unavailable.',
       'INVALID_INPUT'
     );
   let state = await store.read();
@@ -85,22 +86,40 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   const kind = state.candidate.repository.provider;
   if (!Object.hasOwn(ENDPOINTS, kind))
     fail('Native merge currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');
-  if (writing && kind === 'gitlab' && flags.method !== undefined && flags.method !== 'merge')
+  if (action === 'merge' && kind === 'gitlab' && flags.method !== undefined && flags.method !== 'merge')
     fail(
       'GitLab currently supports --method=merge only; squash and rebase are unavailable.',
       'INVALID_INPUT'
     );
-  if (writing && state.operations.some((op) => op.action === 'merge' && op.state === 'succeeded'))
+  if (writing && state.operations.some((op) => op.action === action && op.state === 'succeeded'))
     return state;
-  const provider = providerFor(config, state.candidate.repository, flags, writing);
+  const operation = action === 'reconcile'
+    ? state.operations.find(op => ['dispatching', 'indeterminate'].includes(op.state))?.action
+    : action;
+  const deploying = operation === 'deploy';
+  let deployment;
+  let mergeReceipt;
+  if (deploying) {
+    if (kind !== 'github' || !config.project.deployment)
+      fail('Configure project.deployment for GitHub Actions deployment first.', 'MISSING_CONFIGURATION');
+    deployment = plain(config.project.deployment);
+    if (flags.provider !== undefined && flags.provider !== deployment.providerId)
+      fail('Deployment uses the provider declared in project.deployment.', 'INVALID_INPUT');
+    mergeReceipt = state.operations.find(op => op.action === 'merge' && op.state === 'succeeded')?.receipt;
+    if (!mergeReceipt) fail('Deployment requires a confirmed merge receipt.');
+  }
+  const selectedFlags = deploying ? { ...flags, provider: deployment.providerId } : flags;
+  const provider = providerFor(config, state.candidate.repository, selectedFlags, writing, deploying ? 'deploy' : 'merge');
   const auth = headers(provider, dependencies.env, kind);
   const executorFactory =
-    dependencies.delivery?.executorFactory ??
+    (deploying ? dependencies.delivery?.deploymentExecutorFactory : dependencies.delivery?.executorFactory) ??
+    (deploying ? (await import('../delivery/github-deployment.js')).createGithubDeploymentExecutor :
     (kind === 'github'
       ? (await import('../delivery/github.js')).createGithubDeliveryExecutor
-      : (await import('../delivery/gitlab.js')).createGitlabDeliveryExecutor);
+      : (await import('../delivery/gitlab.js')).createGitlabDeliveryExecutor));
   const executor = executorFactory({
     repository: state.candidate.repository,
+    ...(deploying ? {deployment, mergeReceipt} : {}),
     headers: auth,
     transport: dependencies.delivery?.transport ?? createNodeProviderTransport(),
   });
@@ -117,24 +136,28 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
       actions: writing ? ['provider.write'] : [],
       ownedPaths: [],
       commands: [],
-      providers: writing ? [{ id: provider.id, mode: provider.mode, capabilities: ['merge'] }] : [],
+      providers: writing ? [{ id: provider.id, mode: provider.mode, capabilities: [action] }] : [],
     }),
     approvalRegistry: createApprovalRegistry({ approvers: [{ id: 'terminal-human', principal: 'human' }] }),
   });
   if (action === 'reconcile') return service.reconcile({ expectedVersion: state.version });
-  if (writing) await validateLocal(state.candidate);
+  if (action === 'merge') await validateLocal(state.candidate);
   state = await service.refresh({ expectedVersion: state.version });
   if (!writing) return state;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   state = await service.propose({
     expectedVersion: state.version,
-    action: 'merge',
+    action,
     expiresAt,
-    payload: {
+    payload: deploying ? {workflow: deployment.workflow, environment: deployment.environment, productionEnvironment: deployment.productionEnvironment} : {
       reviewNumber: state.observation.review?.number,
       mergeMethod: flags.method ?? (kind === 'github' ? 'squash' : 'merge'),
     },
   });
+  if (deploying) {
+    dependencies.output.log(`Deploy ${mergeReceipt.commitSha} to ${deployment.environment}`);
+    dependencies.output.log(`Workflow: ${deployment.workflow}. Production environment: ${deployment.productionEnvironment}.`);
+  } else {
   dependencies.output.log(`Merge ${state.observation.review.url}`);
   dependencies.output.log(
     `${state.candidate.sourceBranch} (${state.candidate.headSha}) -> ${state.candidate.targetBranch} (${state.observation.baseSha})`
@@ -142,11 +165,18 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   dependencies.output.log(
     `Method: ${state.proposal.payload.mergeMethod}. Required checks and supported review policy passed.`
   );
+  }
   if (!(await confirm(dependencies, state)))
-    fail('Merge was not approved. No merge was dispatched.', 'INVALID_INPUT');
-  await validateLocal(state.candidate);
+    fail('Delivery operation was not approved. Nothing was dispatched.', 'INVALID_INPUT');
+  if (deploying) {
+    const currentConfig = await reloadConfig();
+    const currentProvider = providerFor(currentConfig, state.candidate.repository, selectedFlags, true, 'deploy');
+    if (hash(currentConfig.project.deployment) !== hash(deployment) || hash(currentProvider) !== hash(provider))
+      fail('Deployment configuration changed. Review a new proposal.');
+  }
+  if (action === 'merge') await validateLocal(state.candidate);
   const approval = createApprovalReceipt({
-    id: `merge-${randomUUID()}`,
+    id: `${action}-${randomUUID()}`,
     approverId: 'terminal-human',
     approverPrincipal: 'human',
     subjectId: 'delivery-cli',

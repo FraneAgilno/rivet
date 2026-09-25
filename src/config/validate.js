@@ -188,6 +188,8 @@ function validateConfigSemantics(config) {
   scanForSecrets(config);
 
   const providerIds = uniqueBy(config.providers.providers, 'id', '/providers/providers');
+  if (config.project.deployment && !providerIds.has(config.project.deployment.providerId))
+    fail('/project/deployment/providerId', 'provider-reference');
   for (const provider of config.providers.providers) {
     if (provider.endpoint) assertSafeUrl(provider.endpoint, `/providers/providers/${provider.id}/endpoint`);
     for (const [key, envName] of Object.entries(provider.credentials ?? {})) {
