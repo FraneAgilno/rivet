@@ -1,5 +1,6 @@
 const COMMANDS = new Set([
   'doctor',
+  'support',
   'delivery',
   'evidence',
   'feature',
@@ -70,6 +71,10 @@ const STRICT_OPTIONS = {
     boolean: new Set(['json']),
     valued: new Set(['profile', 'roles', 'role', 'project']),
   },
+  support: {
+    boolean: new Set(['json', 'probe-harnesses']),
+    valued: new Set(['project']),
+  },
   doctor: {
     boolean: new Set(['json']),
     valued: new Set(['project']),
@@ -89,7 +94,7 @@ const STRICT_OPTIONS = {
     valued: new Set(['fixture', 'port']),
   },
 };
-const NO_POSITIONAL_COMMANDS = new Set(['doctor', 'init', 'install', 'preflight', 'setup', 'uninstall']);
+const NO_POSITIONAL_COMMANDS = new Set(['doctor', 'support', 'init', 'install', 'preflight', 'setup', 'uninstall']);
 
 function targetSet(target) {
   const normalized = typeof target === 'string' ? target.toLowerCase() : target;
@@ -172,7 +177,7 @@ export function parseArgs(argv) {
           throw new ArgumentError(`Flag '--${name}' does not take a value`);
         }
         if (commandOptions.valued.has(name) && value === true) {
-          if (command === 'delivery' || command === 'repositories' || command === 'integrations' || command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
+          if (command === 'delivery' || command === 'repositories' || command === 'integrations' || command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'support' || command === 'feature' || command === 'preflight' || command === 'status') {
             const next = tokens[index + 1];
             if (typeof next === 'string' && next.length > 0 && !next.startsWith('-')) {
               value = next;

@@ -19,6 +19,7 @@ import { deliveryCommand } from '../commands/delivery.js';
 import { repositoriesCommand } from '../commands/repositories.js';
 import { integrationsCommand } from '../commands/integrations.js';
 import { doctor } from '../commands/doctor.js';
+import { supportCommand } from '../commands/support.js';
 import { modelsCommand } from '../commands/models.js';
 import { setupCommand } from '../commands/setup.js';
 import { protocolsCommand } from '../commands/protocols.js';
@@ -107,6 +108,7 @@ const USAGE = `Usage:
   rivet init --project <path>      Propose v2 project configuration without writing
   rivet init --project <path> --write [--overwrite]
   rivet doctor [--project <path>] [--json]
+  rivet support [--project=<path>] [--probe-harnesses] [--json]
   rivet preflight [--project <path>] [--mode=host|orchestration] [--json]
   rivet verify [--json]
   rivet evidence [--json]
@@ -213,6 +215,7 @@ function resolveDependencies(overrides = {}) {
     output: overrides.output ?? createOutput(),
     fetch: overrides.fetch ?? globalThis.fetch,
     models: overrides.models,
+    support: overrides.support,
     confirmModelDelegation: overrides.confirmModelDelegation ?? defaultConfirmModelDelegation,
     confirmDelivery: overrides.confirmDelivery ?? defaultConfirmDelivery,
     delivery: overrides.delivery,
@@ -238,6 +241,7 @@ function resolveDependencies(overrides = {}) {
     resolveCommandExecutable: overrides.resolveCommandExecutable,
     commands: {
       doctor,
+      support: supportCommand,
       evidence: evidenceCommand,
       feature: featureCommand,
       goals: goalsCommand,

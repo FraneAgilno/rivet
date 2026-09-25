@@ -44,3 +44,24 @@ An interrupted host operation can leave a private host lock. Rivet will report t
 Read the reported reason. `missing-options` lists required features the CLI does not advertise. Inspect `claude --help` or `codex exec --help`, update or select an installation providing those options, then retry. `capability-probe-failed` means a bounded version/help probe failed, timed out, or produced invalid output. Rivet does not require a specific release and does not drop safety or output flags to force compatibility. Script installations still need a canonical native interpreter as described by the error.
 
 If the CLI changes after discovery, retry to discover it again. A help probe can pass while authentication, model access, or output compatibility fails later; retain the failure report when diagnosing that case.
+
+## Collect a support bundle
+
+```sh
+rivet support
+rivet support --json > rivet-support.json
+```
+
+Run from your project or a nested folder. Use `--project=<path>` to select another directory. A missing or invalid Rivet configuration is included as a diagnostic result, so setup problems can still be reported.
+
+The bundle contains selected diagnostic fields: Rivet and runtime versions, platform/architecture, known tool versions and readiness, aggregate integration/credential readiness and fixed error categories. It excludes project identifiers, paths, provider URLs, environment values, prompts, source files, diffs, raw logs, private run history and vault content. Version strings are reduced to numeric version components.
+
+To include installed harness capability checks:
+
+```sh
+rivet support --probe-harnesses --json > rivet-support.json
+```
+
+These bounded local probes inspect version/help output. They do not execute a model task, authenticate an account or check external provider connectivity. Without the flag, harness capabilities are reported as not checked. Optional integration unavailability is recorded separately from required readiness failures.
+
+`support` reports whether collection completed; it does not certify that the project is ready. A successfully generated bundle can contain failed readiness checks or an incomplete diagnostic category. Use `rivet doctor` for the readiness exit status. The command writes to terminal output only; shell redirection creates the JSON file. Nothing is uploaded automatically.
