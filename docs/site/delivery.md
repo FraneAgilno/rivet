@@ -129,15 +129,15 @@ The executor checks the execution/approval deadline immediately before sending t
 | Deployed | A confirmed deployment outcome is recorded. |
 | Tracker updated | A confirmed tracker update is recorded. Inspect operation history for deployment status. |
 
-The service also records each operation separately. A failed deployment or tracker update preserves an earlier successful merge. An unknown outcome remains visible until reconciled.
+The service also records each operation separately. A failed deployment or tracker update preserves an earlier successful merge. An unknown outcome remains visible until reconciled. Completing a tracker update does not prevent a later deployment; already successful actions cannot be repeated in the same delivery record. Inspect operation history to see both outcomes regardless of their order.
 
 ## Executor and approval boundary
 
 The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. The separate native GitHub and GitLab delivery executors support merge only.
 
-Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
+Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
-Dispatch intent and consumed approval identity are saved before a write. A timeout or uncertain response is recorded as indeterminate. It must be reconciled before another attempt; blindly repeating a write can duplicate an external action.
+Dispatch intent and consumed approval identity are saved before a write. A timeout or uncertain response is recorded as indeterminate. It must be reconciled before another attempt; blindly repeating a write can duplicate an external action. Reconciliation uses the provider identity from the approved proposal and requires an executor supporting that action. A different provider cannot claim completion, even when it uses the same repository platform.
 
 ### Recover a crashed delivery process
 

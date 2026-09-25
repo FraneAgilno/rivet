@@ -64,7 +64,7 @@ async function fixture(t, options = {}) {
     headSha: SHA,
     evidenceDigest: DIGEST,
     resourceUrl: repository.url + '/pull/7',
-    commitSha: operation.action === 'merge' ? BASE : null,
+    commitSha: operation.action === 'review-request' ? null : BASE,
   });
   let reconcileFn = async () => ({ status: 'unknown' });
   let observeFn = async () => facts;
@@ -148,9 +148,10 @@ async function fixture(t, options = {}) {
     setReconcile(v) {
       reconcileFn = v;
     },
-    reopen(freshExecutor = false, provider = executor.provider) {
+    reopen(freshExecutor = false, provider = executor.provider, providerId = config.providerId) {
       return api.createDeliveryService({
         ...config,
+        providerId,
         executor: freshExecutor ? api.createTrustedDeliveryExecutor({ ...executor, provider }) : executor,
         store: stores.createDeliveryStore(paths),
         approvalRegistry: createApprovalRegistry({ approvers: [{ id: 'owner', principal: 'human' }] }),
@@ -634,7 +635,7 @@ test('deploy and tracker proposals bind the confirmed merge receipt and resultin
         headSha: SHA,
         evidenceDigest: DIGEST,
         resourceUrl: repository.url + '/pull/7',
-        commitSha: null,
+        commitSha: BASE,
       };
     });
     const result = await f.service.execute({
@@ -709,4 +710,59 @@ test('trusted dispatch receives a deadline bounded by execution timeout and appr
   });
   const result = await f.service.execute({expectedVersion:state.version,proposalDigest:state.proposal.digest,approval:f.approval(state)});
   assert.equal(result.stage, 'merged');
+});
+
+
+async function merged(f) {
+  const state = await ready(f);
+  return f.service.execute({ expectedVersion: state.version, proposalDigest: state.proposal.digest, approval: f.approval(state) });
+}
+async function proposeNext(f, state, action) {
+  return f.service.propose({ expectedVersion: state.version, action, payload: { target: 'test' }, expiresAt: '2026-09-25T10:30:00.000Z' });
+}
+function postMergeReceipt(operation, commitSha = BASE) {
+  return { status: 'succeeded', operationDigest: operation.digest, headSha: SHA, evidenceDigest: DIGEST,
+    resourceUrl: repository.url + '/pull/7', commitSha };
+}
+test('pending reconciliation is bound to the approved provider id even for the same repository kind', async t => {
+  const f = await fixture(t);
+  const proposal = await ready(f);
+  f.setDispatch(async () => { throw new Error('lost response'); });
+  const state = await f.service.execute({ expectedVersion: proposal.version, proposalDigest: proposal.proposal.digest, approval: f.approval(proposal) });
+  const before = await readFile(f.paths.snapshotPath);
+  await assert.rejects(f.reopen(true, 'github', 'different-provider').reconcile({ expectedVersion: state.version }));
+  assert.equal(f.counts().reconcile, 0);
+  assert.deepEqual(await readFile(f.paths.snapshotPath), before);
+});
+test('tracker completion permits a later deployment and successful actions cannot repeat', async t => {
+  const f = await fixture(t);
+  let state = await merged(f);
+  f.setDispatch(async operation => postMergeReceipt(operation));
+  for (const [action, approvalId] of [['tracker-update', 'tracker-one'], ['deploy', 'deploy-one']]) {
+    state = await proposeNext(f, state, action);
+    state = await f.service.execute({ expectedVersion: state.version, proposalDigest: state.proposal.digest, approval: f.approval(state, approvalId) });
+    assert.equal(state.operations.at(-1).state, 'succeeded');
+    await assert.rejects(proposeNext(f, state, action));
+  }
+  assert.equal(state.operations.filter(operation => operation.state === 'succeeded').length, 3);
+});
+test('post-merge execution and reconciliation reject receipts for an absent or different merged commit', async t => {
+  for (const action of ['deploy', 'tracker-update']) {
+    for (const commit of [null, SHA]) {
+      const f = await fixture(t);
+      let state = await proposeNext(f, await merged(f), action);
+      f.setDispatch(async operation => postMergeReceipt(operation, commit));
+      state = await f.service.execute({ expectedVersion: state.version, proposalDigest: state.proposal.digest, approval: f.approval(state, 'post-merge-one') });
+      assert.equal(state.stage, 'merged');
+      assert.equal(state.operations.at(-1).state, 'indeterminate');
+      f.setReconcile(async operation => ({status: 'succeeded', receipt: postMergeReceipt(operation, commit)}));
+      state = await f.reopen().reconcile({expectedVersion: state.version});
+      assert.equal(state.stage, 'merged');
+      assert.equal(state.operations.at(-1).state, 'indeterminate');
+      f.setReconcile(async operation => ({status: 'succeeded', receipt: postMergeReceipt(operation)}));
+      state = await f.reopen().reconcile({expectedVersion: state.version});
+      assert.equal(state.stage, action === 'deploy' ? 'deployed' : 'tracker-updated');
+      assert.equal(f.counts().dispatch, 2);
+    }
+  }
 });

@@ -32,6 +32,8 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Bitbucket/GitLab repository delivery and expanded model executors.
 - External pilot, evaluations, and release qualification.
 
+The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native deployment and tracker executors remain pending.
+
 See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation planning is maintained outside this repository.
 
 ## Host onboarding observations (2026-09-23)
