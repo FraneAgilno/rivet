@@ -794,3 +794,36 @@ test('fixture packets contain no credential-shaped material', async () => {
     assert.equal(/Bearer\s+|ghp_|github_pat_|api[_-]?key|access[_-]?token|password/i.test(text), false, provider);
   }
 });
+
+test('GitHub merge wire body binds exact head and accepts only explicit merge fields', () => {
+  const sha = 'a'.repeat(40);
+  const input = { provider: 'github', action: 'merge', resourceId: 'team/repo#7', expectedState: 'open',
+    expectedVersion: sha, idempotencyKey: 'merge-once', payload: { sha, merge_method: 'squash' } };
+  assert.deepEqual(JSON.parse(createProviderWireBody(input).bytes), input.payload);
+  for (const payload of [{ sha }, { sha, merge_method: 'unknown' },
+    { sha: 'b'.repeat(40), merge_method: 'squash' }, { ...input.payload, admin: true }]) {
+    assert.throws(() => createProviderWireBody({ ...input, payload }), ProviderAdapterError);
+  }
+});
+
+test('aborting during DNS resolution prevents a later provider dispatch', async () => {
+  let resolveDns;
+  let enteredDns;
+  let writes = 0;
+  const entered = new Promise(resolve => { enteredDns = resolve; });
+  const dns = new Promise(resolve => { resolveDns = resolve; });
+  const transport = createTrustedProviderTransport({
+    resolve: () => { enteredDns(); return dns; },
+    fetchPinned: async () => { writes++; return new Response('{}'); },
+  });
+  const client = createProviderHttpClient({provider:'github',baseUrl:'https://api.github.com',transport});
+  const controller = new AbortController();
+  const pending = client.request({method:'PUT',path:'/repos/team/repo/pulls/7/merge',signal:controller.signal});
+  const rejected = assert.rejects(pending, error => error.code === 'ERR_PROVIDER_ABORTED');
+  await entered;
+  controller.abort();
+  await rejected;
+  resolveDns(['93.184.216.34']);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(writes, 0);
+});

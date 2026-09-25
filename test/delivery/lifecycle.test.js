@@ -79,9 +79,9 @@ async function fixture(t, options = {}) {
       observe++;
       return observeFn();
     },
-    dispatch: async (operation) => {
+    dispatch: async (operation, context) => {
       dispatch++;
-      return dispatchFn(operation);
+      return dispatchFn(operation, context);
     },
     reconcile: async (operation) => {
       reconcile++;
@@ -695,4 +695,18 @@ test('reopened provider mismatch fails before observation or mutation', async (t
     })
   );
   assert.deepEqual(f.counts(), before);
+});
+
+
+test('trusted dispatch receives a deadline bounded by execution timeout and approval expiry', async t => {
+  const f = await fixture(t);
+  const state = await ready(f);
+  f.setDispatch(async (operation, context) => {
+    assert.equal(context.deadline, '2026-09-25T10:00:10.000Z');
+    assert.ok(Object.isFrozen(context));
+    return {status:'succeeded',operationDigest:operation.digest,headSha:SHA,evidenceDigest:DIGEST,
+      resourceUrl:repository.url+'/pull/7',commitSha:BASE};
+  });
+  const result = await f.service.execute({expectedVersion:state.version,proposalDigest:state.proposal.digest,approval:f.approval(state)});
+  assert.equal(result.stage, 'merged');
 });

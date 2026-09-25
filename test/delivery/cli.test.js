@@ -26,3 +26,11 @@ for (const args of [
     assert.equal(result.ok, false);
   });
 }
+
+test('delivery parser accepts scoped remote operations and explicit merge method', async () => {
+  const { parseArgs } = await import('../../src/cli/parse-args.js');
+  const parsed = parseArgs(['delivery', 'merge', '--method=squash', '--provider=github-team']);
+  assert.equal(parsed.subcommand, 'merge');
+  assert.equal(parsed.flags.method, 'squash');
+  assert.equal(parsed.flags.provider, 'github-team');
+});

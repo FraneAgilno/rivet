@@ -13,6 +13,8 @@ import { createDeliveryStore } from '../delivery/store.js';
 import { createDeliveryService, createTrustedDeliveryExecutor } from '../delivery/service.js';
 import { createAuthorityEnvelope } from '../policy/authority.js';
 import { createApprovalRegistry } from '../policy/approvals.js';
+import { runRemoteDelivery } from './delivery-remote.js';
+import { hash } from '../delivery/contract.js';
 
 function fail(message, code = 'INVALID_INPUT') {
   throw new CliError(message, code);
@@ -28,10 +30,10 @@ async function selectRun(project, flags, subcommand, runner) {
   const candidates = [];
   for (const paths of await listExistingFeatureRunPaths(project, { runner })) {
     const record =
-      subcommand === 'status'
+      subcommand !== 'prepare'
         ? await createDeliveryStore(await deliveryRecordPaths(paths)).read()
         : await createFeatureRunStore(paths).readOnly();
-    if (record && (subcommand === 'status' || record.status === 'awaiting-final-approval'))
+    if (record && (subcommand !== 'prepare' || record.status === 'awaiting-final-approval'))
       candidates.push(paths);
   }
   if (candidates.length !== 1)
@@ -42,15 +44,23 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'merge', 'reconcile'].includes(subcommand) ||
     operands.length ||
-    Object.keys(flags).some((key) => !['project', 'run', 'remote', 'json'].includes(key)) ||
+    Object.keys(flags).some(
+      (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
+    ) ||
     (flags.run !== undefined && !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(flags.run)) ||
     flags.run?.length > 64 ||
-    (subcommand === 'status' && flags.remote !== undefined)
+    (subcommand !== 'prepare' && flags.remote !== undefined) ||
+    (flags.provider !== undefined &&
+      (!['refresh', 'merge', 'reconcile'].includes(subcommand) ||
+        !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
+    (flags.method !== undefined &&
+      (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
+    (subcommand === 'merge' && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status [--run=<id>] [--project=<path>] [--json]. Prepare also accepts --remote=<name>.'
+      'Use rivet delivery prepare|status|refresh|merge|reconcile [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -110,6 +120,40 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
+    if (['refresh', 'merge', 'reconcile'].includes(subcommand)) {
+      result = await runRemoteDelivery({
+        action: subcommand,
+        store,
+        config: project.config,
+        flags,
+        dependencies,
+        validateLocal: async (expected) => {
+          const gitClient = await createGitClient({ gitExecutable: executable });
+          // Select the previously recorded repository even if another remote exists.
+          const { discoverRepositoryRemotes } = await import('../repositories/index.js');
+          const remotes = await discoverRepositoryRemotes(project.root, { runner });
+          const remote = remotes.find((item) => item.url === expected.repository.url);
+          if (!remote) fail('The prepared repository remote is no longer configured.', 'REPOSITORY_CONFLICT');
+          const current = await loadDeliveryCandidate({
+            project: project.root,
+            runId: paths.runId,
+            remoteName: remote.remoteName,
+            gitClient,
+            runner,
+          });
+          if (
+            hash(current.localVerification) !== hash(expected.localVerification) ||
+            hash(current.repository) !== hash(expected.repository) ||
+            current.sourceBranch !== expected.sourceBranch ||
+            current.targetBranch !== expected.targetBranch
+          )
+            fail(
+              'The local candidate changed. Verify the work before preparing delivery again.',
+              'REPOSITORY_CONFLICT'
+            );
+        },
+      });
+    }
     if (result === null)
       fail(
         'No delivery record exists. Run rivet delivery prepare after verification.',
@@ -118,19 +162,26 @@ export async function deliveryCommand(parsed, dependencies) {
   } catch (error) {
     if (error instanceof CliError) throw error;
     fail(
-      'Delivery preparation or state inspection failed. Check work status, verification, remote selection and private-state permissions.',
+      'Delivery stopped. Check local verification, repository access, supported protection policy and delivery status. An uncertain operation requires delivery reconcile before retry.',
       'REPOSITORY_CONFLICT'
     );
   }
-  if (flags.json) dependencies.output.json({ ok: true, result });
+  const incomplete =
+    ['merge', 'reconcile'].includes(subcommand) &&
+    (result.operations.some((op) => ['dispatching', 'indeterminate'].includes(op.state)) ||
+      (subcommand === 'merge' &&
+        !result.operations.some((op) => op.action === 'merge' && op.state === 'succeeded')));
+  if (flags.json) dependencies.output.json({ ok: !incomplete, result });
   else {
     dependencies.output.log(`Recorded delivery stage: ${result.stage}`);
     dependencies.output.log(`Run: ${result.candidate.runId}`);
     dependencies.output.log(`Repository: ${result.candidate.repository.url}`);
     dependencies.output.log(`Commit: ${result.candidate.headSha}`);
     dependencies.output.log(
-      'Preparation records local verification. External delivery still requires a qualified executor and action-specific approval.'
+      incomplete
+        ? 'Outcome is not confirmed. Run rivet delivery reconcile; do not repeat the merge.'
+        : 'Status records confirmed stages. GitHub merge requires supported protection and interactive approval.'
     );
   }
-  return EXIT_CODES.SUCCESS;
+  return incomplete ? EXIT_CODES.PROVIDER_UNAVAILABLE : EXIT_CODES.SUCCESS;
 }

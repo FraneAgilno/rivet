@@ -313,7 +313,10 @@ export function createDeliveryService(config) {
       try {
         receipt = await bounded(() => {
           const pending = inFlight;
-          const promise = Promise.resolve().then(() => executor.dispatch(operation));
+          const context = Object.freeze({ deadline: new Date(Math.min(
+            Date.parse(now()) + timeoutMs, Date.parse(proposal.expiresAt), Date.parse(approval.expiresAt)
+          )).toISOString() });
+          const promise = Promise.resolve().then(() => executor.dispatch(operation, context));
           pending.set(operation.digest, promise);
           promise.then(
             () => pending.delete(operation.digest),

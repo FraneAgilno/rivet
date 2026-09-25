@@ -57,7 +57,8 @@ const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
-  rivet delivery prepare|status [--run=<id>] [--project=<path>] [--json]
+  rivet delivery prepare|status|refresh|reconcile [--run=<id>] [--project=<path>] [--json]
+  rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
   rivet models list [--json]                List model adapters and implementation status
@@ -171,6 +172,19 @@ async function defaultConfirmDependencyInstall(_plan, options = {}) {
   finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
 }
 
+async function defaultConfirmDelivery() {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  let timer;
+  try {
+    const answer = await Promise.race([
+      readline.question('Merge this exact commit using the method shown above? [y/N] '),
+      new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
+    ]);
+    return /^(?:y|yes)$/i.test(String(answer).trim());
+  } catch { return false; }
+  finally { clearTimeout(timer); readline.close(); }
+}
+
 function resolveDependencies(overrides = {}) {
   return {
     fs: overrides.fs ?? filesystem,
@@ -181,6 +195,8 @@ function resolveDependencies(overrides = {}) {
     home: overrides.home ?? homedir,
     output: overrides.output ?? createOutput(),
     fetch: overrides.fetch ?? globalThis.fetch,
+    confirmDelivery: overrides.confirmDelivery ?? defaultConfirmDelivery,
+    delivery: overrides.delivery,
     confirmOverwrite: overrides.confirmOverwrite ?? defaultConfirmOverwrite,
     confirmFeatureActivation: overrides.confirmFeatureActivation ?? defaultConfirmFeatureActivation,
     confirmDependencyInstall: overrides.confirmDependencyInstall ?? defaultConfirmDependencyInstall,

@@ -180,6 +180,13 @@ function wireValue(write) {
   };
   else if (write.provider === 'github' && write.action === 'comment') value = { body: payload.body };
   else if (write.provider === 'github' && write.action === 'pr') value = payload;
+  else if (write.provider === 'github' && write.action === 'merge') {
+    if (!payload || Object.keys(payload).length !== 2
+      || !Object.hasOwn(payload, 'sha') || !Object.hasOwn(payload, 'merge_method')
+      || !/^[a-f0-9]{40}$/.test(payload.sha) || payload.sha !== write.expectedVersion
+      || !['merge', 'squash', 'rebase'].includes(payload.merge_method)) failProvider('invalid-request', { provider: 'github' });
+    value = { sha: payload.sha, merge_method: payload.merge_method };
+  }
   else failProvider('invalid-request', { provider: write.provider });
   const safe = cloneJson(value);
   const redacted = redactSecrets(safe, { environment: {} });
