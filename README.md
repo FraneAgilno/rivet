@@ -2,7 +2,7 @@
 
 A shared development workflow for teams and their coding agents.
 
-Rivet is a **standalone development alpha** with its own CLI, configuration, state, and releases. It uses a reviewed Agilno source import and has no runtime dependency on AI Engineering.
+Rivet is a **standalone development alpha** with its own CLI, configuration, state, and releases.
 
 ## Connect a project
 

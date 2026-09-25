@@ -10,5 +10,3 @@ Rivet is a team development framework operated through a coding harness or a CLI
 - [Understand the architecture](./architecture.md).
 - [Inspect model-provider profiles](./models.md).
 - [Contribute to the framework](./contributing.md).
-
-Rivet is an independent project. It has no runtime dependency on AI Engineering and does not read or migrate that product's configuration automatically.

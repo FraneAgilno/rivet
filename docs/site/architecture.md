@@ -8,14 +8,14 @@ Rivet packages a repeatable team workflow. Coding harnesses already provide edit
 
 <ArchitectureDiagram />
 
-## Independent identity
+## Project identity
 
 - Command: `rivet`.
 - Project policy: `.rivet`.
 - Runtime environment: `RIVET_*` variables.
 - Private state: Rivet-owned directories under the repository's Git common directory.
 - Harness skills: `rivet-` prefix.
-- Package, Git history, releases, and documentation: independent of AI Engineering.
+- Package, releases, and documentation: maintained in the Rivet repository.
 
 ## Harnesses and models are different
 

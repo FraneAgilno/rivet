@@ -8,9 +8,9 @@ No Rivet package has been published from this repository yet. Use the source ins
 
 Run `rivet models list`. `planned` means the descriptor/profile contract exists but its executor is not implemented. `adapter-available` still needs runtime/authentication checks. Profile validation does not call a model.
 
-## Old project configuration is not recognized
+## Project configuration is not recognized
 
-Rivet uses `.rivet` and `RIVET_*`. It does not automatically read AI Engineering configuration or state. Preview a fresh configuration with `rivet init --project=<path>` and review it before writing.
+Rivet uses `.rivet` and `RIVET_*`. Preview a fresh configuration with `rivet init --project=<path>` and review it before writing.
 
 ## Tests cannot open a local server
 
