@@ -1,3 +1,4 @@
+import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { immutableJson } from '../clients/contract.js';
@@ -455,6 +456,74 @@ export function createHostExecution(input) {
     } finally { await hostLock.release(); }
   }
 
+  async function workerCheckoutStatus(project, run, statePaths, snapshot) {
+    if (statePaths === null) return [];
+    const { reservations } = await createReservationStore(statePaths).readOnly();
+    if (reservations.length === 0) return [];
+    if (reservations.length > 64 || new Set(reservations.map(item => item.nodeId)).size !== reservations.length) fail('state-conflict');
+    if (snapshot === null) fail('state-conflict');
+    const repository = await gitClient.inspectRepository(project);
+    if (repository.root !== project || repository.gitCommonDir !== statePaths.gitCommonDir) fail('state-conflict');
+    const parent = join(dirname(project), '.rivet-worktrees', repository.repositoryId, basename(statePaths.instanceDir), 'workers');
+    // Validate every association before inspecting any reservation-selected checkout.
+    const associated = reservations.map(reservation => {
+      const node = snapshot.data.graph.nodes.find(item => item.id === reservation.nodeId);
+      const planned = run.featurePlan.nodes.find(item => item.id === reservation.nodeId);
+      if (!node || planned?.role !== 'worker' || node.owner.role !== 'worker'
+        || node.owner.id !== reservation.ownerId || reservation.repositoryId !== repository.repositoryId
+        || reservation.branch !== `worker/${run.runId}/${node.id}`
+        || reservation.worktreePath !== join(parent, node.id)) fail('state-conflict');
+      return { reservation, node };
+    });
+    let topology = null;
+    try { topology = await gitClient.listWorktrees(project); } catch {}
+    const nowMs = featureNowMilliseconds(now);
+    const results = [];
+    for (const { reservation, node } of associated) {
+      const registered = topology?.filter(item => item.path === reservation.worktreePath) ?? [];
+      const branchLocations = topology?.filter(item => item.branch === reservation.branch && item.path !== reservation.worktreePath)
+        .map(item => item.path) ?? [];
+      let status = 'unavailable';
+      let observed = null;
+      if (topology !== null) {
+        let exists = false;
+        try { const metadata = await lstat(reservation.worktreePath); exists = metadata.isDirectory() && !metadata.isSymbolicLink()
+          && await realpath(reservation.worktreePath) === reservation.worktreePath; }
+        catch (error) { if (error.code === 'ENOENT') status = 'missing'; }
+        if (exists) {
+          if (registered.length !== 1 || registered[0].branch !== reservation.branch) status = 'mismatched';
+          else {
+            try {
+              const candidate = await gitClient.inspectRepository(reservation.worktreePath);
+              if (candidate.root !== reservation.worktreePath || candidate.repositoryId !== repository.repositoryId
+                || candidate.gitCommonDir !== repository.gitCommonDir || candidate.branch !== reservation.branch) status = 'mismatched';
+              else { observed = candidate; status = candidate.dirty ? 'dirty' : 'clean'; }
+            } catch {}
+          }
+        }
+      }
+      if ((observed?.dirtyPaths.length ?? 0) > 256 || branchLocations.length > 64) fail('state-conflict');
+      const leaseExpired = Date.parse(reservation.expiresAt) <= nowMs;
+      const nextAction = status === 'dirty'
+        ? 'Inspect and preserve the Worker edits in the owning harness before continuing. Status does not commit or discard them.'
+        : status !== 'clean'
+          ? 'Inspect the registered Worker checkout and branch locations before recovery. Do not launch a duplicate Worker.'
+          : ['completed', 'archived'].includes(node.status)
+            ? 'Review the completed Worker evidence and integration checkout; do not restart this Worker.'
+          : leaseExpired
+            ? 'Inspect the expired Worker lease and reconcile it explicitly before continuing. Status does not renew leases.'
+            : reservation.status === 'reserved'
+              ? 'Inspect the interrupted checkout preparation before continuing in the owning harness.'
+              : 'Continue the pending Worker action in the owning harness; a clean checkout alone is not completion evidence.';
+      results.push({ nodeId: node.id, nodeStatus: node.status, path: reservation.worktreePath,
+        expectedBranch: reservation.branch, observedBranch: observed?.branch ?? registered[0]?.branch ?? null,
+        reservationStatus: reservation.status, leaseExpired, status, headCommit: observed?.headSha ?? null,
+        dirtyPaths: observed?.dirtyPaths ?? [], branchLocations, nextAction });
+    }
+    if (Buffer.byteLength(JSON.stringify(results)) > 32 * 1024) fail('state-conflict');
+    return results;
+  }
+
   async function status(inputValue) {
     const value = request(inputValue);
     const paths = await resolveExistingFeatureRunPaths(value.project, value.runId);
@@ -489,6 +558,7 @@ export function createHostExecution(input) {
     const statePaths = await resolveExistingStatePaths(value.project, value.runId);
     const snapshot = statePaths === null ? null : await readSnapshotWithoutLock(statePaths);
     const runtime = snapshot === null ? null : runtimeSummary(snapshot.data);
+    const workerCheckouts = await workerCheckoutStatus(value.project, run, statePaths, snapshot);
     const blockedNodes = run.status === 'blocked'
       ? (runtime?.nodes ?? []).filter(node => ['blocked', 'failed'].includes(node.status)).map(node => node.id)
       : [];
@@ -531,7 +601,7 @@ export function createHostExecution(input) {
                 ? 'Use work prepare with run.version to create the isolated execution state.'
                 : 'Use rivet task resume to continue the approved spawned task.'
               : 'Review the proposal and current run state before proceeding.';
-    return immutableJson({ run, runtime, verification, checkout, deliveryReady: deliverable, blockedNodes, nextAction });
+    return immutableJson({ run, runtime, verification, checkout, workerCheckouts, deliveryReady: deliverable, blockedNodes, nextAction });
   }
 
   return Object.freeze({ prepare, nextAction, submitResult, verify, status });

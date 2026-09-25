@@ -116,6 +116,7 @@ function execute(executable, args, cwd, options = {}) {
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_CONFIG_GLOBAL: '/dev/null',
         GIT_NO_REPLACE_OBJECTS: '1',
+        GIT_OPTIONAL_LOCKS: '0',
         GIT_TERMINAL_PROMPT: '0',
         GIT_ASKPASS: '/bin/false',
         LC_ALL: 'C',

@@ -344,6 +344,13 @@ export function createReservationStore(paths) {
   }
 
   return Object.freeze({
+    async readOnly() {
+      await verifyResolvedStatePaths(paths);
+      const state = await readState(path);
+      await verifyResolvedStatePaths(paths);
+      return Object.freeze({ version: state.version, reservations: Object.freeze(state.reservations.map(cloneReservation)) });
+    },
+
     async list() {
       return withLock(async () => {
         const state = await readState(path);

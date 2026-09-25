@@ -138,6 +138,17 @@ async function dependencyCommand(project, record, dependencies) {
   });
 }
 
+function renderWorkerCheckouts(status, output) {
+  for (const worker of status.workerCheckouts ?? []) {
+    output.log(`Worker checkout: ${visible(worker.nodeId)} (${visible(worker.status)}; ${visible(worker.reservationStatus)}${worker.leaseExpired ? '; lease expired' : ''})`);
+    output.log(`  Path: ${visible(worker.path)}`);
+    output.log(`  Branch: ${visible(worker.expectedBranch)}; observed: ${visible(worker.observedBranch ?? 'unknown')}`);
+    for (const path of worker.dirtyPaths) output.log(`  Uncommitted: ${visible(path)}`);
+    for (const path of worker.branchLocations) output.log(`  Branch location: ${visible(path)}`);
+    output.log(`  Next: ${visible(worker.nextAction)}`);
+  }
+}
+
 export async function humanTaskCommand(parsed, dependencies) {
   if (parsed.command !== 'task' || !['status', 'resume', 'deps'].includes(parsed.subcommand)
     || parsed.operands.length !== 0 || Object.keys(parsed.flags).some(key => !['project', 'run'].includes(key))) {
@@ -174,11 +185,13 @@ export async function humanTaskCommand(parsed, dependencies) {
       }
       if (status.verification.failure) dependencies.output.log(`Failure: ${visible(status.verification.failure)}`);
     }
+    renderWorkerCheckouts(status, dependencies.output);
     if (status.checkout) dependencies.output.log(`Integration checkout: ${visible(status.checkout.path)} (${status.checkout.status})`);
     return EXIT_CODES.SUCCESS;
   }
   if (record.featurePlan.client === 'host') {
     const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
+    renderWorkerCheckouts(status, dependencies.output);
     dependencies.output.log(`Host task: ${visible(status.run.status)}. ${visible(status.nextAction)}`);
     dependencies.output.log('Continue in the coding harness that owns this task; Rivet will not launch a second worker.');
     return EXIT_CODES.SUCCESS;

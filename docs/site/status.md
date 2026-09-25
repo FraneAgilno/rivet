@@ -13,6 +13,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
 - Redacted support diagnostics with optional local harness capability probes.
+- Read-only Worker checkout recovery details, including branch locations, preserved edits and expired leases.
 - Extensible model registry, bounded text-only API/local delegation and explicit role selection. Terminal workflow worker roles can select Claude or Codex independently of the planning harness.
 - Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
