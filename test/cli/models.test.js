@@ -9,7 +9,7 @@ test('models list exposes providers and their actual execution status without ne
   const result = (await runCli(['models', 'list', '--json'])).assertSuccess();
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
-  assert.equal(payload.result.providers.find(p => p.id === 'gemini').execution, 'planned');
+  assert.equal(payload.result.providers.find(p => p.id === 'gemini').execution, 'adapter-available');
   assert.ok(payload.result.providers.some(p => p.id === 'ollama'));
 });
 

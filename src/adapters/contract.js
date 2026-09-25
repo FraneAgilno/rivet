@@ -272,6 +272,22 @@ export function createProviderReadBody(input) {
   return body;
 }
 
+// Models have a separate bounded JSON body brand; they never borrow a tracker
+// read/mutation action. Protocol modules construct only non-streaming text calls.
+export function createModelJsonBody(input) {
+  const value = captureRecord(input, new Set(['provider', 'payload']), ['provider', 'payload'], 'invalid-request');
+  const provider = boundedString(value.provider, 32, PROVIDER);
+  if (!['anthropic', 'openai', 'gemini', 'ollama', 'openai-compatible'].includes(provider)) failProvider('invalid-request');
+  const payload = cloneJson(value.payload);
+  const redacted = redactSecrets(payload, { environment: {} });
+  if (canonical(payload) !== canonical(redacted)) failProvider('invalid-request', { provider });
+  const bytes = JSON.stringify(payload);
+  if (Buffer.byteLength(bytes) > 512 * 1024) failProvider('invalid-request', { provider });
+  const body = Object.freeze({ bytes, digest: createHash('sha256').update(bytes).digest('hex') });
+  wireBodies.add(body);
+  return body;
+}
+
 export function providerWireBytes(value) {
   if (!wireBodies.has(value)) failProvider('invalid-request');
   return value.bytes;

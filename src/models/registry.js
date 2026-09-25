@@ -55,7 +55,7 @@ export function createModelRegistry() {
     providers.set(provider.id, provider);
     return provider;
   };
-  for (const provider of BUILTINS) register({ capabilities: ['text'], execution: 'planned', ...provider });
+  for (const provider of BUILTINS) register({ capabilities: ['text'], execution: 'adapter-available', ...provider });
 
   return Object.freeze({
     register,

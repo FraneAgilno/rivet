@@ -15,7 +15,7 @@ test('registry includes hosted, local, compatible and harness adapters with hone
   assert.equal(providers.find(p => p.id === 'gemini').kind, 'api');
   assert.equal(providers.find(p => p.id === 'ollama').kind, 'local');
   assert.equal(providers.find(p => p.id === 'codex').kind, 'harness');
-  assert.equal(providers.find(p => p.id === 'gemini').execution, 'planned');
+  assert.equal(providers.find(p => p.id === 'gemini').execution, 'adapter-available');
   assert.equal(providers.every(p => p.liveVerified === false), true);
 });
 

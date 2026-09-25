@@ -3,6 +3,9 @@ export const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY = /(?:^|[-_])(?:password|passwd|secret|api[-_]?key|access[-_]?key|private[-_]?key|authorization|cookie|credential|access[-_]?token|api[-_]?token|auth[-_]?token|token)(?:$|[-_])/i;
 const SENSITIVE_ENVIRONMENT_KEY = /(?:^|_)(?:API_KEY|ACCESS_KEY|PRIVATE_KEY|KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH(?:ORIZATION)?)(?:_|$)/i;
 const SAFE_KEYS = new Set(['token_limit', 'api_token_env', 'access_token_env', 'token_env', 'username_env']);
+// Gemini usage metadata is numeric accounting, never credential content. Exact
+// keys and integer values only; configured secret keys always take precedence.
+const NUMERIC_USAGE_KEYS = new Set(['promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount']);
 const TOKEN_PATTERNS = [
   /\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_.:=-]+/gi,
   /\bgithub_pat_[A-Za-z0-9_]{8,}\b/g,
@@ -74,7 +77,10 @@ function redactValue(value, context, active) {
       if (typeof key !== 'string' || !descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
         throw new TypeError('State values must be JSON-compatible');
       }
-      const child = isSensitiveKey(key, context.configuredKeys)
+      const safeUsageCount = NUMERIC_USAGE_KEYS.has(key)
+        && Number.isSafeInteger(descriptor.value) && descriptor.value >= 0
+        && !context.configuredKeys.has(normalizedKey(key));
+      const child = isSensitiveKey(key, context.configuredKeys) && !safeUsageCount
         ? REDACTED
         : redactValue(descriptor.value, context, active);
       Object.defineProperty(result, key, {
