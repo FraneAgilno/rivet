@@ -16,13 +16,14 @@ import { createReservedWorktree, verifyReservedWorktree } from '../git/worktrees
 import { validatedGraphSnapshot } from '../graph/validate.js';
 import { createApprovalReceipt, createApprovalRegistry } from '../policy/approvals.js';
 import { createAuthorityEnvelope } from '../policy/authority.js';
-import { buildLaunchContract } from '../prompts/launch-contract.js';
+import { buildLaunchContract, validateLaunchPayload } from '../prompts/launch-contract.js';
 import { runQualityGates } from '../quality/runner.js';
 import { createRuntimeInstance } from '../runtime/instance-store.js';
 import { createOrchestrator } from '../runtime/orchestrator.js';
 import { bootstrapWorktreeDependencies, inspectWorktreeDependencies, WorktreeBootstrapError } from '../runtime/worktree-bootstrap.js';
 import { validateWorkRequest } from '../work-request/contract.js';
 import { createFeaturePlan, featurePlanDigest } from './plan-contract.js';
+import { executionForNode } from './client-profile.js';
 
 const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
@@ -424,9 +425,10 @@ async function recoverBlockedWorker(input) {
 
 export function createFeatureLaunchInput(node, intent, planNode, run) {
   const approvedCost = Number(intent.allocation.costUsd);
-  const maxCostUsd = run.featurePlan.clientProfile === undefined
+  const { clientProfile } = executionForNode(run.featurePlan, planNode);
+  const maxCostUsd = clientProfile === undefined
     ? approvedCost
-    : Math.min(approvedCost, run.featurePlan.clientProfile.execution.maxCostUsd);
+    : Math.min(approvedCost, clientProfile.execution.maxCostUsd);
   return {
     nodeId: node.id,
     parentId: node.parentId ?? null,
@@ -505,9 +507,21 @@ export function createFeatureExecutor(input) {
     const repository = await configured.gitClient.inspectRepository(project).catch(() => fail());
     const config = await loadProjectConfig(project).catch(() => fail());
     const run = validRun(config, request.run);
+    if (run.featurePlan.client === 'host') fail();
     if (repository.root !== project || repository.detached || repository.dirty
       || repository.branch !== config.project.repository.defaultBranch
       || repository.headSha !== run.featurePlan.baselineCommit) fail();
+    // Only select adapters after the saved approval and current role configuration
+    // are validated. Probe before creating integration or worker checkouts.
+    const selectedClients = new Map();
+    for (const planNode of run.featurePlan.nodes.filter(node => node.role === 'worker')) {
+      const execution = executionForNode(run.featurePlan, planNode);
+      if (!selectedClients.has(execution.client)) {
+        const selected = await configured.clientFor(execution.client, execution.clientProfile, { project, signal });
+        if (!selected || selected.provider !== execution.client || typeof selected.launch !== 'function') fail();
+        selectedClients.set(execution.client, selected);
+      }
+    }
 
     async function prepareDependencies(worker, branch, expectedCommit) {
       const input = {
@@ -549,8 +563,6 @@ export function createFeatureExecutor(input) {
     const planNodes = new Map(run.featurePlan.nodes.map(node => [node.id, node]));
     const parent = await prepareFeatureWorkerParent(worktreeRunRoot);
     const nowMs = () => featureNowMilliseconds(configured.now);
-    const selectedClient = configured.clientFor(run.featurePlan.client, run.featurePlan.clientProfile);
-    if (!selectedClient || selectedClient.provider !== run.featurePlan.client || typeof selectedClient.launch !== 'function') fail();
     let preparationReason = null;
     let executionReason = null;
     let reconciliationReason = null;
@@ -558,9 +570,18 @@ export function createFeatureExecutor(input) {
     const leases = new Map();
     const recoveryWorktrees = new Map();
     const client = Object.freeze({
-      provider: selectedClient.provider,
+      provider: run.featurePlan.client,
       async launch(contract, options) {
-        try { return await selectedClient.launch(contract, options); }
+        try {
+          const payload = validateLaunchPayload(buildLaunchContract(contract));
+          const planNode = planNodes.get(payload.nodeId);
+          if (!planNode || planNode.role !== 'worker') fail();
+          const execution = executionForNode(run.featurePlan, planNode);
+          const selected = selectedClients.get(execution.client);
+          if (!selected) fail();
+          const { version, ...sealedInput } = payload;
+          return await selected.launch(sealedInput, options);
+        }
         catch (error) {
           const detail = typeof error?.details?.reason === 'string' ? `:${error.details.reason}` : '';
           executionReason = typeof error?.code === 'string' ? `${error.code}${detail}` : 'worker-execution-error';

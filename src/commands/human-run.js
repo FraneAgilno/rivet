@@ -64,6 +64,11 @@ function reviewLines(project, task, harness, proposal) {
     for (const scope of node.authorityScopes ?? []) lines.push(`    authority: ${scope}`);
     for (const command of node.commandIds ?? []) lines.push(`    command: ${command}`);
     for (const evidence of node.requiredEvidenceTypes ?? []) lines.push(`    evidence: ${evidence}`);
+    if (node.role === 'worker') {
+      lines.push(`    executor: ${node.execution?.client ?? plan.client ?? harness.kind}`);
+      const profile = node.execution ? node.execution.clientProfile : plan.clientProfile;
+      if (profile) lines.push(`    executor limits: ${JSON.stringify(profile)}`);
+    }
     if (node.budget) lines.push(`    budget: ${JSON.stringify(node.budget)}`);
     if (node.approvalGate) lines.push(`    human gate: ${node.approvalGate}`);
   }
@@ -137,6 +142,12 @@ async function runInteractive(parsed, dependencies, signal) {
     const existing = await invokeFeature(feature, 'status', { project: project.root, runId: proposal.runId });
     dependencies.output.log(`This exact request already has a ${visible(existing.status)} run. Use rivet task status to inspect it.`);
     return existing.status === 'awaiting-final-approval' ? EXIT_CODES.SUCCESS : EXIT_CODES.REPOSITORY_CONFLICT;
+  }
+  for (const kind of new Set(proposal.featurePlan.nodes.filter(node => node.role === 'worker')
+    .map(node => node.execution?.client).filter(Boolean))) {
+    if (!KINDS.has(kind)) fail('The worker harness is unsupported.', 'PROVIDER_UNAVAILABLE');
+    try { await harnesses.select(kind, project.root, { signal }); }
+    catch { fail(`The selected worker harness ${kind} is unavailable or incompatible. Install and authenticate it before activation.`, 'PROVIDER_UNAVAILABLE'); }
   }
   let outputFailed = false;
   const unobserve = observeOutputErrors(dependencies.output, () => { outputFailed = true; });

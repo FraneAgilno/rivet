@@ -151,7 +151,10 @@ export async function humanTaskCommand(parsed, dependencies) {
     const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
     dependencies.output.log(`Task: ${visible(record.workRequest.acceptanceCriteria[0] ?? record.workRequest.title)}`);
     dependencies.output.log(`State: ${visible(record.status)}`);
-    dependencies.output.log(`Harness: ${record.featurePlan.client}`);
+    if (record.featurePlan.nodes.some(node => node.execution)) {
+      dependencies.output.log(`Planning harness: ${record.featurePlan.client}`);
+      dependencies.output.log(`Worker harnesses: ${[...new Set(record.featurePlan.nodes.filter(node => node.role === 'worker').map(node => node.execution?.client ?? record.featurePlan.client))].join(', ')}`);
+    } else dependencies.output.log(`Harness: ${record.featurePlan.client}`);
     dependencies.output.log(`Next: ${visible(status.nextAction)}`);
     if (status.verification) {
       dependencies.output.log(`Verification: ${status.verification.status} at ${status.verification.commitSha}`);
@@ -189,8 +192,12 @@ export async function humanTaskCommand(parsed, dependencies) {
   if (typeof dependencies.feature?.resume !== 'function') fail('Feature resume is unavailable.', 'MISSING_CONFIGURATION');
   if (typeof dependencies.harnesses?.select !== 'function') fail('Harness discovery is unavailable.', 'MISSING_CONFIGURATION');
   return withTerminalInterruption(async signal => {
-    try { await dependencies.harnesses.select(record.featurePlan.client, project.root, { signal }); }
-    catch { fail(`The saved ${record.featurePlan.client} harness is unavailable or incompatible. Restore it before resuming; Rivet will not switch models.`, 'PROVIDER_UNAVAILABLE'); }
+    const clients = new Set(record.featurePlan.nodes.filter(node => node.role === 'worker')
+      .map(node => node.execution?.client ?? record.featurePlan.client));
+    for (const client of clients) {
+      try { await dependencies.harnesses.select(client, project.root, { signal }); }
+      catch { fail(`The saved worker harness ${client} is unavailable or incompatible. Restore it before resuming; Rivet will not switch models.`, 'PROVIDER_UNAVAILABLE'); }
+    }
     const result = await invokeFeature(dependencies.feature, 'resume', {
       project: project.root, runId: record.runId, expectedVersion: record.version,
     }, { signal, confirmDependencyInstall: confirmIsolatedDependencyInstall(dependencies, signal) });

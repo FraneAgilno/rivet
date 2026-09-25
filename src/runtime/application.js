@@ -227,7 +227,10 @@ export function createRivetApplication(input = {}) {
   const executeFeature = async (request, options) => {
     executorPromise ??= gitClient().then(client => createFeatureExecutor({
       gitClient: client,
-      clientFor: agentClientFor,
+      clientFor: async (kind, profile, { project, signal }) => {
+        await harnesses.select(kind, project, { signal });
+        return agentClientFor(kind, profile);
+      },
       resolveCommandExecutable,
       now,
       environment: clientEnvironment,

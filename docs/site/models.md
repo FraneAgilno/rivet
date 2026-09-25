@@ -120,10 +120,36 @@ A `text` role uses the same prompt preview, approval and bounded advisory respon
 
 The selected role, referenced profile and target are reread across approval. Changes stop dispatch or activation. An unavailable target fails without switching to another model. Delegating to a different harness requires an installed CLI; desktop applications alone do not provide a spawned executor.
 
-These are explicit role delegation operations. The file is not automatically loaded by `rivet run` or used to assign individual nodes inside an existing workflow. A harness role delegates the whole task through the current workflow. Automatic per-node role routing and live cross-harness/API demonstrations remain open; fixture tests do not qualify a real provider account or desktop host.
+These are explicit role delegation operations. The file is not automatically loaded by `rivet run` or used to assign individual nodes inside an existing workflow. A harness role delegates the whole task through the current workflow. Worker harness routing is configured separately below. Live cross-harness/API demonstrations remain open; fixture tests do not qualify a real provider account or desktop host.
+
+## Choose a harness for workflow workers
+
+For terminal feature workflows, add `harness: claude` or `harness: codex` to the existing worker role in `.rivet/orchestration.yaml`. For example, the relevant fields of your existing role become:
+
+```yaml
+id: implementation-worker
+kind: worker
+harness: codex
+# Include the role's existing capacity, delegation, authority,
+# permissions, budget and completion-profile fields.
+```
+
+Then start a task with the planning harness you want:
+
+```sh
+rivet run "Add a greeting module" --harness=claude
+```
+
+In this example Claude plans the work and Codex executes the worker nodes. The compiler selects its existing boss/manager/worker role chain; every worker node from that decomposition uses the selected worker role's configured harness. Without `harness`, workers use the run's selected harness as before.
+
+Rivet records the worker executor and its client limits in the exact plan you approve. The terminal preview shows these assignments, and both installed CLIs must pass capability checks. A changed role selection invalidates the existing plan at activation or resume. An unavailable executor blocks work without switching providers. Workers retain the same scoped launch contract, isolated worktree, result validation, evidence requirements and project checks.
+
+The optional field applies to worker roles. Boss and manager nodes retain their existing governance responsibilities and human approval gates. Active-host workflows reject a configured spawned-worker override; remove that override to work entirely through the active agent. API/local text profiles remain advisory and cannot execute implementation nodes.
+
+This setting selects a CLI adapter. It does not select arbitrary per-node model IDs, assign a different model to every role, or qualify desktop app execution. Claude's existing bounded client profile still applies when Claude is selected as a worker. Cross-harness fixture coverage is automated evidence; real account and host demonstrations remain required by T14.
 
 ## Extending the registry
 
 `src/models/registry.js` exports `createModelRegistry()`. Register an adapter descriptor with a stable ID, protocol, kind, capabilities, and implementation status, then resolve profiles against it. Registration rejects duplicate IDs and unsupported profile fields. Descriptors are immutable copies.
 
-Registering metadata does not install an executor. Custom executors, cross-harness role delegation, authentication probes and live qualification remain separate work packages.
+Registering metadata does not install an executor. Custom executors, broader role routing and live qualification remain separate work packages.

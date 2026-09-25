@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -128,4 +128,14 @@ test('task status presents the stored check evidence and source paths', async t 
   assert.match(shown, /Changed: app\/agenda\.js/);
   assert.match(shown, /Check: test failed \(backend\)/);
   assert.match(shown, /Failure: Required test failed/);
+});
+
+
+test('task status distinguishes the planner from the configured worker harness', async t => {
+  const root=await fixture(t),path=join(root,'.rivet','orchestration.yaml');
+  await writeFile(path,(await readFile(path,'utf8')).replace('    kind: worker','    kind: worker\n    harness: claude'));
+  await createRun(root,'cross-harness-task');const messages=[];
+  assert.equal(await main(['task','status'],overrides(root,messages)),EXIT_CODES.SUCCESS);
+  assert.match(messages.join('\n'),/Planning harness: codex/);
+  assert.match(messages.join('\n'),/Worker harnesses: claude/);
 });

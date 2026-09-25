@@ -9,7 +9,7 @@ import { createWorkRequest } from '../work-request/contract.js';
 import { resolveInlineWorkRequest, resolveMarkdownWorkRequest } from '../work-request/local.js';
 import { resolveHostWorkRequest } from '../work-request/host.js';
 import { resolveTrackerWorkRequest } from '../work-request/tracker.js';
-import { featurePlanDigest } from './plan-contract.js';
+import { createFeaturePlan, featurePlanDigest } from './plan-contract.js';
 import { createFeaturePlanner, createHostFeaturePlan } from './planner.js';
 import { createFeatureRunStore } from './run-store.js';
 import { acquireHostRunLock } from './host-run-lock.js';
@@ -275,12 +275,19 @@ export function createFeatureWorkflow(input) {
     return proposalView(record);
   }
 
+  async function validateSavedPlan(project, record) {
+    const config = await loadConfig(absolute(project));
+    createFeaturePlan({ proposal: record.featurePlan, config, workRequest: record.workRequest,
+      baselineCommit: record.featurePlan.baselineCommit, client: record.featurePlan.client });
+  }
+
   async function start(raw) {
     const request = capture(raw, new Set(['project', 'runId', 'expectedVersion', 'proposalDigest']));
     const { store, record } = await readRun(request.project, request.runId);
     if (record.status !== 'proposed' || record.version !== expectedVersion(request.expectedVersion)) fail('state-conflict');
     if (typeof request.proposalDigest !== 'string' || !DIGEST.test(request.proposalDigest)
       || request.proposalDigest !== record.proposalDigest) fail('proposal-mismatch');
+    await validateSavedPlan(request.project, record);
     const at = now();
     const updated = await store.update({
       status: 'approved', updatedAt: at,
@@ -307,6 +314,7 @@ export function createFeatureWorkflow(input) {
     if (!['approved', 'blocked'].includes(record.status) || record.version !== expectedVersion(request.expectedVersion)) {
       fail('state-conflict');
     }
+    await validateSavedPlan(request.project, record);
     const running = await store.update({
       status: 'running', updatedAt: now(), runtimeRefs: record.runtimeRefs, evidenceRefs: record.evidenceRefs,
     }, { expectedVersion: record.version });

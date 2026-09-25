@@ -28,13 +28,17 @@ async function gitExecutable() {
   throw new Error('Git fixture executable is unavailable');
 }
 
-async function installedFixture(t, kind) {
+async function installedFixture(t, kind, workerHarness) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), `rivet-installed-${kind}-`)));
   const root = join(parent, 'project');
   const remote = join(parent, 'origin.git');
   await mkdir(join(root, 'app'), { recursive: true });
   await mkdir(join(root, 'requests'), { recursive: true });
   await cp(VALID_CONFIG, join(root, '.rivet'), { recursive: true });
+  if (workerHarness) {
+    const path = join(root, '.rivet', 'orchestration.yaml');
+    await writeFile(path, (await readFile(path, 'utf8')).replace('    kind: worker', `    kind: worker\n    harness: ${workerHarness}`));
+  }
   await writeFile(join(root, 'requests', 'feature.md'), '# Recording agenda\n\n## Acceptance Criteria\n\n- Preserve recorded selections.\n');
   await writeFile(join(root, 'app', 'page.js'), "export const page = 'conference';\n");
   await writeFile(join(root, 'package.json'), `${JSON.stringify({
@@ -51,6 +55,9 @@ async function installedFixture(t, kind) {
   const client = join(parent, kind);
   await cp(FAKE_CLIENT, client);
   await chmod(client, 0o700);
+  const otherClient = join(parent, kind === 'claude' ? 'codex' : 'claude');
+  await cp(FAKE_CLIENT, otherClient);
+  await chmod(otherClient, 0o700);
   const gate = join(parent, 'bounded-npm');
   await writeFile(gate, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   await chmod(gate, 0o700);
@@ -256,28 +263,49 @@ test('maps bounded workflow prerequisites and version conflicts to stable public
 });
 
 test('installed CLI uses one selected live client through planning and Worker execution without moving main or remotes', async t => {
-  for (const kind of ['claude', 'codex']) {
-    await t.test(kind, async t => {
-      const fixture = await installedFixture(t, kind);
+  for (const [kind, workerHarness] of [['claude', undefined], ['codex', undefined], ['claude','codex'], ['codex','claude']]) {
+    await t.test(`${kind} planner, ${workerHarness ?? kind} worker`, async t => {
+      const fixture = await installedFixture(t, kind, workerHarness);
+      const worker = workerHarness ?? kind;
       const gitPath = await gitExecutable();
       const baseline = (await execFile('git', ['-C', fixture.root, 'rev-parse', 'HEAD'])).stdout.trim();
       const remoteBefore = (await execFile('git', ['-C', fixture.root, 'ls-remote', '--refs', 'origin'])).stdout;
       const environment = {
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        PATH: `${fixture.parent}:${process.env.PATH ?? '/usr/bin:/bin'}`,
         TMPDIR: fixture.parent,
         RIVET_GIT_EXECUTABLE: gitPath,
         RIVET_NPM_EXECUTABLE: fixture.gate,
         [`RIVET_${kind.toUpperCase()}_EXECUTABLE`]: fixture.client,
-        [`RIVET_${kind.toUpperCase()}_INTERPRETER`]: await realpath(process.execPath),
+        RIVET_CLAUDE_INTERPRETER: await realpath(process.execPath),
+        RIVET_CODEX_INTERPRETER: await realpath(process.execPath),
       };
       const proposal = (await installedCli([
         'feature', 'propose', `--project=${fixture.root}`, `--request=${join(fixture.root, 'requests', 'feature.md')}`,
         `--client=${kind}`, '--json',
       ], environment)).result;
+      const configPath = join(fixture.root, '.rivet', 'orchestration.yaml');
+      const exactConfig = await readFile(configPath, 'utf8');
+      if (workerHarness) {
+        assert.equal(proposal.featurePlan.nodes.find(node => node.role === 'worker').execution.client, workerHarness);
+        await writeFile(configPath, exactConfig.replace(`    harness: ${workerHarness}\n`, ''));
+        await assert.rejects(installedCli(['feature','start',proposal.runId,`--project=${fixture.root}`,
+          `--expected-version=${proposal.version}`,`--proposal-digest=${proposal.proposalDigest}`,'--json'], environment));
+        const unchanged = (await installedCli(['feature','status',proposal.runId,`--project=${fixture.root}`,'--json'],environment)).result;
+        assert.equal(unchanged.status,'proposed'); assert.equal(unchanged.version,proposal.version);
+        await writeFile(configPath, exactConfig);
+      }
       const approved = (await installedCli([
         'feature', 'start', proposal.runId, `--project=${fixture.root}`, `--expected-version=${proposal.version}`,
         `--proposal-digest=${proposal.proposalDigest}`, '--json',
       ], environment)).result;
+      if (workerHarness) {
+        await writeFile(configPath, exactConfig.replace(`    harness: ${workerHarness}\n`, ''));
+        await assert.rejects(installedCli(['feature','resume',proposal.runId,`--project=${fixture.root}`,
+          `--expected-version=${approved.version}`,'--json'],environment));
+        const unchanged = (await installedCli(['feature','status',proposal.runId,`--project=${fixture.root}`,'--json'],environment)).result;
+        assert.equal(unchanged.status,'approved'); assert.equal(unchanged.version,approved.version);
+        await writeFile(configPath, exactConfig);
+      }
       const completed = (await installedCli([
         'feature', 'resume', proposal.runId, `--project=${fixture.root}`, `--expected-version=${approved.version}`, '--json',
       ], environment)).result;
@@ -292,8 +320,8 @@ test('installed CLI uses one selected live client through planning and Worker ex
       assert.equal((await execFile('git', ['-C', fixture.root, 'status', '--porcelain'])).stdout, '');
       assert.equal((await execFile('git', ['-C', fixture.root, 'ls-remote', '--refs', 'origin'])).stdout, remoteBefore);
       const log = (await readFile(join(fixture.parent, 'rivet-fake-client.log'), 'utf8')).trim().split('\n').map(JSON.parse);
-      assert.deepEqual(log.map(item => item.provider), [kind, kind]);
-      assert.deepEqual(log.map(item => item.mode), kind === 'claude' ? ['dontAsk', 'acceptEdits'] : ['read-only', 'workspace-write']);
+      assert.deepEqual(log.map(item => item.provider), [kind, worker]);
+      assert.deepEqual(log.map(item => item.mode), [kind === 'claude' ? 'dontAsk' : 'read-only', worker === 'claude' ? 'acceptEdits' : 'workspace-write']);
       assert.deepEqual(log.map(item => item.kind), ['agilno.feature-planning', 'agilno.agent-launch']);
       assert.equal((await execFile('git', ['-C', fixture.root, 'ls-files', '.git/rivet'])).stdout, '');
     });
