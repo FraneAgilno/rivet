@@ -25,7 +25,8 @@ export default defineConfig({
       ] },
       { text: 'Capabilities', items: [
         { text: 'Model providers', link: '/models' },
-        { text: 'MCPs and repositories', link: '/integrations' },
+        { text: 'MCPs and context', link: '/integrations' },
+        { text: 'Repository inspection', link: '/repositories' },
         { text: 'Memory and project protocols', link: '/memory-and-protocols' },
       ] },
       { text: 'Project', items: [

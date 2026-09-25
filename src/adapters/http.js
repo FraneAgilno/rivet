@@ -215,11 +215,13 @@ function relayAbortSignal(input, provider) {
   });
 }
 
-function requestPath(value) {
+function requestPath(value, allowEncodedSlash = false) {
   boundedString(value, 4096);
   if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) failProvider('invalid-request');
   const pathname = value.split('?', 1)[0];
-  if (/%(?:2e|2f|5c|25)/i.test(pathname) || pathname.split('/').some(part => part === '.' || part === '..')) failProvider('invalid-request');
+  if ((allowEncodedSlash ? /%(?:2e|5c|25)/i : /%(?:2e|2f|5c|25)/i).test(pathname)) failProvider('invalid-request');
+  const decoded = pathname.replace(/%2f/ig, '/');
+  if (decoded.includes('//') || decoded.split('/').some(part => part === '.' || part === '..')) failProvider('invalid-request');
   return value;
 }
 
@@ -352,10 +354,12 @@ function nextLink(link, provider) {
 
 export function createProviderHttpClient(input) {
   const config = captureRecord(input, new Set([
-    'provider', 'baseUrl', 'transport', 'headers', 'timeoutMs', 'maxResponseBytes', 'maxPages', 'maxItems',
+    'provider', 'baseUrl', 'transport', 'headers', 'timeoutMs', 'maxResponseBytes', 'maxPages', 'maxItems', 'allowEncodedSlash',
   ]), ['provider', 'baseUrl', 'transport'], 'invalid-config');
   const provider = boundedString(config.provider, 32, /^[a-z][a-z0-9-]*$/, 'invalid-config');
   if (!trustedTransports.has(config.transport)) failProvider('invalid-config', { provider });
+  if (config.allowEncodedSlash !== undefined && typeof config.allowEncodedSlash !== 'boolean') failProvider('invalid-config', { provider });
+  const allowEncodedSlash = config.allowEncodedSlash === true;
   const transport = config.transport;
   const baseUrl = originUrl(config.baseUrl);
   const basePrefix = baseUrl.pathname === '/' ? '' : baseUrl.pathname;
@@ -369,7 +373,7 @@ export function createProviderHttpClient(input) {
     const value = captureRecord(inputRequest, new Set(['method', 'path', 'headers', 'wireBody', 'signal']), ['method', 'path']);
     const method = boundedString(value.method, 8, /^[A-Z]+$/);
     if (!METHODS.has(method)) failProvider('invalid-request', { provider });
-    const path = requestPath(value.path);
+    const path = requestPath(value.path, allowEncodedSlash);
     let url;
     try {
       url = new URL(`${basePrefix}${path}`, baseUrl.origin);
@@ -522,7 +526,7 @@ export function createProviderHttpClient(input) {
   function request(requestInput) { return perform(snapshotRequest(requestInput)); }
 
   function urlFor(pathInput) {
-    const path = requestPath(pathInput);
+    const path = requestPath(pathInput, allowEncodedSlash);
     const url = new URL(`${basePrefix}${path}`, baseUrl.origin);
     for (const key of [...url.searchParams.keys()]) if (isSensitiveQueryKey(key)) url.searchParams.delete(key);
     return url.href;
@@ -532,7 +536,7 @@ export function createProviderHttpClient(input) {
     const value = captureRecord(inputPagination, new Set([
       'path', 'signal', 'itemsKey', 'mode', 'identityKey', 'totalKey',
     ]), ['path']);
-    let path = requestPath(value.path);
+    let path = requestPath(value.path, allowEncodedSlash);
     const itemsKey = value.itemsKey === undefined ? undefined
       : boundedString(value.itemsKey, 64, /^[A-Za-z][A-Za-z0-9_]*$/);
     const identityKey = value.identityKey === undefined ? undefined
