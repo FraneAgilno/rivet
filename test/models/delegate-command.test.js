@@ -51,3 +51,38 @@ test('public CLI routes approved delegation and rejects unattended invocation', 
   assert.notEqual(await main(['models', 'delegate', 'Review this approach', '--profile=model.json'], f.dependencies), 0);
   assert.equal(f.calls.length, 1);
 });
+
+test('role text selection binds configuration across approval and active role never dispatches', async t => {
+  for (const drift of [false, true]) {
+    const f = await fixture(t);
+    const config = { schemaVersion: 1, profiles: { local: f.profile }, roles: { review: { kind: 'text', profile: 'local' } } };
+    await writeFile(join(f.root, 'roles.json'), JSON.stringify(config));
+    f.parsed.flags = { roles: 'roles.json', role: 'review' };
+    f.dependencies.confirmModelDelegation = async () => {
+      if (drift) await writeFile(join(f.root, 'roles.json'), JSON.stringify({ ...config, roles: {} }));
+      return true;
+    };
+    if (drift) await assert.rejects(modelsCommand(f.parsed, f.dependencies));
+    else await modelsCommand(f.parsed, f.dependencies);
+    assert.equal(f.calls.length, drift ? 0 : 1);
+    f.parsed.flags.role = 'planning';
+    await modelsCommand(f.parsed, f.dependencies);
+    assert.equal(f.calls.length, drift ? 0 : 1);
+    assert.match(f.logs.join('\n'), /active harness/);
+  }
+});
+
+test('role inspection is read-only and conflicting selectors cannot dispatch', async t => {
+  const { main } = await import('../../src/cli/main.js');
+  const f = await fixture(t);
+  await writeFile(join(f.root, 'roles.json'), JSON.stringify({ schemaVersion: 1, profiles: {}, roles: {} }));
+  let payload;
+  f.dependencies.output.json = value => { payload = value; };
+  f.dependencies.output.error = text => f.logs.push(text);
+  assert.equal(await main(['models', 'role', '--roles=roles.json', '--role=planning', '--json'], f.dependencies), 0);
+  assert.equal(payload.result.target.kind, 'active-harness');
+  for (const extra of [['--profile=model.json'], ['--json'], ['--project=.']]) {
+    assert.notEqual(await main(['models', 'delegate', 'Task', '--roles=roles.json', '--role=planning', ...extra], f.dependencies), 0);
+  }
+  assert.equal(f.calls.length, 0);
+});

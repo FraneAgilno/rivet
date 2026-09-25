@@ -68,7 +68,7 @@ const STRICT_OPTIONS = {
   },
   models: {
     boolean: new Set(['json']),
-    valued: new Set(['profile']),
+    valued: new Set(['profile', 'roles', 'role', 'project']),
   },
   doctor: {
     boolean: new Set(['json']),

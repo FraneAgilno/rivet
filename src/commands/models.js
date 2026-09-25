@@ -1,3 +1,5 @@
+import { resolveRoleProfile } from '../models/profiles.js';
+import { humanRunCommand } from './human-run.js';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { delegateText, ModelDelegationError } from '../models/delegate.js';
@@ -29,6 +31,14 @@ async function readProfile(path) {
 
 export async function modelsCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
+  if (subcommand === 'role') {
+    if (operands.length || typeof flags.roles !== 'string' || typeof flags.role !== 'string'
+      || Object.keys(flags).some(key => !['roles', 'role', 'json'].includes(key))) throw new CliError('Use rivet models role --roles=<file> --role=<name> [--json].', 'INVALID_INPUT');
+    const result = await readRole(flags, dependencies);
+    if (flags.json) dependencies.output.json({ ok: true, result });
+    else dependencies.output.log(`Role ${result.role}: ${result.target.kind}. This inspection does not execute work.`);
+    return EXIT_CODES.SUCCESS;
+  }
   if (subcommand === 'delegate') return delegateCommand(parsed, dependencies);
   if (operands.length || !['list', 'check'].includes(subcommand)
     || Object.keys(flags).some(key => !['json', 'profile'].includes(key))
@@ -56,15 +66,45 @@ export async function modelsCommand(parsed, dependencies) {
 const UNSAFE_DISPLAY = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
 async function delegateCommand({ operands, flags }, dependencies) {
   const invalid = message => { throw new CliError(message, 'INVALID_INPUT'); };
-  if (operands.length !== 1 || typeof flags.profile !== 'string'
-    || Object.keys(flags).some(key => key !== 'profile') || !dependencies.terminalIsInteractive()) {
-    invalid('Use rivet models delegate "prompt" --profile=<file> in an interactive terminal.');
+  const roleMode = typeof flags.roles === 'string' && typeof flags.role === 'string' && flags.profile === undefined;
+  const profileMode = typeof flags.profile === 'string' && flags.roles === undefined && flags.role === undefined;
+  if (operands.length !== 1 || (!roleMode && !profileMode)
+    || Object.keys(flags).some(key => !(roleMode ? ['roles', 'role', 'project'] : ['profile']).includes(key))
+    || !dependencies.terminalIsInteractive()) {
+    invalid('Use rivet models delegate "prompt" with --profile=<file> or --roles=<file> --role=<name> in an interactive terminal.');
   }
   const prompt = operands[0];
   if (typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > 64 * 1024
     || UNSAFE_DISPLAY.test(prompt) || containsSecretMaterial(prompt)) invalid('Use a prompt of at most 64 KiB without secrets or terminal control characters.');
-  const path = resolve(dependencies.cwd(), flags.profile);
+  const selection = roleMode ? await readRole(flags, dependencies) : undefined;
+  if (roleMode) dependencies.output.log(`Role ${selection.role}: ${selection.target.kind}`);
+  if (selection?.target.kind === 'active-harness') {
+    if (flags.project !== undefined) invalid('--project applies only to a delegated harness task.');
+    dependencies.output.log('Continue this request in your active harness through the Rivet workflow. No model or process was started; the task has not been performed.');
+    return EXIT_CODES.SUCCESS;
+  }
+  if (selection?.target.kind === 'harness') {
+    const unchanged = async () => {
+      if (!isDeepStrictEqual(selection, await readRole(flags, dependencies))) invalid('Role selection changed. Run the command again.');
+    };
+    await unchanged();
+    return humanRunCommand({ command: 'run', subcommand: null, operands, flags: {
+      harness: selection.target.harness, ...(flags.project === undefined ? {} : { project: flags.project }),
+    } }, { ...dependencies, confirmFeatureActivation: async (proposal, options) => {
+      await unchanged();
+      const approved = await dependencies.confirmFeatureActivation(proposal, options);
+      await unchanged();
+      return approved;
+    } });
+  }
+  if (flags.project !== undefined) invalid('--project applies only to a delegated harness task.');
+  const path = profileMode ? resolve(dependencies.cwd(), flags.profile) : undefined;
   const resolveProfile = async () => {
+    if (roleMode) {
+      const current = await readRole(flags, dependencies);
+      if (!isDeepStrictEqual(selection, current)) invalid('Role selection changed. Run the command again.');
+      return current.target.profile;
+    }
     const input = await readProfile(path);
     try { return createModelRegistry().resolve(input, { requiredCapabilities: ['text'] }).profile; }
     catch { invalid('Invalid model profile.'); }
@@ -109,4 +149,10 @@ async function delegateCommand({ operands, flags }, dependencies) {
     clearTimeout(timer); external?.removeEventListener('abort', abort);
     process.removeListener('SIGINT', abort); process.removeListener('SIGTERM', abort);
   }
+}
+
+async function readRole(flags, dependencies) {
+  const input = await readProfile(resolve(dependencies.cwd(), flags.roles));
+  try { return resolveRoleProfile(input, flags.role); }
+  catch { throw new CliError('Invalid model role configuration or role name.', 'INVALID_INPUT'); }
 }

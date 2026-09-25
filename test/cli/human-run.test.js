@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { cp, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -180,4 +180,27 @@ test('terminal signal listeners are removed after repeated declined tasks', asyn
     assert.equal(await main(['run', 'Add a greeting'], s.overrides), EXIT_CODES.SUCCESS);
   }
   assert.deepEqual(['SIGINT', 'SIGTERM'].map(name => process.listenerCount(name)), before);
+});
+
+
+test('role delegation explicitly selects either harness and preserves the task approval boundary', async t => {
+  for (const kind of ['claude', 'codex']) {
+    for (const drift of [false, true]) {
+      const { root } = await fixture(t);
+      const s = services(root, { selected: ['claude', 'codex'] });
+      const path = join(root, 'roles.json');
+      const config = { schemaVersion: 1, profiles: {}, roles: { implementation: { kind: 'harness', harness: kind } } };
+      await writeFile(path, JSON.stringify(config));
+      s.overrides.confirmFeatureActivation = async () => {
+        if (drift) await writeFile(path, JSON.stringify({ ...config, roles: {} }));
+        return true;
+      };
+      await main(['models', 'delegate', 'Add a greeting module', '--roles=roles.json', '--role=implementation'], s.overrides);
+      assert.deepEqual(s.calls[0], ['select', kind]);
+      assert.equal(s.calls.find(item => item[0] === 'propose')[1].client, kind);
+      assert.equal(s.calls.some(item => item[0] === 'start'), !drift);
+      assert.equal(s.calls.some(item => item[0] === 'watch'), !drift);
+      assert.match(s.messages.join('\n'), /Role implementation: harness/);
+    }
+  }
 });

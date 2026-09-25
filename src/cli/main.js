@@ -63,6 +63,8 @@ const USAGE = `Usage:
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
+  rivet models role --roles=<file> --role=<name> [--json]
+  rivet models delegate "prompt" --roles=<file> --role=<name> [--project=<path>]
   rivet models delegate "prompt" --profile=<file>  Approve one text-only model request
   rivet models list [--json]                List model adapters and implementation status
   rivet models check --profile=<file> [--json]  Validate a model profile without calling a model
