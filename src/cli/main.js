@@ -15,6 +15,7 @@ import {
   install,
   withPinnedTargetDirectory,
 } from '../commands/install.js';
+import { deliveryCommand } from '../commands/delivery.js';
 import { repositoriesCommand } from '../commands/repositories.js';
 import { integrationsCommand } from '../commands/integrations.js';
 import { doctor } from '../commands/doctor.js';
@@ -56,6 +57,7 @@ const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
+  rivet delivery prepare|status [--run=<id>] [--project=<path>] [--json]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
   rivet models list [--json]                List model adapters and implementation status
@@ -209,6 +211,7 @@ function resolveDependencies(overrides = {}) {
       models: modelsCommand,
       integrations: integrationsCommand,
       repositories: repositoriesCommand,
+      delivery: deliveryCommand,
       setup: setupCommand,
       orchestrate: orchestrateCommand,
       preflight,

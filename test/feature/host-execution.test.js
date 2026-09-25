@@ -34,7 +34,7 @@ async function npmExecutable() {
   return realpath(stdout.trim());
 }
 
-async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false, hostContext = false } = {}) {
+async function fixture(t, { now = NOW, schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false, hostContext = false } = {}) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-host-execution-')));
   const root = join(parent, 'project');
   await mkdir(root);
@@ -136,7 +136,7 @@ async function fixture(t, { schemaV2 = false, ownedPaths = ['app/agenda.js'], lo
   const gitClient = await createGitClient({ gitExecutable: await realpath(gitPath.trim()) });
   const workflow = createFeatureWorkflow({
     gitClient,
-    now: () => NOW,
+    now: () => now,
     protocolsFor: async () => [PROTOCOL_REF],
     planningClientFor: async () => { throw new Error('host execution must not resolve a planning client'); },
     executeFeature: async () => { throw new Error('host execution must not use the spawned executor'); },
@@ -285,10 +285,11 @@ test('task deps installs in the active host Worker before handoff', async t => {
 });
 
 test('submitResult integrates an exact restarted host action and verify stops at final human approval', async t => {
-  const { root, gitClient, approved, gate } = await fixture(t);
+  const now = new Date().toISOString();
+  const { root, gitClient, approved, gate } = await fixture(t, { now });
   const execution = createHostExecution({
     gitClient,
-    now: () => NOW,
+    now: () => now,
     resolveCommandExecutable: async () => gate,
     environment: {},
   });
@@ -302,7 +303,7 @@ test('submitResult integrates an exact restarted host action and verify stops at
 
   const restarted = createHostExecution({
     gitClient,
-    now: () => NOW,
+    now: () => now,
     resolveCommandExecutable: async () => gate,
     environment: {},
   });
@@ -328,6 +329,33 @@ test('submitResult integrates an exact restarted host action and verify stops at
   const observed = await restarted.status({ project: root, runId: approved.runId });
   assert.equal(observed.run.status, 'awaiting-final-approval');
   assert.equal(observed.runtime.nodes.find(node => node.id === 'final-delivery').status, 'ready');
+  assert.equal(observed.deliveryReady, true);
+  const delivery = await import('../../src/delivery/prepare.js');
+  await git(root, 'remote', 'add', 'origin', 'https://github.com/team/demo.git');
+  const candidate = await delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient });
+  assert.equal(candidate.localVerification.headSha, observed.checkout.acceptedCommit);
+  assert.equal(candidate.repository.fullName, 'team/demo');
+  assert.match(candidate.localVerification.evidenceDigest, /^[a-f0-9]{64}$/);
+  assert.equal(candidate.targetBranch, 'main');
+  let deliveryOutput;
+  const deliveryDeps = {
+    cwd: () => root,
+    env: {},
+    output: { json: value => { deliveryOutput = value; }, error() {}, log() {} },
+  };
+  assert.equal(await main(['delivery', 'prepare', `--run=${approved.runId}`, '--json'], deliveryDeps), 0);
+  assert.equal(deliveryOutput.result.stage, 'locally-verified');
+  assert.equal(await main(['delivery', 'status', '--json'], deliveryDeps), 0);
+  assert.equal(deliveryOutput.result.candidate.localVerification.headSha, candidate.localVerification.headSha);
+  const deliveryVersion = deliveryOutput.result.version;
+  assert.equal(await main(['delivery', 'prepare', '--json'], { ...deliveryDeps, cwd: () => join(root, '.rivet') }), 0);
+  assert.equal(deliveryOutput.result.version, deliveryVersion);
+  const originalReadme = await readFile(join(root, 'README.md'), 'utf8');
+  await writeFile(join(root, 'README.md'), 'source drift');
+  await assert.rejects(() => delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient }), /verified|verification/i);
+  await writeFile(join(root, 'README.md'), originalReadme);
+  await writeFile(join(observed.checkout.path, 'unverified.txt'), 'unverified');
+  await assert.rejects(() => delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient }), /verified|verification/i);
 });
 
 test('schema-v2 host verification runs each exact child package and still stops at final approval', async t => {
