@@ -15,6 +15,7 @@ import { createDeliveryService, createTrustedDeliveryExecutor } from '../deliver
 import { createAuthorityEnvelope } from '../policy/authority.js';
 import { createApprovalRegistry } from '../policy/approvals.js';
 import { runRemoteDelivery } from './delivery-remote.js';
+import { trackerTargetFromRun } from '../delivery/tracker-target.js';
 import { hash } from '../delivery/contract.js';
 
 function fail(message, code = 'INVALID_INPUT') {
@@ -45,7 +46,7 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'merge', 'deploy', 'reconcile', 'recover'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'merge', 'deploy', 'tracker-update', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
       (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
@@ -54,14 +55,14 @@ export async function deliveryCommand(parsed, dependencies) {
     flags.run?.length > 64 ||
     (subcommand !== 'prepare' && flags.remote !== undefined) ||
     (flags.provider !== undefined &&
-      (!['refresh', 'merge', 'deploy', 'reconcile'].includes(subcommand) ||
+      (!['refresh', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) ||
         !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
     (flags.method !== undefined &&
       (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
-    (['merge', 'deploy'].includes(subcommand) && flags.json)
+    (['merge', 'deploy', 'tracker-update'].includes(subcommand) && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|merge|deploy|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge/deploy.'
+      'Use rivet delivery prepare|status|refresh|merge|deploy|tracker-update|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -132,12 +133,13 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
-    if (['refresh', 'merge', 'deploy', 'reconcile'].includes(subcommand)) {
+    if (['refresh', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) {
       result = await runRemoteDelivery({
         action: subcommand,
         store,
         config: project.config,
         reloadConfig: () => loadProjectConfig(project.root),
+        loadTrackerTarget: async candidate => trackerTargetFromRun(await createFeatureRunStore(paths).readOnly(), candidate),
         flags,
         dependencies,
         validateLocal: async (expected) => {
@@ -179,14 +181,14 @@ export async function deliveryCommand(parsed, dependencies) {
       'REPOSITORY_CONFLICT'
     );
     fail(
-      'Delivery stopped. Check local verification, repository access, supported protection policy and delivery status. An uncertain operation requires delivery reconcile before retry.',
+      'Delivery stopped. Check verification, configured provider access, supported delivery policy and delivery status. An uncertain operation requires delivery reconcile before retry.',
       'REPOSITORY_CONFLICT'
     );
   }
   const incomplete =
-    ['merge', 'deploy', 'reconcile'].includes(subcommand) &&
+    ['merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) &&
     (result.operations.some((op) => ['dispatching', 'indeterminate'].includes(op.state)) ||
-      (['merge', 'deploy'].includes(subcommand) &&
+      (['merge', 'deploy', 'tracker-update'].includes(subcommand) &&
         !result.operations.some((op) => op.action === subcommand && op.state === 'succeeded')));
   if (flags.json) dependencies.output.json({ ok: !incomplete, result });
   else {

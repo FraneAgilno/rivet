@@ -178,6 +178,31 @@ function wireValue(write) {
     id: write.resourceId, status: 'current', title: payload.title,
     body: { representation: 'storage', value: payload.body }, version: { number: payload.version },
   };
+  else if (write.provider === 'linear' && write.action === 'delivery-comment') {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const lines = typeof payload?.body === 'string' ? payload.body.split('\n') : [];
+    const validUrlLine = (line, prefix) => {
+      if (typeof line !== 'string' || !line.startsWith(prefix)) return false;
+      const value = line.slice(prefix.length);
+      try {
+        const url = new URL(value);
+        return value.length <= 2048 && !/[\s<>`\[\]()]/.test(value)
+          && url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && url.href === value;
+      } catch { return false; }
+    };
+    if (!payload || Object.keys(payload).length !== 2 || !Object.hasOwn(payload, 'issueId') || !Object.hasOwn(payload, 'body')
+      || typeof payload.issueId !== 'string' || !uuid.test(payload.issueId) || payload.issueId !== write.resourceId
+      || write.expectedState !== 'merged' || !/^[a-f0-9]{40}$/.test(write.expectedVersion) || !/^[a-f0-9]{64}$/.test(write.idempotencyKey)
+      || ![5, 6].includes(lines.length) || lines[0] !== 'Rivet delivery update'
+      || lines[1] !== `Merged commit: ${write.expectedVersion}` || !validUrlLine(lines[2], 'Review: ')
+      || (lines.length === 6 && !validUrlLine(lines[3], 'Verified deployment: '))
+      || lines.at(-2) !== '' || lines.at(-1) !== `Rivet delivery operation: ${write.idempotencyKey}`)
+      failProvider('invalid-request', { provider: 'linear' });
+    value = {
+      query: 'mutation RivetDeliveryComment($input: CommentCreateInput!) { commentCreate(input: $input) { success comment { id } } }',
+      variables: { input: { issueId: payload.issueId, body: payload.body } },
+    };
+  }
   else if (write.provider === 'github' && write.action === 'comment') value = { body: payload.body };
   else if (write.provider === 'github' && write.action === 'pr') value = payload;
   else if (write.provider === 'github' && write.action === 'merge') {

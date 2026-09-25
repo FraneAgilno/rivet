@@ -58,6 +58,7 @@ const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
   rivet delivery prepare|status|refresh|reconcile|recover [--run=<id>] [--project=<path>] [--json]
+  rivet delivery tracker-update [--run=<id>] [--provider=<id>] [--project=<path>]
   rivet delivery deploy [--run=<id>] [--project=<path>]
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
@@ -178,7 +179,7 @@ async function defaultConfirmDelivery(preview) {
   let timer;
   try {
     const answer = await Promise.race([
-      readline.question(preview?.proposal?.action === 'deploy' ? 'Deploy this exact commit to the environment shown above? [y/N] ' : 'Merge this exact commit using the method shown above? [y/N] '),
+      readline.question(preview?.proposal?.action === 'tracker-update' ? 'Post this exact delivery summary to the ticket shown above? [y/N] ' : preview?.proposal?.action === 'deploy' ? 'Deploy this exact commit to the environment shown above? [y/N] ' : 'Merge this exact commit using the method shown above? [y/N] '),
       new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
     ]);
     return /^(?:y|yes)$/i.test(String(answer).trim());
