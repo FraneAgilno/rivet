@@ -80,7 +80,47 @@ Hosted services use their fixed origins. For compatible endpoints, `credentialEn
 - `--json` and unattended delegation are unavailable. There are no automatic retries, fallback models, tool calls or streaming output.
 - Arbitrary model names are allowed, but a model must support this provider's request and response contract. This does not promise compatibility with every model or server version. Both requested and reported model identities are retained by the runtime.
 
-Cross-harness delegation, workflow role selection, live account trials and broader execution remain open in the implementation plan.
+Explicit role selection is described below. Live account trials and broader workflow integration remain open in the implementation plan.
+
+## Select a model or harness by role
+
+Keep reusable profiles and role choices in a JSON file, for example `model-roles.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "local-review": {
+      "provider": "ollama",
+      "model": "your-installed-model",
+      "endpoint": "http://localhost:11434",
+      "timeoutMs": 30000,
+      "maxOutputTokens": 2048
+    }
+  },
+  "roles": {
+    "review": { "kind": "text", "profile": "local-review" },
+    "implementation": { "kind": "harness", "harness": "codex" },
+    "planning": { "kind": "active-harness" }
+  }
+}
+```
+
+```sh
+rivet models role --roles=./model-roles.json --role=review --json
+rivet models delegate "Review this approach" --roles=./model-roles.json --role=review
+rivet models delegate "Add a greeting module" --roles=./model-roles.json --role=implementation
+```
+
+Inspection validates the whole file locally and reports the selected target without calling a model. Role and profile names use lowercase letters, digits and hyphens, beginning with a letter. Each map holds at most 64 entries; the file is limited to 64 KiB. Unknown fields, invalid targets and missing profile references are rejected.
+
+An unassigned role defaults to `active-harness`. That selection starts no account request or nested process: the command tells you to continue using the Rivet workflow in your current harness. It does **not** perform the task or claim it completed.
+
+A `text` role uses the same prompt preview, approval and bounded advisory response described above. A `harness` role explicitly selects `claude` or `codex` and runs the existing terminal task workflow, with capability discovery, plan approval, isolated checkout, dependency approval and recorded checks. Run inside your configured project, or supply `--project=<path>` for a harness role. Harness tasks retain the existing 4,000-byte task limit and installed CLI/authentication requirements. Text roles do not read project files.
+
+The selected role, referenced profile and target are reread across approval. Changes stop dispatch or activation. An unavailable target fails without switching to another model. Delegating to a different harness requires an installed CLI; desktop applications alone do not provide a spawned executor.
+
+These are explicit role delegation operations. The file is not automatically loaded by `rivet run` or used to assign individual nodes inside an existing workflow. A harness role delegates the whole task through the current workflow. Automatic per-node role routing and live cross-harness/API demonstrations remain open; fixture tests do not qualify a real provider account or desktop host.
 
 ## Extending the registry
 
