@@ -15,6 +15,7 @@ import {
   install,
   withPinnedTargetDirectory,
 } from '../commands/install.js';
+import { repositoriesCommand } from '../commands/repositories.js';
 import { integrationsCommand } from '../commands/integrations.js';
 import { doctor } from '../commands/doctor.js';
 import { modelsCommand } from '../commands/models.js';
@@ -55,6 +56,7 @@ const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
+  rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
   rivet models list [--json]                List model adapters and implementation status
   rivet models check --profile=<file> [--json]  Validate a model profile without calling a model
@@ -195,6 +197,7 @@ function resolveDependencies(overrides = {}) {
     runGit: overrides.runGit,
     setup: overrides.setup,
     integrationHost: overrides.integrationHost,
+    repositories: overrides.repositories,
     resolveCommandExecutable: overrides.resolveCommandExecutable,
     commands: {
       doctor,
@@ -205,6 +208,7 @@ function resolveDependencies(overrides = {}) {
       install,
       models: modelsCommand,
       integrations: integrationsCommand,
+      repositories: repositoriesCommand,
       setup: setupCommand,
       orchestrate: orchestrateCommand,
       preflight,

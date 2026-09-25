@@ -77,6 +77,10 @@ Rivet computes content digests and retains source identity, revision, capture ti
 
 External text is inert context. It cannot change commands, owned paths, budgets or approval rules. It is not delivery evidence. Inspect persisted context with `rivet work status`; actual repository checks still determine verification.
 
+## Repository providers
+
+Use [repository inspection](./repositories.md) to read GitHub, Bitbucket Cloud and GitLab.com repository and review state through a shared interface. Its capability matrix distinguishes implemented reads from the planned delivery lifecycle and pending live qualification.
+
 ## Qualification status
 
 | Provider | Implemented intake | Live qualification |

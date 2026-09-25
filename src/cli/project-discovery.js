@@ -19,7 +19,7 @@ async function gitRoot(directory, runner, env) {
   return realpath(output);
 }
 
-async function gitExecutable(env) {
+export async function gitExecutable(env) {
   const configured = env.RIVET_GIT_EXECUTABLE;
   if (configured !== undefined) {
     if (!configured.startsWith('/') || /[\u0000\r\n]/.test(configured)) fail('Configured Git executable is invalid.');

@@ -262,10 +262,11 @@ test('bounds runtime, handles abort and spawn/identity failures without leaking 
 });
 
 test('snapshots hostile request getters once and rejects option/traversal inputs', async t => {
-  const f = await fixture(t, `printf '%s' '${envelope()}'`);
+  // Read the complete request before exiting; otherwise this success fixture races stdin delivery.
+  const f = await fixture(t, `cat >/dev/null\nprintf '%s' '${envelope()}'`);
   const runner = await createProcessRunner({ executable: f.executable, interpreter: f.interpreter, worktree: f.worktree });
   let reads = 0;
-  const launchPayload = await payload(f);
+  const launchPayload = await payload(f, { large: true });
   const request = { args: [], cwd: '.', payload: launchPayload };
   Object.defineProperty(request, 'payload', { enumerable: true, get() { reads += 1; return launchPayload; } });
   await runner.run(request);
