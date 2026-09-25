@@ -9,7 +9,7 @@ Rivet is a **standalone development alpha** with its own CLI, configuration, sta
 With Node.js 22 or 24, npm and Git installed, install the alpha CLI, then run setup from your project:
 
 ```sh
-npm install --global github:FraneAgilno/rivet#main
+npm install --global --install-links github:FraneAgilno/rivet#main
 rivet setup
 ```
 

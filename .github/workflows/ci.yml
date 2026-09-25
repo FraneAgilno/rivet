@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run docs:build
-      - run: npm run package:smoke
+      - name: Verify global tarball and Git installation plus first use
+        timeout-minutes: 10
+        run: npm run package:smoke
       - name: Ensure committed distribution matches source
         run: git diff --exit-code -- dist
