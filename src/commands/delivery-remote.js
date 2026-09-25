@@ -1,0 +1,148 @@
+import { randomUUID } from 'node:crypto';
+import { CliError } from '../cli/output.js';
+import { createNodeProviderTransport } from '../adapters/node-transport.js';
+import { createApprovalReceipt, createApprovalRegistry } from '../policy/approvals.js';
+import { createAuthorityEnvelope } from '../policy/authority.js';
+import { createDeliveryService } from '../delivery/service.js';
+
+function fail(message, code = 'REPOSITORY_CONFLICT') {
+  throw new CliError(message, code);
+}
+function providerFor(config, repository, flags, writing) {
+  const providers = config.providers.providers.filter(
+    (provider) =>
+      provider.kind === 'git-ci' &&
+      provider.mode !== 'disabled' &&
+      (!writing || provider.mode === 'read-write-with-approval') &&
+      (provider.transport ?? 'direct-api') === 'direct-api' &&
+      ['repository-read', 'checks-read', ...(writing ? ['merge'] : [])].every((cap) =>
+        provider.capabilities.includes(cap)
+      ) &&
+      (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
+      (!provider.resourceIds?.length || provider.resourceIds.includes(repository.fullName)) &&
+      provider.endpoint?.replace(/\/$/, '') === 'https://api.github.com' &&
+      (flags.provider === undefined || provider.id === flags.provider)
+  );
+  if (providers.length !== 1)
+    fail(
+      'Configure one scoped GitHub API provider with repository-read and checks-read. Merge also requires merge capability and read-write-with-approval mode. Use --provider=<id> when ambiguous.',
+      'MISSING_CONFIGURATION'
+    );
+  return providers[0];
+}
+function headers(provider, environment) {
+  const credentials = provider.credentials ?? {};
+  const keys = Object.keys(credentials);
+  if (
+    keys.length !== 1 ||
+    !['tokenEnv', 'accessTokenEnv', 'apiTokenEnv'].includes(keys[0]) ||
+    !/^[A-Z][A-Z0-9_]{1,127}$/.test(credentials[keys[0]])
+  )
+    fail('Configure one token environment reference for GitHub delivery.', 'MISSING_CONFIGURATION');
+  const token = environment[credentials[keys[0]]];
+  if (typeof token !== 'string' || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token))
+    fail('The configured GitHub token is missing or invalid.', 'PROVIDER_UNAVAILABLE');
+  return { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' };
+}
+async function confirm(dependencies, preview) {
+  let timer;
+  try {
+    return (
+      (await Promise.race([
+        Promise.resolve().then(() => dependencies.confirmDelivery(preview)),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(false), 30000);
+        }),
+      ])) === true
+    );
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal }) {
+  const writing = action === 'merge';
+  if (!['merge', 'refresh', 'reconcile'].includes(action))
+    fail('Unsupported delivery action.', 'INVALID_INPUT');
+  if (
+    writing &&
+    (flags.json ||
+      dependencies.terminalIsInteractive?.() !== true ||
+      typeof dependencies.confirmDelivery !== 'function')
+  )
+    fail(
+      'Run rivet delivery merge in an interactive terminal to review and approve the exact merge. JSON and unattended merge are unavailable.',
+      'INVALID_INPUT'
+    );
+  let state = await store.read();
+  if (!state) fail('Run rivet delivery prepare after verification first.');
+  if (state.candidate.repository.provider !== 'github')
+    fail('Native delivery currently supports GitHub.com merge only.', 'PROVIDER_UNAVAILABLE');
+  if (writing && state.operations.some((op) => op.action === 'merge' && op.state === 'succeeded'))
+    return state;
+  const provider = providerFor(config, state.candidate.repository, flags, writing);
+  const auth = headers(provider, dependencies.env);
+  const executorFactory =
+    dependencies.delivery?.executorFactory ??
+    (await import('../delivery/github.js')).createGithubDeliveryExecutor;
+  const executor = executorFactory({
+    repository: state.candidate.repository,
+    headers: auth,
+    transport: dependencies.delivery?.transport ?? createNodeProviderTransport(),
+  });
+  const service = createDeliveryService({
+    store,
+    executor,
+    timeoutMs: 120000,
+    providerId: provider.id,
+    subjectId: 'delivery-cli',
+    expectedApproverId: 'terminal-human',
+    authority: createAuthorityEnvelope({
+      actorId: 'delivery-cli',
+      principal: 'agent',
+      actions: writing ? ['provider.write'] : [],
+      ownedPaths: [],
+      commands: [],
+      providers: writing ? [{ id: provider.id, mode: provider.mode, capabilities: ['merge'] }] : [],
+    }),
+    approvalRegistry: createApprovalRegistry({ approvers: [{ id: 'terminal-human', principal: 'human' }] }),
+  });
+  if (action === 'reconcile') return service.reconcile({ expectedVersion: state.version });
+  if (writing) await validateLocal(state.candidate);
+  state = await service.refresh({ expectedVersion: state.version });
+  if (!writing) return state;
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  state = await service.propose({
+    expectedVersion: state.version,
+    action: 'merge',
+    expiresAt,
+    payload: { reviewNumber: state.observation.review?.number, mergeMethod: flags.method ?? 'squash' },
+  });
+  dependencies.output.log(
+    `Merge ${state.candidate.repository.url}/pull/${state.proposal.payload.reviewNumber}`
+  );
+  dependencies.output.log(
+    `${state.candidate.sourceBranch} (${state.candidate.headSha}) -> ${state.candidate.targetBranch} (${state.observation.baseSha})`
+  );
+  dependencies.output.log(
+    `Method: ${state.proposal.payload.mergeMethod}. Required checks and supported review policy passed.`
+  );
+  if (!(await confirm(dependencies, state)))
+    fail('Merge was not approved. No merge was dispatched.', 'INVALID_INPUT');
+  await validateLocal(state.candidate);
+  const approval = createApprovalReceipt({
+    id: `merge-${randomUUID()}`,
+    approverId: 'terminal-human',
+    approverPrincipal: 'human',
+    subjectId: 'delivery-cli',
+    action: 'provider.write',
+    resource: state.proposal.approvalResource,
+    policyId: 'authority.external-write',
+    decision: 'approved',
+    expiresAt,
+    singleUse: true,
+  });
+  return service.execute({ expectedVersion: state.version, proposalDigest: state.proposal.digest, approval });
+}

@@ -429,11 +429,14 @@ export function createProviderHttpClient(input) {
         let pinnedAddresses;
         try { pinnedAddresses = resolvedAddresses(addresses, provider); }
         catch { return DNS_UNSAFE; }
-        return Promise.resolve().then(() => transport.fetchPinned(request.url, {
-          method: request.method, headers: request.headers, ...(request.body === undefined ? {} : { body: request.body }),
-          signal: controller.signal, redirect: 'error', credentials: 'omit',
-        }, Object.freeze({ hostname: baseUrl.hostname, addresses: pinnedAddresses })))
-          .then(value => Object.freeze({ response: value }), () => TRANSPORT_FAILED);
+        return Promise.resolve().then(() => {
+          // DNS can settle after a timeout/abort. Never start a provider request then.
+          if (Reflect.apply(ABORTED_GET, controller.signal, [])) return ABORTED;
+          return transport.fetchPinned(request.url, {
+            method: request.method, headers: request.headers, ...(request.body === undefined ? {} : { body: request.body }),
+            signal: controller.signal, redirect: 'error', credentials: 'omit',
+          }, Object.freeze({ hostname: baseUrl.hostname, addresses: pinnedAddresses }));
+        }).then(value => value === ABORTED ? ABORTED : Object.freeze({ response: value }), () => TRANSPORT_FAILED);
       }, () => TRANSPORT_FAILED);
       const outcome = await Promise.race([operation, timeout, cancelled]);
       if (outcome === ABORTED) failProvider('aborted', { provider, retryClassification: 'none' });

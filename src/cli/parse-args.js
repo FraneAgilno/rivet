@@ -40,7 +40,7 @@ const LEGACY_OPTIONS = {
   },
 };
 const STRICT_OPTIONS = {
-  delivery: { boolean: new Set(['json']), valued: new Set(['project', 'run', 'remote']) },
+  delivery: { boolean: new Set(['json']), valued: new Set(['project', 'run', 'remote', 'provider', 'method']) },
   repositories: { boolean: new Set(['json']), valued: new Set(['project', 'remote', 'provider', 'review']) },
   integrations: { boolean: new Set(['json']), valued: new Set(['project', 'host-inventory-json']) },
   protocols: {
