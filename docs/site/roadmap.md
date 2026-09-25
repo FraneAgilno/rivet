@@ -20,7 +20,7 @@ The repository is being kept focused on the reusable framework. Retired conferen
 ## Subsequent capabilities
 
 - Live qualification of the implemented MCP registry and sourced Jira/Linear, Figma and knowledge-context intake.
-- Live qualification of the common GitHub, Bitbucket Cloud and GitLab.com read interface, followed by native executors for governed review/merge/deployment workflows. [Delivery preparation and the durable service](./delivery.md) are implemented; native GitHub merge is implemented for a bounded classic protection policy; remaining provider operations and live qualification remain open.
+- Live qualification of the common GitHub, Bitbucket Cloud and GitLab.com read interface, followed by native executors for governed review/merge/deployment workflows. [Delivery preparation and the durable service](./delivery.md) are implemented; native GitHub and GitLab merge are implemented for bounded policy subsets; remaining provider operations and live qualification remain open.
 - Bounded execution through more API and local model providers.
 - Recovery improvements and broader evaluation coverage.
 - Shared project memory with an Obsidian-compatible provider, deferred to the final implementation lane.

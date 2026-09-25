@@ -827,3 +827,15 @@ test('aborting during DNS resolution prevents a later provider dispatch', async 
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(writes, 0);
 });
+
+
+test('GitLab merge wire binds head and forbids scheduling, squash or source deletion', () => {
+  const sha = 'a'.repeat(40);
+  const payload = {sha, squash:false, auto_merge:false, should_remove_source_branch:false};
+  const input = {provider:'gitlab',action:'merge',resourceId:'team/repo#7',expectedState:'opened',expectedVersion:sha,idempotencyKey:'merge-once',payload};
+  assert.deepEqual(JSON.parse(createProviderWireBody(input).bytes), payload);
+  for (const replacement of [{...payload,sha:'b'.repeat(40)}, {...payload,squash:true}, {...payload,auto_merge:true},
+    {...payload,should_remove_source_branch:true}, {...payload,merge_when_pipeline_succeeds:true}, {sha}]) {
+    assert.throws(() => createProviderWireBody({...input,payload:replacement}), ProviderAdapterError);
+  }
+});

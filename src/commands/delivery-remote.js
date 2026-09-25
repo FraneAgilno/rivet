@@ -8,6 +8,7 @@ import { createDeliveryService } from '../delivery/service.js';
 function fail(message, code = 'REPOSITORY_CONFLICT') {
   throw new CliError(message, code);
 }
+const ENDPOINTS = Object.freeze({ github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4' });
 function providerFor(config, repository, flags, writing) {
   const providers = config.providers.providers.filter(
     (provider) =>
@@ -20,17 +21,17 @@ function providerFor(config, repository, flags, writing) {
       ) &&
       (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
       (!provider.resourceIds?.length || provider.resourceIds.includes(repository.fullName)) &&
-      provider.endpoint?.replace(/\/$/, '') === 'https://api.github.com' &&
+      provider.endpoint?.replace(/\/$/, '') === ENDPOINTS[repository.provider] &&
       (flags.provider === undefined || provider.id === flags.provider)
   );
   if (providers.length !== 1)
     fail(
-      'Configure one scoped GitHub API provider with repository-read and checks-read. Merge also requires merge capability and read-write-with-approval mode. Use --provider=<id> when ambiguous.',
+      'Configure one scoped repository API provider with repository-read and checks-read. Merge also requires merge capability and read-write-with-approval mode. Use --provider=<id> when ambiguous.',
       'MISSING_CONFIGURATION'
     );
   return providers[0];
 }
-function headers(provider, environment) {
+function headers(provider, environment, kind) {
   const credentials = provider.credentials ?? {};
   const keys = Object.keys(credentials);
   if (
@@ -38,11 +39,14 @@ function headers(provider, environment) {
     !['tokenEnv', 'accessTokenEnv', 'apiTokenEnv'].includes(keys[0]) ||
     !/^[A-Z][A-Z0-9_]{1,127}$/.test(credentials[keys[0]])
   )
-    fail('Configure one token environment reference for GitHub delivery.', 'MISSING_CONFIGURATION');
+    fail('Configure one token environment reference for repository delivery.', 'MISSING_CONFIGURATION');
   const token = environment[credentials[keys[0]]];
   if (typeof token !== 'string' || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token))
-    fail('The configured GitHub token is missing or invalid.', 'PROVIDER_UNAVAILABLE');
-  return { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' };
+    fail('The configured repository token is missing or invalid.', 'PROVIDER_UNAVAILABLE');
+  return {
+    authorization: `Bearer ${token}`,
+    accept: kind === 'github' ? 'application/vnd.github+json' : 'application/json',
+  };
 }
 async function confirm(dependencies, preview) {
   let timer;
@@ -78,15 +82,23 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     );
   let state = await store.read();
   if (!state) fail('Run rivet delivery prepare after verification first.');
-  if (state.candidate.repository.provider !== 'github')
-    fail('Native delivery currently supports GitHub.com merge only.', 'PROVIDER_UNAVAILABLE');
+  const kind = state.candidate.repository.provider;
+  if (!Object.hasOwn(ENDPOINTS, kind))
+    fail('Native merge currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');
+  if (writing && kind === 'gitlab' && flags.method !== undefined && flags.method !== 'merge')
+    fail(
+      'GitLab currently supports --method=merge only; squash and rebase are unavailable.',
+      'INVALID_INPUT'
+    );
   if (writing && state.operations.some((op) => op.action === 'merge' && op.state === 'succeeded'))
     return state;
   const provider = providerFor(config, state.candidate.repository, flags, writing);
-  const auth = headers(provider, dependencies.env);
+  const auth = headers(provider, dependencies.env, kind);
   const executorFactory =
     dependencies.delivery?.executorFactory ??
-    (await import('../delivery/github.js')).createGithubDeliveryExecutor;
+    (kind === 'github'
+      ? (await import('../delivery/github.js')).createGithubDeliveryExecutor
+      : (await import('../delivery/gitlab.js')).createGitlabDeliveryExecutor);
   const executor = executorFactory({
     repository: state.candidate.repository,
     headers: auth,
@@ -118,11 +130,12 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     expectedVersion: state.version,
     action: 'merge',
     expiresAt,
-    payload: { reviewNumber: state.observation.review?.number, mergeMethod: flags.method ?? 'squash' },
+    payload: {
+      reviewNumber: state.observation.review?.number,
+      mergeMethod: flags.method ?? (kind === 'github' ? 'squash' : 'merge'),
+    },
   });
-  dependencies.output.log(
-    `Merge ${state.candidate.repository.url}/pull/${state.proposal.payload.reviewNumber}`
-  );
+  dependencies.output.log(`Merge ${state.observation.review.url}`);
   dependencies.output.log(
     `${state.candidate.sourceBranch} (${state.candidate.headSha}) -> ${state.candidate.targetBranch} (${state.observation.baseSha})`
   );

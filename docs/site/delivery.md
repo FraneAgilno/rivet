@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. A native GitHub.com executor can merge an existing pull request under the supported protection policy below. Native Bitbucket/GitLab delivery, review creation, deployment and tracker execution, and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Bitbucket writes, review creation, deployment and tracker execution, and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -70,13 +70,50 @@ Unknown, inaccessible or unsupported policy blocks merging. This is not full Git
 
 GitHub's merge API atomically checks the source SHA. Target refs, target SHA and protection configuration are reread, but GitHub does not provide equivalent atomic preconditions for those facts. Concurrent PR retargeting or administrator policy changes remain outside this guarantee. Live sandbox qualification is still pending. See the [GitHub merge API](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request) and [branch protection](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches).
 
-### Resolve an uncertain result
+## Merge an existing GitLab merge request
+
+The same `prepare`, `refresh`, interactive `merge` and read-only `reconcile` commands support GitLab.com. Publish the verified integration branch and create its merge request through your repository tools first. The MR must belong to the same project as the target and match the prepared branches and exact commit.
+
+Configure the provider before starting the feature run:
+
+```yaml
+- id: team-gitlab
+  kind: git-ci
+  mode: read-write-with-approval
+  transport: direct-api
+  capabilities: [repository-read, checks-read, merge]
+  endpoint: https://gitlab.com/api/v4
+  projectIds: [your-project-id]
+  resourceIds: [your-group/your-project]
+  credentials:
+    tokenEnv: RIVET_GITLAB_TOKEN
+```
+
+Supply the token through the named environment variable. It must be able to read project, protected-branch, pipeline and approval configuration and merge the selected MR. Subgroups are supported in the repository path. Provider selection never sends a GitHub-configured credential to GitLab.
+
+GitLab defaults to `--method=merge` and currently supports merge commits only. `--method=squash` and `--method=rebase` stop before provider requests. The executor explicitly disables squashing, automatic merge and source-branch deletion in the merge request.
+
+### Supported GitLab policy
+
+The first GitLab executor requires readable, explicitly supported settings:
+
+- The project uses merge commits, with squashing disabled or off by default. Merge trains and merged-result pipelines are disabled.
+- A successful pipeline is required, skipped pipelines are not accepted, and the MR pipeline belongs to the same project and exact verified head.
+- The target has one exact protection rule, with no wildcard protection rules, force pushes, direct push access or code-owner gates. Supported merge access is Developer/Maintainer without custom roles, and the source includes the current target commit.
+- Effective project and inherited approval settings must prohibit MR rule overrides, retaining approvals on push and selective code-owner-only removal. Applicable regular approval rules are visible and approved. Hidden or unsupported rules stop delivery.
+- The MR is not a draft; GitLab reports it mergeable and the current user permitted to merge. Unimplemented discussion, external-status, Jira or other advanced gates stop delivery.
+
+The approval APIs needed by this subset depend on GitLab Premium/Ultimate and Maintainer-level access to effective settings. Some required advanced-setting fields are Ultimate-only, so a Premium response omitting those fields also blocks eligibility. Missing fields, access errors and unsupported configurations block merge. GitLab Free, self-managed GitLab and other policy combinations are not qualified by this executor. No GitLab version allowlist is used; the observed capabilities and policy fields determine eligibility.
+
+The API conditions the source SHA atomically. Target and policy observations are rechecked but do not have an atomic precondition, so concurrent retargeting or administrator policy changes remain a limitation. Live GitLab delivery qualification is still pending. See [GitLab merge requests](https://docs.gitlab.com/api/merge_requests/#merge-a-merge-request), [approval state](https://docs.gitlab.com/api/merge_request_approvals/#retrieve-approval-details-for-a-merge-request) and [project settings](https://docs.gitlab.com/api/projects/).
+
+## Resolve an uncertain result
 
 ```sh
 rivet delivery reconcile
 ```
 
-A timeout, rejected response or failed verification after dispatch leaves an indeterminate operation and a nonzero merge exit code. The native executor verifies the resulting PR state and merged commit before reporting success. Reconciliation performs reads only; it never repeats the merge request. An open PR or failed read remains unknown because an outstanding request could still complete. There is currently no CLI override that converts an unknown result into permission to retry.
+A timeout, rejected response or failed verification after dispatch leaves an indeterminate operation and a nonzero merge exit code. The native executor verifies the resulting PR/MR state and merged commit before reporting success. Reconciliation performs reads only; it never repeats the merge request. An open PR/MR or failed read remains unknown because an outstanding request could still complete. There is currently no CLI override that converts an unknown result into permission to retry.
 
 The executor checks the execution/approval deadline immediately before sending the merge. A request already sent can still finish after a timeout, so its result must be reconciled.
 
@@ -96,7 +133,7 @@ The service also records each operation separately. A failed deployment or track
 
 ## Executor and approval boundary
 
-The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. The separate native GitHub delivery executor supports merge only.
+The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. The separate native GitHub and GitLab delivery executors support merge only.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -104,4 +141,8 @@ Dispatch intent and consumed approval identity are saved before a write. A timeo
 
 Reopening persisted state after a released lock is covered by automated tests. A process crash while holding the delivery operation lock still requires explicit stale-lock recovery through the existing state API; a delivery CLI recovery command and crash qualification remain pending.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket/GitLab executors, deployment configuration, tracker delivery and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, deployment configuration, tracker delivery and live sandbox qualification remain open delivery work.
+
+## Bitbucket delivery boundary
+
+Bitbucket Cloud remains available for [read-only repository inspection](./repositories.md). A native executor that enforces the delivery contract has not yet been qualified. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).

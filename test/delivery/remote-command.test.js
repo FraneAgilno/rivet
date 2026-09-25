@@ -14,7 +14,7 @@ import { runRemoteDelivery } from '../../src/commands/delivery-remote.js';
 const SHA = 'a'.repeat(40),
   BASE = 'b'.repeat(40),
   DIGEST = 'd'.repeat(64);
-const repository = {
+const githubRepository = {
   provider: 'github',
   host: 'github.com',
   namespace: 'team',
@@ -22,14 +22,19 @@ const repository = {
   fullName: 'team/repo',
   url: 'https://github.com/team/repo',
 };
-async function fixture(t) {
+async function fixture(t, provider = 'github') {
+  const repository =
+    provider === 'github'
+      ? githubRepository
+      : { ...githubRepository, provider: 'gitlab', host: 'gitlab.com', url: 'https://gitlab.com/team/repo' };
+  const reviewUrl = repository.url + (provider === 'github' ? '/pull/7' : '/-/merge_requests/7');
   const root = await mkdtemp(join(tmpdir(), 'rivet-remote-delivery-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   execFileSync('git', ['init', '-q', root]);
   const store = createDeliveryStore(await resolveStatePaths(root, 'delivery-one'));
   const calls = { dispatch: 0, confirm: 0, local: 0, observe: 0 };
   const executor = createTrustedDeliveryExecutor({
-    provider: 'github',
+    provider,
     capabilities: [{ action: 'merge', conditionalHead: true, reconcile: true }],
     observe: async () => {
       calls.observe++;
@@ -39,7 +44,7 @@ async function fixture(t) {
         targetBranch: 'main',
         headSha: SHA,
         baseSha: BASE,
-        review: { number: 7, state: 'open', url: repository.url + '/pull/7', headSha: SHA },
+        review: { number: 7, state: 'open', url: reviewUrl, headSha: SHA },
         checks: { headSha: SHA, policy: 'known', satisfied: true, evidenceDigest: DIGEST },
         reviews: { headSha: SHA, policy: 'known', satisfied: true, evidenceDigest: DIGEST },
         observedAt: new Date().toISOString(),
@@ -52,7 +57,7 @@ async function fixture(t) {
         operationDigest: op.digest,
         headSha: SHA,
         evidenceDigest: DIGEST,
-        resourceUrl: repository.url + '/pull/7',
+        resourceUrl: reviewUrl,
         commitSha: BASE,
       };
     },
@@ -98,7 +103,7 @@ async function fixture(t) {
           capabilities: ['repository-read', 'checks-read', 'merge'],
           projectIds: ['demo'],
           resourceIds: ['team/repo'],
-          endpoint: 'https://api.github.com',
+          endpoint: provider === 'github' ? 'https://api.github.com' : 'https://gitlab.com/api/v4',
           credentials: { tokenEnv: 'RIVET_TEST_TOKEN' },
         },
       ],
@@ -196,4 +201,28 @@ test('refresh updates observations without prompting or dispatching', async (t) 
   assert.equal(result.stage, 'checks-passed');
   assert.equal(f.calls.confirm, 0);
   assert.equal(f.calls.dispatch, 0);
+});
+
+test('GitLab CLI uses scoped endpoint, merge method default and MR URL', async (t) => {
+  const f = await fixture(t, 'gitlab');
+  const logs = [];
+  f.input.dependencies.output.log = (line) => logs.push(line);
+  const result = await runRemoteDelivery(f.input);
+  assert.equal(result.stage, 'merged');
+  assert.equal(result.operations[0].payload.mergeMethod, 'merge');
+  assert.equal(f.calls.confirm, 1);
+  assert.ok(logs.some((line) => line.includes('https://gitlab.com/team/repo/-/merge_requests/7')));
+});
+test('GitLab refuses unsupported methods and mismatched provider endpoint before reads', async (t) => {
+  for (const method of ['squash', 'rebase']) {
+    const f = await fixture(t, 'gitlab');
+    f.input.flags.method = method;
+    await assert.rejects(() => runRemoteDelivery(f.input));
+    assert.equal(f.calls.observe, 0);
+    assert.equal(f.calls.confirm, 0);
+  }
+  const f = await fixture(t, 'gitlab');
+  f.input.config.providers.providers[0].endpoint = 'https://api.github.com';
+  await assert.rejects(() => runRemoteDelivery(f.input));
+  assert.equal(f.calls.observe, 0);
 });
