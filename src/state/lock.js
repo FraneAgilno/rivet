@@ -214,3 +214,53 @@ export async function recoverStaleLock(path, options = {}) {
   await removeOwnedLock(path, inspected.owner.ownerId, inspected.metadata);
   return true;
 }
+
+function requireDeadLocalOwner(owner) {
+  if (owner.host !== hostname()) throw new LockBusyError('Cannot recover a lock from another host');
+  try {
+    process.kill(owner.pid, 0);
+  } catch (error) {
+    if (error.code === 'ESRCH') return;
+    throw new LockBusyError('Cannot establish that the lock owner exited');
+  }
+  throw new LockBusyError('State lock owner is still running');
+}
+
+/**
+ * Recover only an abandoned local lock. Unlike legacy recoverStaleLock, age alone
+ * never grants recovery. The permanent per-owner claim serializes all recoverers
+ * that observed that owner, including a recoverer delayed past a new acquisition.
+ * An interrupted claim deliberately needs manual investigation; do not remove it
+ * automatically. This assumes participants use this recovery protocol (not legacy
+ * age-only recovery) and a private directory, not arbitrary external replacement.
+ */
+export async function recoverAbandonedLock(path, options = {}) {
+  const { nowMs } = validateTiming({ now: options.now });
+  const inspected = await inspectLock(path);
+  if (!inspected) return false;
+  if (!stale(inspected.owner, nowMs, DEFAULT_STALE_AFTER_MS)) throw new LockBusyError();
+  requireDeadLocalOwner(inspected.owner);
+  const claimPath = `${path}.recovered-${inspected.owner.ownerId}`;
+  let claim;
+  try {
+    claim = await open(claimPath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | NOFOLLOW, 0o600);
+  } catch (error) {
+    if (error.code === 'EEXIST') throw new LockBusyError('Lock recovery was already claimed; manual investigation required');
+    throw error;
+  }
+  try {
+    await claim.chmod(0o600);
+    await claim.writeFile(`${JSON.stringify(inspected.owner)}\n`, { encoding: 'utf8' });
+    await claim.sync();
+  } finally {
+    await claim.close();
+  }
+  // Recheck identity, owner, file safety and liveness after winning the claim.
+  // No other conforming recoverer can unlink this owner, and its process is dead.
+  const current = await inspectLock(path);
+  if (!current || current.owner.ownerId !== inspected.owner.ownerId
+      || !sameIdentity(current.metadata, inspected.metadata)) throw new Error('State lock ownership changed');
+  requireDeadLocalOwner(current.owner);
+  await removeOwnedLock(path, inspected.owner.ownerId, inspected.metadata);
+  return true;
+}

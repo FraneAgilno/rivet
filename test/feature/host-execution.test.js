@@ -350,6 +350,10 @@ test('submitResult integrates an exact restarted host action and verify stops at
   const deliveryVersion = deliveryOutput.result.version;
   assert.equal(await main(['delivery', 'prepare', '--json'], { ...deliveryDeps, cwd: () => join(root, '.rivet') }), 0);
   assert.equal(deliveryOutput.result.version, deliveryVersion);
+  assert.equal(await main(['delivery', 'recover', '--json'], deliveryDeps), 0);
+  assert.deepEqual(deliveryOutput.recovery.recoveredLocks, []);
+  assert.equal(await main(['delivery', 'status', '--json'], deliveryDeps), 0);
+  assert.equal(deliveryOutput.result.version, deliveryVersion);
   const originalReadme = await readFile(join(root, 'README.md'), 'utf8');
   await writeFile(join(root, 'README.md'), 'source drift');
   await assert.rejects(() => delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient }), /verified|verification/i);

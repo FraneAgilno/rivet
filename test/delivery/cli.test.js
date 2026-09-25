@@ -8,6 +8,9 @@ for (const args of [
   ['delivery', 'prepare', '--receipt={}'],
   ['delivery', 'status', '--remote=origin'],
   ['delivery', 'prepare', '--run=../../outside'],
+  ['delivery', 'recover', '--force'],
+  ['delivery', 'recover', '--provider=github-team'],
+  ['delivery', 'recover', '--pid=1'],
 ]) {
   test(`delivery rejects unsupported authority or selectors: ${args.join(' ')}`, async () => {
     let result;
