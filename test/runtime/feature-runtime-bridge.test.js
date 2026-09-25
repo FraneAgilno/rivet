@@ -16,6 +16,7 @@ import { createFeaturePlanner } from '../../src/feature/planner.js';
 import {
   configuredFeatureGates,
   createFeatureExecutor,
+  createFeatureLaunchInput,
   createFeatureRuntimeControls,
   createFeatureRuntimeState,
   featureQualityAuthority,
@@ -628,4 +629,16 @@ test('resumes one blocked Worker in its exact preserved checkout and records a b
     && event.nodeId === 'implement-agenda-recommendations'
     && event.actor.role === 'manager'
   )));
+});
+
+
+test('worker-specific profile caps its sealed launch budget independently of the planning profile', async () => {
+  const {clientProfileFor}=await import('../../src/feature/client-profile.js');
+  const planNode={objective:'Implement',ownedPaths:['src/file.js'],authorityScopes:['implement'],commandIds:[]};
+  const node={id:'worker',evidenceRefs:[]},intent={allocation:{costUsd:'20',tokenLimit:100,timeMinutes:1},worktree:{}};
+  for(const [planner,worker,expected] of [['claude','codex',20],['codex','claude',2]]) {
+    const selected={...planNode,execution:{client:worker,...(clientProfileFor(worker)?{clientProfile:clientProfileFor(worker)}:{})}};
+    const run={featurePlan:{client:planner,clientProfile:clientProfileFor(planner),providerRefs:[]},workRequest:{digest:'a'.repeat(64),contextRefs:[]}};
+    assert.equal(createFeatureLaunchInput(node,intent,selected,run).budget.maxCostUsd,expected);
+  }
 });

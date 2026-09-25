@@ -10,7 +10,7 @@ import {
   createFeaturePlan,
   featurePlanDigest,
 } from './plan-contract.js';
-import { clientProfileFor } from './client-profile.js';
+import { clientProfileFor, workerExecutionFor } from './client-profile.js';
 
 const MAX_PLANNING_ATTEMPTS = 2;
 const REPAIRABLE_PATH_VIOLATIONS = new Set(['owned-path-invalid', 'owned-path-protected', 'owned-path-duplicate']);
@@ -67,7 +67,9 @@ function requiredEvidence(config, role, { humanApproval = false } = {}) {
 }
 
 function compileFeaturePlan({ decomposition, config, workRequest, baselineCommit, client }) {
+  if (client === 'host' && config.orchestration.roles.some(role => role.harness !== undefined)) fail('compiled-plan-invalid');
   const { boss, manager, worker } = roleChain(config);
+  const execution = workerExecutionFor(worker);
   const managerScopes = intersect(manager.authorityScopes, boss.authorityScopes);
   const workerScopes = intersect(worker.authorityScopes, managerScopes);
   if (managerScopes.length === 0 || workerScopes.length === 0) fail('compiled-plan-invalid');
@@ -81,6 +83,7 @@ function compileFeaturePlan({ decomposition, config, workRequest, baselineCommit
     parentId: 'management',
     role: 'worker',
     roleId: worker.id,
+    ...(execution === undefined ? {} : { execution }),
     objective: item.objective,
     dependencies: ['management'],
     ownedPaths: item.ownedPaths,

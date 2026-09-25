@@ -38,3 +38,19 @@ export function matchesClientProfile(client, value) {
   const expected = clientProfileFor(client);
   return expected === undefined ? value === undefined : exactObject(value, expected);
 }
+
+export function workerExecutionFor(role) {
+  if (role.harness === undefined) return undefined;
+  if (role.kind !== 'worker' || !['claude', 'codex'].includes(role.harness)) throw new TypeError('Invalid worker harness.');
+  const clientProfile = clientProfileFor(role.harness);
+  return Object.freeze({ client: role.harness, ...(clientProfile === undefined ? {} : { clientProfile }) });
+}
+
+export function matchesWorkerExecution(role, execution) {
+  const expected = workerExecutionFor(role);
+  return expected === undefined ? execution === undefined : exactObject(execution, expected);
+}
+
+export function executionForNode(plan, node) {
+  return node.execution ?? { client: plan.client, clientProfile: plan.clientProfile };
+}

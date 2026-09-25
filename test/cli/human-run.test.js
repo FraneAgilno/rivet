@@ -38,7 +38,7 @@ function services(root, { selected = ['codex'], approve = true, status = 'awaiti
     },
   };
   return {
-    messages, calls,
+    messages, calls, proposal,
     overrides: {
       cwd: () => root,
       terminalIsInteractive: () => true,
@@ -203,4 +203,23 @@ test('role delegation explicitly selects either harness and preserves the task a
       assert.match(s.messages.join('\n'), /Role implementation: harness/);
     }
   }
+});
+
+
+test('worker override preview shows the exact executor and probes before activation', async t => {
+  const {root}=await fixture(t), f=services(root);
+  f.proposal.featurePlan.nodes[0].execution={client:'claude',clientProfile:{execution:{maxCostUsd:2}}};
+  assert.equal(await main(['run','Add a greeting module'],f.overrides),EXIT_CODES.SUCCESS);
+  assert.match(f.messages.join('\n'),/executor: claude/);
+  assert.match(f.messages.join('\n'),/executor limits:.*maxCostUsd/);
+  assert.ok(f.calls.findIndex(call=>call[0]==='select'&&call[1]==='claude') < f.calls.findIndex(call=>call[0]==='start'));
+});
+test('unavailable explicitly selected worker cannot fall back to planner or activate', async t => {
+  const {root}=await fixture(t), f=services(root);
+  f.proposal.featurePlan.nodes[0].execution={client:'claude'};
+  const select=f.overrides.harnesses.select;
+  f.overrides.harnesses.select=async kind=>{if(kind==='claude')throw new Error('unavailable');return select(kind)};
+  assert.equal(await main(['run','Add a greeting module'],f.overrides),EXIT_CODES.PROVIDER_UNAVAILABLE);
+  assert.ok(!f.calls.some(call=>call[0]==='start'||call[0]==='watch'));
+  assert.match(f.messages.join('\n'),/worker harness claude/);
 });

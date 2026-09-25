@@ -72,6 +72,13 @@
         "parentId": { "$ref": "#/$defs/id" },
         "role": { "enum": ["boss", "manager", "worker"] },
         "roleId": { "$ref": "#/$defs/id" },
+        "execution": {
+          "type": "object", "additionalProperties": false, "required": ["client"],
+          "properties": {
+            "client": { "enum": ["claude", "codex"] },
+            "clientProfile": { "$ref": "#/$defs/clientProfile" }
+          }
+        },
         "objective": { "type": "string", "minLength": 1, "maxLength": 2000 },
         "dependencies": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
         "ownedPaths": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/relativePath" } },

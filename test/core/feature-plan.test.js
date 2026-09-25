@@ -322,3 +322,30 @@ test('repairs reserved path components', async () => {
   await planner.propose({ config, workRequest: request(), baselineCommit: BASELINE, client: 'claude' });
   assert.equal(calls, 2);
 });
+
+test('explicit worker harness is snapshotted, digest-bound, and rejects role drift or host spawning', async () => {
+  const original = await configuration(), workRequest = request();
+  for (const [client, harness] of [['codex', 'claude'], ['claude', 'codex']]) {
+    const config = structuredClone(original);
+    config.orchestration.roles.find(role => role.kind === 'worker').harness = harness;
+    const planner = createFeaturePlanner({ planningClient: { propose: async () => decomposition() } });
+    const plan = await planner.propose({ config, workRequest, baselineCommit: BASELINE, client });
+    const worker = plan.nodes.find(node => node.role === 'worker');
+    assert.equal(worker.execution.client, harness);
+    assert.equal(worker.execution.clientProfile?.provider, harness === 'claude' ? 'claude' : undefined);
+    assert.throws(() => createHostFeaturePlan({ config, workRequest, baselineCommit: BASELINE, decomposition: decomposition() }));
+    const validate = proposal => createFeaturePlan({ proposal, config, workRequest, baselineCommit: BASELINE, client });
+    for (const change of [node => { delete node.execution; }, node => { node.execution.client = client; }, node => { node.execution.clientProfile = {}; }]) {
+      const changed = structuredClone(plan); change(changed.nodes.find(node => node.role === 'worker')); assert.throws(() => validate(changed));
+    }
+    delete config.orchestration.roles.find(role => role.kind === 'worker').harness;
+    assert.throws(() => validate(plan));
+  }
+});
+test('worker harness rejects nonworker overrides and unsupported clients', async () => {
+  for (const [kind, harness] of [['boss','codex'],['manager','claude'],['worker','openai']]) {
+    const config=structuredClone(await configuration());config.orchestration.roles.find(role=>role.kind===kind).harness=harness;
+    const planner=createFeaturePlanner({planningClient:{propose:async()=>decomposition()}});
+    await assert.rejects(planner.propose({config,workRequest:request(),baselineCommit:BASELINE,client:'codex'}));
+  }
+});

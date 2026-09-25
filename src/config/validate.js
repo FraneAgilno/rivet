@@ -218,6 +218,7 @@ function validateConfigSemantics(config) {
   const bossRoles = config.orchestration.roles.filter(role => role.kind === 'boss');
   if (bossRoles.length !== 1) fail('/orchestration/roles', 'boss-count');
   for (const role of config.orchestration.roles) {
+    if (role.harness !== undefined && (role.kind !== 'worker' || !['claude', 'codex'].includes(role.harness))) fail(`/orchestration/roles/${role.id}/harness`, 'worker-harness');
     if (role.kind === 'worker' && role.canDelegate) fail(`/orchestration/roles/${role.id}/canDelegate`, 'worker-delegation');
     if (role.canDelegate !== (role.delegatesTo.length > 0)) fail(`/orchestration/roles/${role.id}/delegatesTo`, 'delegation-policy');
     for (const target of role.delegatesTo) {

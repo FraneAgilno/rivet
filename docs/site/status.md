@@ -12,7 +12,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - `rivet task status`, `rivet task resume`, and `rivet task deps` select a unique active run without asking for its ID. Dependency setup prepares a clean active host Worker or accepted integration checkout after separate interactive approval. Spawned Workers ask before installing locked dependencies in their isolated checkout.
 - Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
-- Extensible model registry and local profile validation.
+- Extensible model registry, bounded text-only API/local delegation and explicit role selection. Terminal workflow worker roles can select Claude or Codex independently of the planning harness.
 - Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
 - Local delivery preparation/status from accepted host verification, plus a durable service for separately approved delivery operations. Native GitHub PR and GitLab MR merging is implemented for documented bounded policy subsets, with interactive approval and read-only reconciliation. Other native operations and live qualification remain pending. See [delivery lifecycle](./delivery.md).
@@ -31,7 +31,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Shared Obsidian memory.
 - Live provider qualification for the integration registry and context intake.
-- Bitbucket/GitLab repository delivery and expanded model executors.
+- Remaining repository delivery operations and live qualification of model executors and cross-harness routing.
 - External pilot, evaluations, and release qualification.
 
 The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native GitHub Actions deployment is implemented for a configured workflow; Jira/Linear delivery-summary comments are implemented; tracker status transitions and live delivery qualification remain pending.

@@ -6,7 +6,7 @@ import Ajv from 'ajv';
 import { immutableJson } from '../clients/contract.js';
 import { validateProjectConfiguration } from '../config/validate.js';
 import { validateWorkRequest } from '../work-request/contract.js';
-import { matchesClientProfile } from './client-profile.js';
+import { matchesClientProfile, matchesWorkerExecution } from './client-profile.js';
 
 const schema = JSON.parse(readFileSync(new URL('../../schemas/feature-plan.schema.json', import.meta.url), 'utf8'));
 const validateSchema = new Ajv({ allErrors: true, strict: true }).compile(schema);
@@ -111,6 +111,7 @@ function dependsOn(node, targetId, nodeMap) {
 function validatePlanSemantics(plan, { config, workRequest, baselineCommit, client }) {
   if (plan.baselineCommit !== baselineCommit || plan.workRequestDigest !== workRequest.digest || plan.client !== client
     || !matchesClientProfile(client, plan.clientProfile)) fail();
+  if (client === 'host' && config.orchestration.roles.some(role => role.harness !== undefined)) fail();
   const configuredProviders = new Set(config.providers.providers.map(provider => provider.id));
   if (plan.providerRefs.some(provider => !configuredProviders.has(provider))) fail();
   const roles = new Map(config.orchestration.roles.map(role => [role.id, role]));
@@ -135,6 +136,7 @@ function validatePlanSemantics(plan, { config, workRequest, baselineCommit, clie
   for (const node of plan.nodes) {
     const role = roles.get(node.roleId);
     if (!role || role.kind !== node.role || node.dependencies.includes(node.id)) fail();
+    if (!matchesWorkerExecution(role, node.execution)) fail();
     if (node !== roots[0] && (node.dependencies.length === 0 || !node.parentId)) fail();
     if (node.parentId && !nodeMap.has(node.parentId)) fail();
     if (node.dependencies.some(id => !nodeMap.has(id))) fail();
