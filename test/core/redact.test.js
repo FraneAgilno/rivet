@@ -70,3 +70,14 @@ test('preserves a JSON __proto__ property without changing the result prototype'
   assert.deepEqual(result.__proto__, { polluted: true });
   assert.equal({}.polluted, undefined);
 });
+
+test('preserves only exact numeric Gemini usage counts while retaining secret redaction', () => {
+  const counts = { promptTokenCount: 12, candidatesTokenCount: 4, thoughtsTokenCount: 0 };
+  assert.deepEqual(redactSecrets(counts, { environment: {} }), counts);
+  for (const value of ['secret-value', -1, 1.5, Number.MAX_SAFE_INTEGER + 1, { token: 'secret-value' }]) {
+    assert.deepEqual(redactSecrets({ promptTokenCount: value }, { environment: {} }), { promptTokenCount: REDACTED });
+  }
+  assert.deepEqual(redactSecrets({ tokenCount: 123, prompt_token_count: 12, promptTokenCount: 12 },
+    { environment: {}, secretKeys: ['promptTokenCount'] }),
+  { tokenCount: REDACTED, prompt_token_count: REDACTED, promptTokenCount: REDACTED });
+});

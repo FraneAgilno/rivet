@@ -63,6 +63,7 @@ const USAGE = `Usage:
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
+  rivet models delegate "prompt" --profile=<file>  Approve one text-only model request
   rivet models list [--json]                List model adapters and implementation status
   rivet models check --profile=<file> [--json]  Validate a model profile without calling a model
   rivet install                    Interactive — pick which skills to install (project)
@@ -158,6 +159,18 @@ async function defaultConfirmFeatureActivation(_proposal, options = {}) {
   finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); readline.close(); }
 }
 
+async function defaultConfirmModelDelegation(_preview, options = {}) {
+  if (options.signal?.aborted) return false;
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  const abort = () => readline.close();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const answer = await readline.question('Send this exact prompt to the destination above? [y/N] ', { signal: options.signal });
+    return /^(?:y|yes)$/i.test(String(answer).trim());
+  } catch { return false; }
+  finally { options.signal?.removeEventListener('abort', abort); readline.close(); }
+}
+
 async function defaultConfirmDependencyInstall(_plan, options = {}) {
   if (options.signal?.aborted) return false;
   const readline = createInterface({ input: process.stdin, output: process.stdout });
@@ -197,6 +210,8 @@ function resolveDependencies(overrides = {}) {
     home: overrides.home ?? homedir,
     output: overrides.output ?? createOutput(),
     fetch: overrides.fetch ?? globalThis.fetch,
+    models: overrides.models,
+    confirmModelDelegation: overrides.confirmModelDelegation ?? defaultConfirmModelDelegation,
     confirmDelivery: overrides.confirmDelivery ?? defaultConfirmDelivery,
     delivery: overrides.delivery,
     confirmOverwrite: overrides.confirmOverwrite ?? defaultConfirmOverwrite,
