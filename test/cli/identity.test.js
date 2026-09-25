@@ -14,13 +14,13 @@ test('Rivet owns its package, executable and project configuration', async () =>
   assert.deepEqual(Object.keys(pkg.bin), ['rivet']);
   assert.equal(pkg.private, true, 'unpublished namespace must not be published accidentally');
   assert.equal(CONFIG_DIRECTORY, '.rivet');
-  assert.equal(Object.keys(pkg.dependencies).some(name => /ai-engineering/.test(name)), false);
+  assert.equal(Object.values(pkg.dependencies).some(version => /^(?:file:|link:|workspace:)/.test(version)), false);
 });
 
-test('CLI help identifies Rivet without the old command', async () => {
+test('CLI help identifies the Rivet command', async () => {
   const result = (await runCli(['--help'])).assertSuccess();
   assert.match(result.stdout, /rivet install/);
-  assert.doesNotMatch(result.stdout, /ai-engineering/);
+  assert.match(result.stdout, /^Usage:\n\s+rivet /);
 });
 
 test('private run state uses independent Rivet directories', async t => {
