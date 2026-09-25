@@ -180,7 +180,7 @@ export async function deliveryCommand(parsed, dependencies) {
     dependencies.output.log(
       incomplete
         ? 'Outcome is not confirmed. Run rivet delivery reconcile; do not repeat the merge.'
-        : 'Status records confirmed stages. GitHub merge requires supported protection and interactive approval.'
+        : 'Status records confirmed stages. Native merge requires supported provider policy and interactive approval.'
     );
   }
   return incomplete ? EXIT_CODES.PROVIDER_UNAVAILABLE : EXIT_CODES.SUCCESS;

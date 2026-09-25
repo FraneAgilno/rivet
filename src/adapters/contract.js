@@ -187,6 +187,14 @@ function wireValue(write) {
       || !['merge', 'squash', 'rebase'].includes(payload.merge_method)) failProvider('invalid-request', { provider: 'github' });
     value = { sha: payload.sha, merge_method: payload.merge_method };
   }
+  else if (write.provider === 'gitlab' && write.action === 'merge') {
+    const keys = ['sha', 'squash', 'auto_merge', 'should_remove_source_branch'];
+    if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))
+      || !/^[a-f0-9]{40}$/.test(payload.sha) || payload.sha !== write.expectedVersion
+      || payload.squash !== false || payload.auto_merge !== false || payload.should_remove_source_branch !== false)
+      failProvider('invalid-request', { provider: 'gitlab' });
+    value = { sha: payload.sha, squash: false, auto_merge: false, should_remove_source_branch: false };
+  }
   else failProvider('invalid-request', { provider: write.provider });
   const safe = cloneJson(value);
   const redacted = redactSecrets(safe, { environment: {} });

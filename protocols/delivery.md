@@ -12,8 +12,8 @@ Review creation, merge, deployment and tracker updates are separate actions. Eac
 
 ## Stop conditions
 
-Stop for changed source or integration state, unknown required-check/review policy, failed CI, missing review, an unsupported executor capability, or absent action-specific authority. The CLI supports prepare/status and GitHub refresh/interactive merge/reconcile. Native merge requires an existing same-repository exact-head PR and the documented classic protection subset. Other provider writes and deployment/tracker qualification remain pending.
+Stop for changed source or integration state, unknown required-check/review policy, failed CI, missing review, an unsupported executor capability, or absent action-specific authority. The CLI supports prepare/status and GitHub/GitLab refresh/interactive merge/reconcile. Native merge requires an existing same-repository exact-head PR/MR and the documented provider policy subset. GitLab supports merge commits only; Bitbucket writes are unavailable. Other provider writes and deployment/tracker qualification remain pending.
 
 ## External outcomes
 
-Persist intent before dispatch. Record success only from verified external evidence bound to the operation and candidate. The native GitHub executor must receive and check the bounded dispatch deadline immediately before PUT. Timeout, malformed response and uncertain dispatch are indeterminate. Reconcile before retry; never assume an error means that no external write occurred. Preserve a confirmed merge if deployment or tracker work later fails. Report stages and per-operation outcomes separately.
+Persist intent before dispatch. Record success only from verified external evidence bound to the operation and candidate. Each native executor must receive and check the bounded dispatch deadline immediately before PUT. Timeout, malformed response and uncertain dispatch are indeterminate. Reconcile before retry; never assume an error means that no external write occurred. Preserve a confirmed merge if deployment or tracker work later fails. Report stages and per-operation outcomes separately.

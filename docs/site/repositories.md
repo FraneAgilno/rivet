@@ -66,7 +66,7 @@ Public smoke checks on 2026-09-25 read `FraneAgilno/rivet`, `atlassian/atlassian
 
 The existing lower-level GitHub adapter retains its governed operations. The common repository interface is read-only. MCP and local CLI repository execution, custom API hosts, GitHub Enterprise, Bitbucket Data Center and self-managed GitLab are not qualified through this interface.
 
-For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). The separate delivery executor supports GitHub merge for an existing PR under a bounded classic protection policy. Native Bitbucket/GitLab delivery and live qualification remain pending.
+For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Separate delivery executors support GitHub PR and GitLab MR merges under documented bounded policy subsets. Native Bitbucket delivery and live qualification remain pending.
 
 ## Interpreting results
 
