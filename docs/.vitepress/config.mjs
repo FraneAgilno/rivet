@@ -22,6 +22,7 @@ export default defineConfig({
         { text: 'Installation', link: '/installation' },
         { text: 'Architecture', link: '/architecture' },
         { text: 'Runtime reference', link: '/runtime-reference' },
+        { text: 'Task and checkout status', link: '/statuses' },
       ] },
       { text: 'Capabilities', items: [
         { text: 'Model providers', link: '/models' },

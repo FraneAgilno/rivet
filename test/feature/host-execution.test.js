@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { access, chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -14,6 +14,7 @@ import { EXIT_CODES } from '../../src/cli/output.js';
 import { createHostExecution } from '../../src/feature/host-execution.js';
 import { createFeatureWorkflow } from '../../src/feature/workflow.js';
 import { createGitClient } from '../../src/git/client.js';
+import { createReservationStore } from '../../src/git/reservations.js';
 import { createReservedWorktree } from '../../src/git/worktrees.js';
 import { resolveFeatureRunPaths, resolveStatePaths } from '../../src/state/paths.js';
 import { acquireLock } from '../../src/state/lock.js';
@@ -809,4 +810,142 @@ test('host-observed tracker context survives activation, isolated work and verif
   assert.equal(status.run.workRequest.context.sources[0].assurance,'harness-observed');
   assert.ok(status.run.workRequest.contextRefs.includes(PROTOCOL_REF));
   assert.equal(await git(root,'status','--porcelain'),'');
+});
+
+async function directoryBytes(root) {
+  const files = {};
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else files[path] = (await readFile(path)).toString('base64');
+    }
+  }
+  await visit(root);
+  return files;
+}
+
+test('status advises review rather than restarting a completed Worker', async t => {
+  const { root, execution, verifyInput } = await completedWorker(t);
+  const status = await execution.status({ project: root, runId: verifyInput.runId });
+  assert.equal(status.workerCheckouts[0].nodeStatus, 'completed');
+  assert.match(status.workerCheckouts[0].nextAction, /do not restart/i);
+});
+
+test('status exposes active Worker edits without changing private state or taking its lock', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({ project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion });
+  const path = JSON.parse(next.action.payload).contract.worktree.path;
+  const statePaths = await resolveStatePaths(root, approved.runId);
+  const reservationFile = join(statePaths.instanceDir, 'worktree-reservations.json');
+  const before = await readFile(reservationFile);
+  const lock = await acquireLock(statePaths.lockPath);
+  const privateBefore = await directoryBytes(statePaths.instanceDir);
+  const workerIndex = await git(path, 'rev-parse', '--path-format=absolute', '--git-path', 'index');
+  const indexBefore = await readFile(workerIndex);
+  try {
+    const clean = await execution.status({ project: root, runId: approved.runId });
+    assert.equal(clean.checkout, null);
+    assert.equal(clean.workerCheckouts[0].status, 'clean');
+    assert.equal(clean.workerCheckouts[0].path, path);
+    await mkdir(join(path, 'app'), { recursive: true });
+    await writeFile(join(path, 'app/agenda.js'), 'preserve this interrupted work\n');
+    const dirty = await execution.status({ project: root, runId: approved.runId });
+    assert.equal(dirty.workerCheckouts[0].status, 'dirty');
+    assert.deepEqual(dirty.workerCheckouts[0].dirtyPaths, ['app/agenda.js']);
+    assert.match(dirty.workerCheckouts[0].nextAction, /inspect/i);
+    assert.equal(await readFile(join(path, 'app/agenda.js'), 'utf8'), 'preserve this interrupted work\n');
+    assert.deepEqual(await readFile(reservationFile), before);
+    assert.equal(dirty.deliveryReady, false);
+    assert.deepEqual(await directoryBytes(statePaths.instanceDir), privateBefore);
+    assert.deepEqual(await readFile(workerIndex), indexBefore);
+  } finally { await lock.release(); }
+});
+
+test('status reports interrupted reserved, expired, moved, wrong-branch and missing Workers without recovery', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const statePaths = await resolveStatePaths(root, approved.runId);
+  const current = await execution.status({ project: root, runId: approved.runId });
+  const node = current.runtime.nodes.find(item => item.owner.role === 'worker');
+  const repository = await gitClient.inspectRepository(root);
+  const integration = (await gitClient.listWorktrees(root)).find(item => item.branch.includes(approved.runId));
+  const path = join(dirname(integration.path), 'workers', node.id);
+  const branch = `worker/${approved.runId}/${node.id}`;
+  const expiresAt = new Date(Date.parse(NOW) + 1000).toISOString();
+  await createReservationStore(statePaths).reserve({ nodeId: node.id, ownerId: node.owner.id,
+    repositoryId: repository.repositoryId, branch, worktreePath: path, baseSha: repository.headSha,
+    responsibilities: ['app/agenda.js'], intendedPaths: ['app/agenda.js'], expiresAt,
+  }, { expectedVersion: 0, nowMs: Date.parse(NOW) });
+  const read = async () => (await execution.status({ project: root, runId: approved.runId })).workerCheckouts[0];
+  assert.equal((await read()).status, 'missing');
+  await mkdir(dirname(path), { recursive: true });
+  await git(root, 'worktree', 'add', '-q', '-b', branch, path);
+  assert.equal((await read()).status, 'clean');
+  assert.equal((await read()).reservationStatus, 'reserved');
+  assert.match((await read()).nextAction, /interrupted/);
+  const expired = createHostExecution({ gitClient, now: () => expiresAt });
+  assert.equal((await expired.status({ project: root, runId: approved.runId })).workerCheckouts[0].leaseExpired, true);
+  await git(path, 'checkout', '-q', '-b', 'other-worker-branch');
+  assert.equal((await read()).status, 'mismatched');
+  assert.equal((await read()).observedBranch, 'other-worker-branch');
+  const other = join(dirname(path), 'other-location');
+  await git(root, 'worktree', 'add', '-q', other, branch);
+  assert.deepEqual((await read()).branchLocations, [other]);
+  await rm(path, { recursive: true, force: true });
+  assert.equal((await read()).status, 'missing');
+});
+
+test('Worker status fails closed on unsafe reservation associations and symlinked state', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  await execution.nextAction({ project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion });
+  const paths = await resolveStatePaths(root, approved.runId);
+  const file = join(paths.instanceDir, 'worktree-reservations.json');
+  const original = await readFile(file, 'utf8');
+  for (const patch of [{ worktreePath: root }, { ownerId: 'another-worker' }, { repositoryId: 'different-repository' }, { nodeId: 'unknown-node' }]) {
+    const state = JSON.parse(original);
+    Object.assign(state.reservations[0], patch);
+    await writeFile(file, `${JSON.stringify(state)}\n`);
+    await assert.rejects(execution.status({ project: root, runId: approved.runId }), { code: 'ERR_HOST_EXECUTION_STATE_CONFLICT' });
+  }
+  await writeFile(file, '{broken\n');
+  await assert.rejects(execution.status({ project: root, runId: approved.runId }));
+  await rm(file);
+  const target = join(dirname(root), 'reservation-target');
+  await writeFile(target, original, { mode: 0o600 });
+  await symlink(target, file);
+  await assert.rejects(execution.status({ project: root, runId: approved.runId }));
+  assert.equal(await readFile(target, 'utf8'), original);
+});
+
+
+test('Worker status refuses checkout paths with symlinked ancestors', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({ project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion });
+  const path = JSON.parse(next.action.payload).contract.worktree.path;
+  const parent = dirname(path);
+  await rename(parent, `${parent}-relocated`);
+  await symlink(`${parent}-relocated`, parent);
+  const status = await execution.status({ project: root, runId: approved.runId });
+  assert.equal(status.workerCheckouts[0].status, 'unavailable');
+  assert.equal(status.workerCheckouts[0].headCommit, null);
+  assert.deepEqual(status.workerCheckouts[0].dirtyPaths, []);
+});
+
+test('Worker status rejects excessive dirty-path output instead of returning an unbounded report', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  const prepared = await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const next = await execution.nextAction({ project: root, runId: approved.runId, expectedRuntimeVersion: prepared.runtimeVersion });
+  const path = JSON.parse(next.action.payload).contract.worktree.path;
+  await Promise.all(Array.from({ length: 257 }, (_, i) => writeFile(join(path, `untracked-${i}`), 'preserved')));
+  await assert.rejects(execution.status({ project: root, runId: approved.runId }), { code: 'ERR_HOST_EXECUTION_STATE_CONFLICT' });
+  assert.equal(await readFile(join(path, 'untracked-256'), 'utf8'), 'preserved');
 });

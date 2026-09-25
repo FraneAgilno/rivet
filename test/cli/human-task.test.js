@@ -139,3 +139,24 @@ test('task status distinguishes the planner from the configured worker harness',
   assert.match(messages.join('\n'),/Planning harness: codex/);
   assert.match(messages.join('\n'),/Worker harnesses: claude/);
 });
+
+test('task status and host resume render Worker checkout guidance with visible escaping', async t => {
+  const root = await fixture(t);
+  await createRun(root, 'worker-guidance', 'host');
+  for (const command of ['status', 'resume']) {
+    const messages = [];
+    const services = overrides(root, messages, { work: { async status() { return {
+      run: { status: 'running' }, nextAction: 'Continue.',
+      workerCheckouts: [{ nodeId: 'worker-one', path: '/tmp/worker\u001b[31m', status: 'dirty',
+        expectedBranch: 'worker/task/one', observedBranch: 'other', reservationStatus: 'active', leaseExpired: true,
+        dirtyPaths: ['app/evil\nname.js'], branchLocations: ['/tmp/other'], nextAction: 'Inspect edits.' }],
+    }; } } });
+    assert.equal(await main(['task', command], services), EXIT_CODES.SUCCESS);
+    const output = messages.join('\n');
+    assert.match(output, /Worker checkout: worker-one/);
+    assert.match(output, /lease expired/);
+    assert.match(output, /Inspect edits/);
+    assert.ok(!output.includes('\u001b'));
+    assert.ok(!output.includes('app/evil\nname.js'));
+  }
+});

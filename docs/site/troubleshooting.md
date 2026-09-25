@@ -18,7 +18,7 @@ The status-server tests require loopback networking. A sandbox that prohibits li
 
 ## A branch is already checked out
 
-Use `git worktree list` to locate its existing checkout. Do not delete worktrees or force-reset branches to get past this error.
+Run `rivet task status` to see reserved and active Worker checkout paths, expected branches and their registered locations. `git worktree list` also lists the repository's checkouts. Inspect and preserve existing edits; do not delete worktrees or force-reset branches to get past this error. See [task and checkout status](./statuses.md) for the observation meanings.
 
 ## Host preflight asks for a private goal
 
