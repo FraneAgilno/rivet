@@ -3,8 +3,10 @@
 Use Node.js 22 or 24, npm and Git on macOS or Linux. This is a development alpha; the npm package has not been published. Install the CLI from the public GitHub source branch:
 
 ```sh
-npm install --global github:FraneAgilno/rivet#main
+npm install --global --install-links github:FraneAgilno/rivet#main
 ```
+
+Confirm `rivet --help` works before continuing. Keep `--install-links` in the GitHub installation command; see [installation details](./installation.md).
 
 ## Connect a project
 

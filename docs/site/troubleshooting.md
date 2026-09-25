@@ -4,6 +4,10 @@
 
 No Rivet package has been published from this repository yet. Use the source installation instructions. The temporary package name does not establish ownership of a public namespace.
 
+## npm reports success but rivet is missing
+
+First check `npm prefix --global` and ensure its `bin` directory is on your shell PATH. If the installed package links to a missing temporary Git clone, reinstall with the documented `--install-links` option, then verify `rivet --help`. Do not treat npm's success message alone as proof that the command works.
+
 ## A provider is listed but cannot execute
 
 Run `rivet models list`. `planned` means the descriptor/profile contract exists but its executor is not implemented. `adapter-available` still needs runtime/authentication checks. Profile validation does not call a model.

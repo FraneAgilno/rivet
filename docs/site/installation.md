@@ -3,12 +3,15 @@
 ## Install the CLI globally
 
 ```sh
-npm install --global github:FraneAgilno/rivet#main
+npm install --global --install-links github:FraneAgilno/rivet#main
+rivet --help
 rivet setup
 rivet setup --write
 ```
 
 The source branch is a moving alpha, not a versioned npm release. For reproducible installation, replace `main` with a reviewed commit SHA. Global npm installation uses your existing npm prefix; configure a user-owned prefix/runtime manager if necessary rather than running the installer as root.
+
+Keep `--install-links` in the source install command. A tested npm 10 installation without it reported success but linked the package to a deleted temporary Git clone, leaving `rivet` unavailable. Verify `rivet --help` succeeds before setup. This flag requests a packaged installation rather than a directory link; see [npm installation options](https://docs.npmjs.com/cli/v10/commands/npm-install/#install-links).
 
 ## Project or global instructions
 
