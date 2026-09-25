@@ -66,6 +66,8 @@ Public smoke checks on 2026-09-25 read `FraneAgilno/rivet`, `atlassian/atlassian
 
 The existing lower-level GitHub adapter retains its governed operations. The common repository interface is read-only. MCP and local CLI repository execution, custom API hosts, GitHub Enterprise, Bitbucket Data Center and self-managed GitLab are not qualified through this interface.
 
+For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Native delivery executors remain pending.
+
 ## Interpreting results
 
 An inspection is a bounded observation at a particular time, not an atomic provider snapshot. Reviews and checks can change after they are read. It rechecks the request head after collecting related evidence and fails if that head changed. Checks from a different commit cannot count as current evidence. A review observation without a provider-supplied commit binding cannot prove approval of the current commit.

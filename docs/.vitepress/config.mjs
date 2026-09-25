@@ -27,6 +27,7 @@ export default defineConfig({
         { text: 'Model providers', link: '/models' },
         { text: 'MCPs and context', link: '/integrations' },
         { text: 'Repository inspection', link: '/repositories' },
+        { text: 'Delivery lifecycle', link: '/delivery' },
         { text: 'Memory and project protocols', link: '/memory-and-protocols' },
       ] },
       { text: 'Project', items: [

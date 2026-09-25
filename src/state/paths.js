@@ -216,6 +216,17 @@ export function verificationReportPaths(featurePaths) {
   }));
 }
 
+export function deliveryRecordPaths(featurePaths) {
+  assertResolvedStatePaths(featurePaths);
+  if (featurePaths.runDir !== featurePaths.instanceDir) throw new TypeError('Invalid feature run paths');
+  return registerPaths(Object.freeze({
+    ...featurePaths,
+    snapshotPath: join(featurePaths.runDir, 'delivery.json'),
+    lockPath: join(featurePaths.runDir, 'delivery.lock'),
+    operationLockPath: join(featurePaths.runDir, 'delivery-operation.lock'),
+  }));
+}
+
 export function acceptedIntegrationPaths(featurePaths) {
   assertResolvedStatePaths(featurePaths);
   if (featurePaths.runDir !== featurePaths.instanceDir) throw new TypeError('Invalid feature run paths');

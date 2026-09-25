@@ -531,7 +531,7 @@ export function createHostExecution(input) {
                 ? 'Use work prepare with run.version to create the isolated execution state.'
                 : 'Use rivet task resume to continue the approved spawned task.'
               : 'Review the proposal and current run state before proceeding.';
-    return immutableJson({ run, runtime, verification, checkout, blockedNodes, nextAction });
+    return immutableJson({ run, runtime, verification, checkout, deliveryReady: deliverable, blockedNodes, nextAction });
   }
 
   return Object.freeze({ prepare, nextAction, submitResult, verify, status });

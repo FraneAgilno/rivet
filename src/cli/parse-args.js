@@ -1,5 +1,6 @@
 const COMMANDS = new Set([
   'doctor',
+  'delivery',
   'evidence',
   'feature',
   'goals',
@@ -22,7 +23,7 @@ const COMMANDS = new Set([
 ]);
 
 const LEGACY_COMMANDS = new Set(['init', 'install', 'uninstall']);
-const NESTED_COMMANDS = new Set(['feature', 'goals', 'integrations', 'repositories', 'models', 'orchestrate', 'protocols', 'task', 'work', 'worktrees']);
+const NESTED_COMMANDS = new Set(['delivery', 'feature', 'goals', 'integrations', 'repositories', 'models', 'orchestrate', 'protocols', 'task', 'work', 'worktrees']);
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
@@ -39,6 +40,7 @@ const LEGACY_OPTIONS = {
   },
 };
 const STRICT_OPTIONS = {
+  delivery: { boolean: new Set(['json']), valued: new Set(['project', 'run', 'remote']) },
   repositories: { boolean: new Set(['json']), valued: new Set(['project', 'remote', 'provider', 'review']) },
   integrations: { boolean: new Set(['json']), valued: new Set(['project', 'host-inventory-json']) },
   protocols: {
@@ -170,7 +172,7 @@ export function parseArgs(argv) {
           throw new ArgumentError(`Flag '--${name}' does not take a value`);
         }
         if (commandOptions.valued.has(name) && value === true) {
-          if (command === 'repositories' || command === 'integrations' || command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
+          if (command === 'delivery' || command === 'repositories' || command === 'integrations' || command === 'setup' || command === 'protocols' || ((command === 'install' || command === 'uninstall') && name === 'project') || command === 'init' || command === 'doctor' || command === 'feature' || command === 'preflight' || command === 'status') {
             const next = tokens[index + 1];
             if (typeof next === 'string' && next.length > 0 && !next.startsWith('-')) {
               value = next;
