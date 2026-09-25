@@ -57,7 +57,7 @@ const addEventListener = EventTarget.prototype.addEventListener;
 const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
-  rivet delivery prepare|status|refresh|reconcile [--run=<id>] [--project=<path>] [--json]
+  rivet delivery prepare|status|refresh|reconcile|recover [--run=<id>] [--project=<path>] [--json]
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]

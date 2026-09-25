@@ -44,7 +44,7 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'merge', 'reconcile'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'merge', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
       (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
@@ -60,7 +60,7 @@ export async function deliveryCommand(parsed, dependencies) {
     (subcommand === 'merge' && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|merge|reconcile [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge.'
+      'Use rivet delivery prepare|status|refresh|merge|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for merge.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -73,6 +73,17 @@ export async function deliveryCommand(parsed, dependencies) {
   try {
     const paths = await selectRun(project.root, flags, subcommand, runner);
     const store = createDeliveryStore(await deliveryRecordPaths(paths));
+    if (subcommand === 'recover') {
+      const recovery = await store.recover();
+      if (flags.json) dependencies.output.json({ok: true, runId: paths.runId, recovery});
+      else {
+        dependencies.output.log(recovery.recoveredLocks.length
+          ? `Recovered abandoned delivery locks: ${recovery.recoveredLocks.join(', ')}.`
+          : 'No abandoned delivery locks needed recovery.');
+        dependencies.output.log('Reconcile any pending provider outcome with rivet delivery reconcile.');
+      }
+      return EXIT_CODES.SUCCESS;
+    }
     result = await store.read();
     if (subcommand === 'prepare') {
       const gitClient = await createGitClient({ gitExecutable: executable });
@@ -161,6 +172,10 @@ export async function deliveryCommand(parsed, dependencies) {
       );
   } catch (error) {
     if (error instanceof CliError) throw error;
+    if (subcommand === 'recover') fail(
+      'Delivery recovery stopped. Locks must be at least five minutes old and owned by a provably dead process on this machine. Live, foreign, unsafe or previously claimed locks require investigation; no force option is available.',
+      'REPOSITORY_CONFLICT'
+    );
     fail(
       'Delivery stopped. Check local verification, repository access, supported protection policy and delivery status. An uncertain operation requires delivery reconcile before retry.',
       'REPOSITORY_CONFLICT'

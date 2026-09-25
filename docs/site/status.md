@@ -16,6 +16,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
 - Local delivery preparation/status from accepted host verification, plus a durable service for separately approved delivery operations. Native GitHub PR and GitLab MR merging is implemented for documented bounded policy subsets, with interactive approval and read-only reconciliation. Other native operations and live qualification remain pending. See [delivery lifecycle](./delivery.md).
+- Explicit delivery lock recovery for stale same-machine dead owners, preserving operation evidence before read-only reconciliation. Broader crash/live recovery qualification remains open.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
 - Searchable documentation source and a local build.

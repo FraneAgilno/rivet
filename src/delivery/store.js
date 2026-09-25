@@ -1,4 +1,4 @@
-import { acquireLock } from '../state/lock.js';
+import { acquireLock, recoverAbandonedLock } from '../state/lock.js';
 import { createSnapshotStore, readSnapshotWithoutLock } from '../state/snapshot-store.js';
 import { verifyResolvedStatePaths } from '../state/paths.js';
 import { ensure, hash, plain, validateRecord } from './contract.js';
@@ -14,6 +14,20 @@ export function createDeliveryStore(paths, options = {}) {
   }
   const store = Object.freeze({
     read,
+    async recover() {
+      await verifyResolvedStatePaths(paths);
+      const operationPath = paths.operationLockPath ?? `${paths.snapshotPath}.operation.lock`;
+      const recoveredLocks = [];
+      if (await recoverAbandonedLock(operationPath, { now: options.recoveryNow })) recoveredLocks.push('operation');
+      const lock = await acquireLock(operationPath);
+      try {
+        await verifyResolvedStatePaths(paths);
+        if (await recoverAbandonedLock(paths.lockPath, { now: options.recoveryNow })) recoveredLocks.push('snapshot');
+        return plain({ recoveredLocks });
+      } finally {
+        await lock.release();
+      }
+    },
     async write(input, { expectedVersion }) {
       const value = validateRecord(input);
       const prior = await read();

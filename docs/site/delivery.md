@@ -37,7 +37,7 @@ rivet delivery status
 
 `merge` defaults to squash. Use `--method=merge` or `--method=rebase` when appropriate for the repository. The terminal shows the PR, exact source and target commits, and method before asking for approval. Declining makes no merge request. Head, checks, reviews, local verification and policy are rechecked before dispatch. Already-confirmed merges return the stored result without prompting or writing again.
 
-Merge requires an interactive terminal; `--json` and unattended confirmation flags are unavailable. `refresh`, `status` and `reconcile` support `--json`. Add `--provider=<id>` when more than one configured provider matches. Project/run selection follows the same rules as preparation.
+Merge requires an interactive terminal; `--json` and unattended confirmation flags are unavailable. `refresh`, `status`, `recover` and `reconcile` support `--json`. Add `--provider=<id>` when more than one configured provider matches. Project/run selection follows the same rules as preparation.
 
 Configure a scoped entry in `.rivet/providers.yaml` before starting the feature run:
 
@@ -139,7 +139,22 @@ Each action has its own proposal and authority check. Approval binds the reposit
 
 Dispatch intent and consumed approval identity are saved before a write. A timeout or uncertain response is recorded as indeterminate. It must be reconciled before another attempt; blindly repeating a write can duplicate an external action.
 
-Reopening persisted state after a released lock is covered by automated tests. A process crash while holding the delivery operation lock still requires explicit stale-lock recovery through the existing state API; a delivery CLI recovery command and crash qualification remain pending.
+### Recover a crashed delivery process
+
+If a crashed process leaves delivery locked, wait until its lock is at least five minutes old, then run:
+
+```sh
+rivet delivery recover
+rivet delivery reconcile
+```
+
+Recovery uses the same project and unique-run selection as status. Use `--run=<id>` when selection is ambiguous or the process died before creating a delivery record. `recover --json` reports the recovered lock names. It does not require provider credentials.
+
+Recovery checks private file identity, age, machine identity and process liveness. Only a provably dead owner on the current machine is eligible. Live, recent, foreign-host, malformed, linked or unsafe locks are preserved. PID reuse and permission errors also stop recovery. There is no force flag or caller-supplied PID.
+
+An exclusive private recovery marker is retained for each recovered owner. This prevents competing recovery attempts from removing a replacement lock. If recovery itself is interrupted after claiming a lock, another attempt stops for investigation. Markers are not automatically cleaned up in this release.
+
+Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
 The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, deployment configuration, tracker delivery and live sandbox qualification remain open delivery work.
 

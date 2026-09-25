@@ -17,3 +17,7 @@ Stop for changed source or integration state, unknown required-check/review poli
 ## External outcomes
 
 Persist intent before dispatch. Record success only from verified external evidence bound to the operation and candidate. Each native executor must receive and check the bounded dispatch deadline immediately before PUT. Timeout, malformed response and uncertain dispatch are indeterminate. Reconcile before retry; never assume an error means that no external write occurred. Preserve a confirmed merge if deployment or tracker work later fails. Report stages and per-operation outcomes separately.
+
+## Process crash recovery
+
+Use `rivet delivery recover` only for abandoned delivery locks. It checks that the lock is at least five minutes old, belongs to this machine and has a provably dead process owner. Preserve live, foreign, unsafe or already-claimed locks for investigation. Recovery retains a per-owner marker and never changes recorded approval or operation outcomes. Follow with `rivet delivery reconcile` for pending provider effects; do not repeat dispatch because a local process crashed. Interrupted recovery claims deliberately stop further removal.
