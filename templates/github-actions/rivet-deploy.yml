@@ -1,0 +1,98 @@
+# Opt-in example: review and copy to your project's .github/workflows/rivet-deploy.yml.
+# Configure the staging environment's protection rules and implement trusted project
+# scripts `deploy` and `verify:deployment`. Verification must fail on unhealthy delivery.
+# Rivet creates deployments using a PAT or GitHub App token. Deployments created by
+# GITHUB_TOKEN do not trigger this workflow. No deployment runs merely by installing Rivet.
+name: Rivet staging deployment
+run-name: 'rivet-deploy:${{ github.event.deployment.payload.rivetOperation }}'
+on:
+  deployment: {}
+permissions: {}
+jobs:
+  deploy:
+    if: >-
+      github.event.deployment.task == 'rivet-deploy' &&
+      github.event.deployment.environment == 'staging' &&
+      github.event.deployment.payload.workflow == 'rivet-deploy.yml'
+    runs-on: ubuntu-latest
+    # Keep required reviewers/branch protection configured on this environment.
+    # GitHub may create an additional environment deployment without Rivet payload;
+    # Rivet correlates only the explicitly requested deployment and operation digest.
+    environment: staging
+    concurrency:
+      group: rivet-deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Validate deployment contract before executing project code
+        id: validate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = context.payload.deployment;
+            const payload = deployment?.payload;
+            if (!deployment || deployment.task !== 'rivet-deploy' ||
+                deployment.environment !== 'staging' ||
+                typeof deployment.sha !== 'string' || typeof deployment.ref !== 'string' ||
+                !/^[a-f0-9]{40}$/.test(deployment.sha ?? '') ||
+                !/^[a-f0-9]{40}$/.test(deployment.ref ?? '') ||
+                deployment.sha !== deployment.ref ||
+                !payload || typeof payload !== 'object' || Array.isArray(payload) ||
+                payload.workflow !== 'rivet-deploy.yml' ||
+                typeof payload.rivetOperation !== 'string' ||
+                !/^[a-f0-9]{64}$/.test(payload.rivetOperation ?? '')) {
+              core.setFailed('Invalid Rivet deployment contract.');
+            }
+      - name: Record deployment started
+        id: status-start
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              ...context.repo,
+              deployment_id: context.payload.deployment.id,
+              state: 'in_progress',
+              log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+      - name: Checkout the requested merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install project dependencies
+        run: npm ci
+      - name: Deploy using the reviewed project script
+        run: npm run deploy
+      - name: Verify the deployed application
+        run: npm run verify:deployment
+      - name: Record verified deployment success
+        id: status-success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              ...context.repo,
+              deployment_id: context.payload.deployment.id,
+              state: 'success',
+              auto_inactive: false,
+              log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+      - name: Record deployment or verification failure
+        id: status-failure
+        if: failure() && steps.validate.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              ...context.repo,
+              deployment_id: context.payload.deployment.id,
+              state: 'failure',
+              log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

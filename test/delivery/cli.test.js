@@ -4,6 +4,9 @@ import { main } from '../../src/cli/main.js';
 
 for (const args of [
   ['delivery', 'merge'],
+  ['delivery', 'deploy'],
+  ['delivery', 'deploy', '--method=merge'],
+  ['delivery', 'deploy', '--environment=production'],
   ['delivery', 'prepare', '--verification-json={}'],
   ['delivery', 'prepare', '--receipt={}'],
   ['delivery', 'status', '--remote=origin'],

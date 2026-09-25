@@ -187,6 +187,20 @@ function wireValue(write) {
       || !['merge', 'squash', 'rebase'].includes(payload.merge_method)) failProvider('invalid-request', { provider: 'github' });
     value = { sha: payload.sha, merge_method: payload.merge_method };
   }
+  else if (write.provider === 'github' && write.action === 'deploy') {
+    const keys = ['ref', 'auto_merge', 'task', 'environment', 'production_environment', 'transient_environment', 'payload'];
+    if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))
+      || !/^[a-f0-9]{40}$/.test(payload.ref) || payload.ref !== write.expectedVersion || write.expectedState !== 'merged'
+      || payload.auto_merge !== false || payload.task !== 'rivet-deploy' || payload.transient_environment !== false
+      || typeof payload.production_environment !== 'boolean'
+      || typeof payload.environment !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(payload.environment)
+      || !payload.payload || Object.keys(payload.payload).length !== 2
+      || !Object.hasOwn(payload.payload, 'rivetOperation') || !Object.hasOwn(payload.payload, 'workflow')
+      || payload.payload.rivetOperation !== write.idempotencyKey || !/^[a-f0-9]{64}$/.test(payload.payload.rivetOperation)
+      || typeof payload.payload.workflow !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.ya?ml$/.test(payload.payload.workflow))
+      failProvider('invalid-request', { provider: 'github' });
+    value = payload;
+  }
   else if (write.provider === 'gitlab' && write.action === 'merge') {
     const keys = ['sha', 'squash', 'auto_merge', 'should_remove_source_branch'];
     if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))

@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Bitbucket writes, review creation, deployment and tracker execution, and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Bitbucket writes, review creation, tracker execution and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -117,6 +117,60 @@ A timeout, rejected response or failed verification after dispatch leaves an ind
 
 The executor checks the execution/approval deadline immediately before sending the merge. A request already sent can still finish after a timeout, so its result must be reconciled.
 
+## GitHub Actions deployment
+
+After a confirmed Rivet merge, run:
+
+```sh
+rivet delivery deploy
+rivet delivery reconcile
+```
+
+Project and run detection work as for merge. Deployment requires its own interactive approval; JSON and unattended approval are unavailable. Review the merged commit, environment and production classification before approving. Reconciliation supports `--json` and never dispatches another deployment.
+
+Add a target to `.rivet/project.yaml`:
+
+```yaml
+deployment:
+  providerId: github-deployment
+  workflow: rivet-deploy.yml
+  environment: staging
+  productionEnvironment: false
+```
+
+Add a provider under `providers` in `.rivet/providers.yaml`:
+
+```yaml
+- id: github-deployment
+  kind: git-ci
+  transport: direct-api
+  mode: read-write-with-approval
+  endpoint: https://api.github.com
+  projectIds: [your-project-id]
+  resourceIds: [your-owner/your-repository]
+  capabilities: [repository-read, deployments-read, actions-read, deploy]
+  credentials:
+    tokenEnv: RIVET_GITHUB_DEPLOY_TOKEN
+```
+
+Set the token outside tracked files. It needs repository contents/pull-request/Actions read access and deployment write access. Use a PAT or GitHub App token that can trigger Actions; deployment events created with a workflow's `GITHUB_TOKEN` do not trigger another workflow. Keep project/resource scopes explicit. Read-only providers can reconcile existing requests.
+
+### Project workflow contract
+
+Review and copy the opt-in [workflow template](https://github.com/FraneAgilno/rivet/blob/main/templates/github-actions/rivet-deploy.yml) into your project's `.github/workflows/rivet-deploy.yml`. It is packaged with Rivet but never installed or executed automatically. Adapt the staging environment and trusted `deploy` and `verify:deployment` package scripts. Both commands must fail when their job fails; verification must check the deployed application. Configure required environment reviewers as appropriate. SHA-based deployment events have no branch/tag ref, so qualify environment branch restrictions for this path separately.
+
+Rivet creates a deployment for the exact confirmed merge SHA with automatic merging disabled and GitHub's default commit-status checks preserved. The workflow consumes the deployment event, checks the `rivet-deploy` task and operation identity, checks out that exact SHA, deploys, verifies and reports a correlated status. The workflow file must exist at that merge commit and be active. This uses GitHub's [deployment API](https://docs.github.com/en/rest/deployments/deployments) and [deployment event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#deployment).
+
+The project workflow and its verification logic are trusted project code. Rivet checks the configured workflow identity and commit, but does not prove arbitrary deployment scripts correct or qualify every environment policy. Other workflows or integrations listening to deployment events must filter their intended task/environment. A production target requires an explicitly reviewed project workflow and configuration.
+
+### Completion and recovery
+
+Creating a deployment is not completion. Rivet requires one deployment matching the approved operation, SHA, environment and workflow; its latest status must be successful and reference a completed successful Actions run with the matching workflow, commit and operation title. The resulting receipt records the deployed merge SHA and run URL.
+
+A running, failed, canceled, missing or ambiguous result stays indeterminate and preserves the successful merge. Use `delivery reconcile` to read the outcome. Rivet never automatically retries creation, interprets absence as proof of no effect, or retries a failed workflow. Manual investigation is required for unresolved failures. The current delivery record supports one successful deployment; multiple environments and redeployment are not implemented.
+
+Configuration is reloaded after approval; changed target or provider authority stops dispatch. Reconciliation requires the original target/provider configuration. Restore that configuration if it was changed while a deployment was pending. Contract tests cover the flow; an actual project deployment with health verification remains a live acceptance gate.
+
 ## Separate delivery stages
 
 | Recorded stage | Meaning |
@@ -133,7 +187,7 @@ The service also records each operation separately. A failed deployment or track
 
 ## Executor and approval boundary
 
-The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. The separate native GitHub and GitLab delivery executors support merge only.
+The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -156,7 +210,7 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, deployment configuration, tracker delivery and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, tracker delivery and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 
