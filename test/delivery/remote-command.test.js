@@ -306,3 +306,81 @@ test('deployment reloads disk configuration after approval and rejects changed t
     assert.equal(f.calls.dispatch,1);
   }
 });
+
+async function trackerFixture(t) {
+  const f = await fixture(t);
+  await runRemoteDelivery(f.input);
+  f.input.action='tracker-update';
+  const target={kind:'jira',issueKey:'ENG-7',issueUrl:'https://team.atlassian.net/browse/ENG-7',requestDigest:DIGEST};
+  f.input.loadTrackerTarget=async()=>target;
+  f.input.config.providers.providers.push({id:'jira-team',kind:'jira',mode:'read-write-with-approval',transport:'direct-api',
+    capabilities:['issues-read','comments-read','tracker-update'],projectIds:['demo'],resourceIds:['ENG-7'],endpoint:'https://team.atlassian.net',
+    credentials:{usernameEnv:'JIRA_USER',apiTokenEnv:'JIRA_TOKEN'}});
+  Object.assign(f.input.dependencies.env,{JIRA_USER:'fixture@example.com',JIRA_TOKEN:'dummy-fixture-value'});
+  f.input.dependencies.confirmDelivery=async state=>{
+    f.calls.confirm++;
+    assert.equal(state.proposal.action,'tracker-update');
+    assert.equal(state.proposal.payload.issueKey,'ENG-7');
+    assert.equal(state.proposal.payload.mergeCommit,BASE);
+    return true;
+  };
+  f.input.dependencies.delivery.trackerFactory=async input=>{
+    assert.deepEqual(input.target,target);
+    assert.equal(input.providerId,'jira-team');
+    assert.equal(input.mergeReceipt.commitSha,BASE);
+    const payload={...target,issueInternalId:'1007',providerId:'jira-team',endpoint:'https://team.atlassian.net',mergeCommit:BASE,
+      reviewUrl:githubRepository.url+'/pull/7',deploymentUrl:null};
+    return {payload,preview:'Merged commit '+BASE,executor:createTrustedDeliveryExecutor({provider:'github',
+      capabilities:[{action:'tracker-update',conditionalHead:true,reconcile:true}],
+      observe:async()=>({... (await f.store.read()).observation,review:{number:7,state:'merged',url:githubRepository.url+'/pull/7',headSha:SHA},observedAt:new Date().toISOString()}),
+      dispatch:async()=>{f.calls.dispatch++;throw new Error('response lost');},
+      reconcile:async op=>({status:'succeeded',receipt:{status:'succeeded',operationDigest:op.digest,headSha:SHA,evidenceDigest:DIGEST,resourceUrl:target.issueUrl,commitSha:BASE}})})};
+  };
+  return f;
+}
+test('tracker update approves the recorded source issue and reconciles with its original provider', async t=>{
+  const f=await trackerFixture(t);
+  let state=await runRemoteDelivery(f.input);
+  assert.equal(state.stage,'merged');
+  assert.equal(state.operations.at(-1).state,'indeterminate');
+  assert.equal(f.calls.dispatch,2);
+  assert.equal(f.calls.confirm,2);
+  f.input.action='reconcile';
+  f.input.config.providers.providers[1].mode='read-only';
+  f.input.config.providers.providers.push({...f.input.config.providers.providers[1],id:'another-jira'});
+  state=await runRemoteDelivery(f.input);
+  assert.equal(state.stage,'tracker-updated');
+  assert.equal(f.calls.dispatch,2);
+  assert.equal(f.calls.local,2);
+});
+test('tracker update rejects unattended writes, missing source and incorrect provider scope',async t=>{
+  for(const edit of [
+    i=>{i.flags.json=true;}, i=>{i.dependencies.terminalIsInteractive=()=>false;},
+    i=>{i.dependencies.confirmDelivery=async()=>false;},
+    i=>{i.loadTrackerTarget=async()=>{throw new Error('no tracker source');};},
+    i=>{i.config.providers.providers[1].resourceIds=['ENG-8'];},
+    i=>{i.config.providers.providers[1].mode='read-only';},
+    i=>{i.config.providers.providers[1].capabilities=['issues-read'];},
+  ]) {
+    const f=await trackerFixture(t);edit(f.input);
+    await assert.rejects(runRemoteDelivery(f.input));
+    assert.equal(f.calls.dispatch,1);
+    assert.equal(f.calls.confirm,1);
+  }
+});
+test('tracker provider revocation on disk or source drift during approval prevents dispatch',async t=>{
+  for(const sourceDrift of [false,true]) {
+    const f=await trackerFixture(t);
+    f.input.reloadConfig=async()=>{
+      const updated=structuredClone(f.input.config);updated.providers.providers[1].mode='read-only';return updated;
+    };
+    if(sourceDrift){
+      f.input.reloadConfig=async()=>f.input.config;
+      f.input.dependencies.confirmDelivery=async()=>{f.input.loadTrackerTarget=async()=>({kind:'jira',issueKey:'ENG-8',issueUrl:'https://team.atlassian.net/browse/ENG-8',requestDigest:DIGEST});return true;};
+      let n=0;const original=f.input.loadTrackerTarget;
+      f.input.loadTrackerTarget=async()=>++n===1 ? original() : {kind:'jira',issueKey:'ENG-8',issueUrl:'https://team.atlassian.net/browse/ENG-8',requestDigest:DIGEST};
+    }
+    await assert.rejects(runRemoteDelivery(f.input));
+    assert.equal(f.calls.dispatch,1);
+  }
+});

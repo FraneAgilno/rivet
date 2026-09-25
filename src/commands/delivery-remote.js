@@ -67,9 +67,9 @@ async function confirm(dependencies, preview) {
   }
 }
 
-export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, reloadConfig = async () => config }) {
-  const writing = ['merge', 'deploy'].includes(action);
-  if (!['merge', 'deploy', 'refresh', 'reconcile'].includes(action))
+export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config }) {
+  const writing = ['merge', 'deploy', 'tracker-update'].includes(action);
+  if (!['merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -83,6 +83,12 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     );
   let state = await store.read();
   if (!state) fail('Run rivet delivery prepare after verification first.');
+  const pendingAction = state.operations.find(op => ['dispatching','indeterminate'].includes(op.state))?.action;
+  if (action === 'tracker-update' || (action === 'reconcile' && pendingAction === 'tracker-update')) {
+    const {runTrackerDelivery} = await import('./delivery-tracker.js');
+    return runTrackerDelivery({action,state,store,config,flags,dependencies,reloadConfig,loadTrackerTarget,
+      confirm: preview => confirm(dependencies,preview)});
+  }
   const kind = state.candidate.repository.provider;
   if (!Object.hasOwn(ENDPOINTS, kind))
     fail('Native merge currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');

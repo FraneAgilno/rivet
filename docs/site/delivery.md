@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Bitbucket writes, review creation, tracker execution and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Bitbucket writes, review creation, tracker status transitions and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -171,6 +171,49 @@ A running, failed, canceled, missing or ambiguous result stays indeterminate and
 
 Configuration is reloaded after approval; changed target or provider authority stops dispatch. Reconciliation requires the original target/provider configuration. Restore that configuration if it was changed while a deployment was pending. Contract tests cover the flow; an actual project deployment with health verification remains a live acceptance gate.
 
+## Jira and Linear delivery summaries
+
+For a run sourced from Jira or Linear, post a separately approved delivery summary after a confirmed merge:
+
+```sh
+rivet delivery tracker-update
+rivet delivery reconcile
+```
+
+Rivet derives the ticket from the run's validated work request, including its primary host-observed tracker source. It does not accept a replacement ticket ID or free-form comment. Inline/Markdown requests have no tracker target and cannot use this command. Project/run selection is automatic when unique; use `--provider=<id>` only when provider selection is ambiguous.
+
+The preview shows the ticket URL and exact summary: merged commit, review URL, and a deployment URL only when deployment was confirmed. A unique operation marker correlates the comment with the recorded approval. This is a delivery comment, not a ticket status transition or a declaration that the entire ticket is complete.
+
+### Configure a write-capable tracker provider
+
+Use an existing direct provider or add one under `providers` in `.rivet/providers.yaml`:
+
+```yaml
+- id: jira-delivery
+  kind: jira
+  transport: direct-api
+  mode: read-write-with-approval
+  endpoint: https://your-site.atlassian.net
+  projectIds: [your-project-id]
+  resourceIds: [ENG-123]
+  capabilities: [issues-read, comments-read, tracker-update]
+  credentials:
+    usernameEnv: RIVET_JIRA_EMAIL
+    apiTokenEnv: RIVET_JIRA_TOKEN
+```
+
+For Linear, use `kind: linear`, `endpoint: https://api.linear.app` and a single `apiTokenEnv` reference for a personal API key, or `accessTokenEnv` for an OAuth token. The token needs issue/comment reads and comment creation rights. Jira Cloud uses the configured account email and API token with issue access and comment permission. Credential values stay outside tracked files. `projectIds` scope Rivet projects; optional `resourceIds` restrict ticket keys. The provider must match the recorded tracker/site and ticket.
+
+The operation posts through [Jira Cloud comments](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/) or [Linear's GraphQL API](https://linear.app/developers/graphql). State transitions, edits to descriptions, attachments and arbitrary messages are not implemented by this command.
+
+### Verified results and uncertain outcomes
+
+Approval binds the source request, immutable remote issue identity, provider endpoint, confirmed merge result and summary. Rivet reloads provider configuration and the source target after approval. Changes stop the write. It then posts once and reads comments back, requiring one exact body and operation marker on the same issue before recording `tracker-updated`.
+
+A timeout, failed read, duplicate matching comment or ambiguous response preserves the merge and leaves the tracker operation indeterminate. Reconciliation only reads; missing evidence never authorizes an automatic retry. The original provider and target remain bound during reconciliation, even when another provider is configured. Manual investigation is required if the outcome cannot be established. Comment receipts link to the ticket and record comment evidence; they do not assert a ticket status change.
+
+Jira/Linear adapters have contract and failure-path tests. Authorized live tracker posting and visibility/permission qualification remain acceptance work.
+
 ## Separate delivery stages
 
 | Recorded stage | Meaning |
@@ -210,7 +253,7 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, tracker delivery and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, tracker status transitions and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 

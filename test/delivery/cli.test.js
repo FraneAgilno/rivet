@@ -5,6 +5,10 @@ import { main } from '../../src/cli/main.js';
 for (const args of [
   ['delivery', 'merge'],
   ['delivery', 'deploy'],
+  ['delivery', 'tracker-update'],
+  ['delivery', 'tracker-update', '--ticket=ENG-8'],
+  ['delivery', 'tracker-update', '--body=message'],
+  ['delivery', 'tracker-update', '--method=merge'],
   ['delivery', 'deploy', '--method=merge'],
   ['delivery', 'deploy', '--environment=production'],
   ['delivery', 'prepare', '--verification-json={}'],
