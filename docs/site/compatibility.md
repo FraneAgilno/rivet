@@ -44,7 +44,7 @@ Native review creation, source branch publication and Bitbucket writes must be c
 
 The model registry and text delegation support Anthropic, OpenAI, Gemini, Ollama and configurable OpenAI-compatible protocols. Fixture coverage establishes request, output and policy handling; it does not establish live account compatibility. Live text delegation through API/local profiles remains unqualified. Required evidence includes a provider outside Anthropic/OpenAI, a local model and cross-harness delegation. Monetary caps are not currently enforced by text delegation; see [model limits](./models.md#limits-and-current-scope).
 
-Shared Obsidian memory is deferred from the current implementation pass and remains unimplemented and unqualified. Two-user continuity, sync conflicts, offline recovery and access changes require their own evidence.
+Shared Obsidian memory is post-MVP and remains unimplemented and unqualified. Two-user continuity, sync conflicts, offline recovery and access changes require their own evidence.
 
 ## Candidate evidence
 

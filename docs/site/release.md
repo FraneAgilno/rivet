@@ -60,7 +60,7 @@ Keep macOS/Linux and Node 22/24 artifact results distinct from live authenticate
 
 Start with a small pilot. The implementation plan requires five participants who did not build Rivet. At least four must reach a first valid plan within ten minutes after prerequisites/authentication, and every participant must finish a reviewable task. Record total elapsed time and every intervention, including authentication delays and environment repairs.
 
-Run the task-to-checks-to-review-to-authorized-delivery journey with conversational and terminal entry points represented. Live provider delivery, deployment and model profiles require their own evidence. Shared Obsidian memory is deferred from the current implementation pass; its eventual task handoff and two-user continuity require separate implementation and qualification before being advertised. Fix observed failures and repeat the affected scenarios before wider distribution.
+Run the task-to-checks-to-review-to-authorized-delivery journey with conversational and terminal entry points represented. Live provider delivery, deployment and model profiles require their own evidence. Shared Obsidian memory is post-MVP; its eventual task handoff and two-user continuity require separate implementation and qualification before being advertised. Fix observed failures and repeat the affected scenarios before wider distribution.
 
 After publication, fetch the artifact from the actual release URL as a new user would, verify its checksum, and rerun installation checks. A local pack or authenticated maintainer download alone cannot close this gate. Report unresolved limitations with the candidate; do not label it production-ready based only on fixture CI.
 

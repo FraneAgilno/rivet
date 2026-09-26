@@ -1,8 +1,8 @@
 # Memory and project protocols
 
-These are separate capabilities. Project protocols are implemented; shared memory is deferred from the current implementation pass.
+These are separate capabilities. Project protocols are implemented; shared memory is post-MVP.
 
-## Shared memory
+## Shared memory (post-MVP)
 
 Obsidian is the first planned memory integration. Team decisions, lessons, and handoffs live in a dedicated vault outside the application repository. Records retain project scope, provenance, and sync status. A local write must not be described as shared until the selected synchronization path confirms it.
 

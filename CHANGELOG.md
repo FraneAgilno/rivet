@@ -16,6 +16,6 @@
 
 ### Qualification and remaining work
 
-The candidate is not a completed pilot or a production-readiness claim. Full host/desktop workflows, independent first-user trials, authenticated integration and delivery scenarios, broader live model profiles, and actual published-channel installation require separate evidence. Shared Obsidian memory is deferred from the current implementation pass and remains unimplemented. Remaining work is tracked in the published status documentation.
+The candidate is not a completed pilot or a production-readiness claim. Full host/desktop workflows, independent first-user trials, authenticated integration and delivery scenarios, broader live model profiles, and actual published-channel installation require separate evidence. Shared Obsidian memory is post-MVP and remains unimplemented. Remaining work is tracked in the published status documentation.
 
 Package name remains `@agilno/rivet`, with `private: true` and `UNLICENSED`. No npm release is published by the candidate workflow. See [release guidance](https://franeagilno.github.io/rivet/release.html) and the [compatibility matrix](https://franeagilno.github.io/rivet/compatibility.html).
