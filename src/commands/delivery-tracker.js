@@ -7,16 +7,17 @@ import { createAuthorityEnvelope } from '../policy/authority.js';
 import { createApprovalReceipt, createApprovalRegistry } from '../policy/approvals.js';
 
 function fail(message, code = 'MISSING_CONFIGURATION') { throw new CliError(message, code); }
-function selectProvider(config, target, selectedId, writing) {
+export function selectProvider(config, target, selectedId, writing, operation = 'tracker-update') {
+  const reading = operation === 'tracker-transition' ? 'transitions-read' : 'comments-read';
   const matches = config.providers.providers.filter(provider =>
     provider.kind === target.kind && provider.mode !== 'disabled' &&
     (!writing || provider.mode === 'read-write-with-approval') &&
     (provider.transport ?? 'direct-api') === 'direct-api' &&
-    ['issues-read', 'comments-read', ...(writing ? ['tracker-update'] : [])].every(cap => provider.capabilities.includes(cap)) &&
+    ['issues-read', reading, ...(writing ? [operation] : [])].every(cap => provider.capabilities.includes(cap)) &&
     (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
     (!provider.resourceIds?.length || provider.resourceIds.includes(target.issueKey)) &&
     (selectedId === undefined || selectedId === provider.id));
-  if (matches.length !== 1) fail('Configure one scoped direct Jira/Linear provider with issues-read and comments-read. Posting also requires tracker-update and read-write-with-approval. Use --provider when ambiguous.');
+  if (matches.length !== 1) fail(`Configure one scoped direct Jira/Linear provider with issues-read and ${reading}. Writing also requires ${operation} and read-write-with-approval. Use --provider when ambiguous.`);
   const provider = matches[0];
   const validEndpoint = target.kind === 'jira'
     ? /^https:\/\/[a-z0-9][a-z0-9-]*\.atlassian\.net$/.test(provider.endpoint ?? '') && target.issueUrl === `${provider.endpoint}/browse/${target.issueKey}`
@@ -24,7 +25,7 @@ function selectProvider(config, target, selectedId, writing) {
   if (!validEndpoint) fail('Tracker endpoint must match the recorded Jira Cloud site or the Linear API.');
   return provider;
 }
-function authHeaders(provider, env) {
+export function authHeaders(provider, env) {
   const credentials = provider.credentials ?? {}, keys = Object.keys(credentials);
   const value = name => {
     if (typeof name !== 'string' || !/^[A-Z][A-Z0-9_]{1,127}$/.test(name)) fail('Configure tracker credential environment references.');

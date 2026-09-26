@@ -178,6 +178,20 @@ function wireValue(write) {
     id: write.resourceId, status: 'current', title: payload.title,
     body: { representation: 'storage', value: payload.body }, version: { number: payload.version },
   };
+  else if (['jira', 'linear'].includes(write.provider) && write.action === 'tracker-transition') {
+    const jira = write.provider === 'jira';
+    const identifier = jira ? /^[1-9][0-9]{0,19}$/ : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const keys = jira ? ['transitionId'] : ['issueId', 'stateId'];
+    if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))
+      || !identifier.test(write.resourceId) || !identifier.test(write.expectedState)
+      || !/^[a-f0-9]{64}$/.test(write.idempotencyKey) || !Number.isFinite(Date.parse(write.expectedVersion))
+      || (jira ? !identifier.test(payload.transitionId) : payload.issueId !== write.resourceId || !identifier.test(payload.stateId)))
+      failProvider('invalid-request', { provider: write.provider });
+    value = jira ? { transition: { id: payload.transitionId } } : {
+      query: 'mutation RivetTrackerTransition($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { id } } }',
+      variables: { id: payload.issueId, input: { stateId: payload.stateId } },
+    };
+  }
   else if (write.provider === 'linear' && write.action === 'delivery-comment') {
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const lines = typeof payload?.body === 'string' ? payload.body.split('\n') : [];

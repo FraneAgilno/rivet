@@ -384,3 +384,98 @@ test('tracker provider revocation on disk or source drift during approval preven
     assert.equal(f.calls.dispatch,1);
   }
 });
+
+async function transitionFixture(t) {
+  const f = await trackerFixture(t);
+  f.input.action = 'tracker-transition';
+  f.input.config.providers.providers[1].capabilities.push('transitions-read', 'tracker-transition');
+  f.lines = []; f.input.dependencies.output.log = line => f.lines.push(line);
+  f.destinations = [
+    {id:'31', name:'Complete work', state:{id:'3',name:'Done',type:'done'}, eligible:true},
+    {id:'32', name:'Approve work', state:{id:'3',name:'Done',type:'done'}, eligible:true},
+    {id:'33', name:'Complete with resolution', state:{id:'3',name:'Done',type:'done'}, eligible:false,reason:'requires-fields-or-screen'},
+  ];
+  f.input.dependencies.selectTrackerDestination = async choices => { assert.equal(choices.length,2); return 1; };
+  f.input.dependencies.confirmDelivery = async state => {
+    f.calls.confirm++; assert.equal(state.proposal.action,'tracker-transition');
+    assert.equal(state.proposal.payload.destination.id,'32'); return true;
+  };
+  f.input.dependencies.delivery.transitionFactory = async input => {
+    f.calls.intake = (f.calls.intake ?? 0)+1;
+    const target = await f.input.loadTrackerTarget();
+    const status={target,current:{id:'1',name:'In progress',type:'indeterminate'},destinations:f.destinations};
+    const prepared = id => {
+      f.selected=id;
+      const payload=input.persistedPayload ?? {...target,providerId:input.providerId,endpoint:input.baseUrl,mergeCommit:BASE,destination:f.destinations.find(d=>d.id===id)};
+      return {payload,alreadyDesired:f.alreadyDesired??false,preview:'ENG-7: In progress -> Done (Approve work)',executor:createTrustedDeliveryExecutor({provider:'github',
+        capabilities:[{action:'tracker-transition',conditionalHead:false,verifiesDesiredState:true,reconcile:true}],
+        observe:async()=>({... (await f.store.read()).observation,review:{number:7,state:'merged',url:githubRepository.url+'/pull/7',headSha:SHA},observedAt:new Date().toISOString()}),
+        dispatch:async op=>{f.calls.dispatch++;if(f.lost)throw new Error('lost response');return {status:'succeeded',operationDigest:op.digest,headSha:SHA,evidenceDigest:DIGEST,resourceUrl:target.issueUrl,commitSha:BASE};},
+        reconcile:async op=>({status:'succeeded',receipt:{status:'succeeded',operationDigest:op.digest,headSha:SHA,evidenceDigest:DIGEST,resourceUrl:target.issueUrl,commitSha:BASE}})})};
+    };
+    return input.persistedPayload ? prepared(input.persistedPayload.destination.id) : {status,select:async id=>prepared(id)};
+  };
+  return f;
+}
+test('tracker-status reads destinations without changing the journal or requesting write approval',async t=>{
+  const f=await transitionFixture(t), before=await f.store.read();
+  f.input.action='tracker-status';f.input.flags.json=true;
+  f.input.dependencies.terminalIsInteractive=()=>false;
+  f.input.config.providers.providers[1].mode='read-only';
+  f.input.config.providers.providers[1].capabilities=['issues-read','transitions-read'];
+  const result=await runRemoteDelivery(f.input);
+  assert.equal(result.trackerStatus.current.name,'In progress');
+  assert.deepEqual(await f.store.read(),before);assert.equal(f.calls.confirm,1);assert.equal(f.calls.dispatch,1);
+});
+test('numbered tracker choice keeps equal destination names distinct and records confirmed state',async t=>{
+  const f=await transitionFixture(t),result=await runRemoteDelivery(f.input);
+  assert.equal(f.selected,'32');assert.equal(result.stage,'tracker-status-confirmed');
+  assert.equal(result.operations.at(-1).action,'tracker-transition');
+  assert.equal(f.calls.dispatch,2);assert.equal(f.calls.confirm,2);
+  assert.ok(f.lines.some(line=>line.includes('1. Done')&&line.includes('Complete work')));
+  assert.ok(f.lines.some(line=>line.includes('2. Done')&&line.includes('Approve work')));
+  assert.ok(f.lines.some(line=>line.includes('precheck')&&line.includes('atomic')));
+});
+test('tracker transition rejects unattended, invalid selection, declined approval and post-approval drift',async t=>{
+  for(const edit of [
+    f=>{f.input.flags.json=true;}, f=>{f.input.dependencies.terminalIsInteractive=()=>false;},
+    f=>{f.input.dependencies.selectTrackerDestination=async()=>null;},
+    f=>{f.input.dependencies.selectTrackerDestination=async()=>99;},
+    f=>{f.input.dependencies.confirmDelivery=async()=>false;},
+    f=>{f.input.reloadConfig=async()=>{const c=structuredClone(f.input.config);c.providers.providers[1].mode='read-only';return c;};},
+    f=>{let approved=false;const original=f.input.loadTrackerTarget;f.input.dependencies.confirmDelivery=async()=>{approved=true;return true;};f.input.loadTrackerTarget=async()=>approved?{kind:'jira',issueKey:'ENG-8',issueUrl:'https://team.atlassian.net/browse/ENG-8',requestDigest:DIGEST}:original();},
+  ]) {const f=await transitionFixture(t);edit(f);await assert.rejects(runRemoteDelivery(f.input));assert.equal(f.calls.dispatch,1);}
+});
+test('already desired tracker state is a no-op without proposal, approval or fabricated receipt',async t=>{
+  const f=await transitionFixture(t),before=await f.store.read();f.alreadyDesired=true;
+  const result=await runRemoteDelivery(f.input);
+  assert.equal(result.trackerTransitionNoop,true);assert.deepEqual(await f.store.read(),before);
+  assert.equal(f.calls.dispatch,1);assert.equal(f.calls.confirm,1);
+});
+test('pending tracker transition reopens for read-only reconciliation and is never resent',async t=>{
+  const f=await transitionFixture(t);f.lost=true;
+  let state=await runRemoteDelivery(f.input);assert.equal(state.operations.at(-1).state,'indeterminate');
+  await assert.rejects(runRemoteDelivery(f.input));assert.equal(f.calls.dispatch,2);
+  f.input.action='reconcile';f.input.config.providers.providers[1].mode='read-only';
+  state=await runRemoteDelivery(f.input);assert.equal(state.stage,'tracker-status-confirmed');assert.equal(f.calls.dispatch,2);
+});
+test('tracker comments and transitions preserve both receipts in either order',async t=>{
+  for(const transitionFirst of [true,false]) {
+    const f=await transitionFixture(t),transitionConfirm=f.input.dependencies.confirmDelivery;
+    const comment=async()=>{
+      f.input.action='tracker-update';f.input.dependencies.confirmDelivery=async()=>true;
+      await runRemoteDelivery(f.input);f.input.action='reconcile';await runRemoteDelivery(f.input);
+    };
+    const transition=async()=>{f.input.action='tracker-transition';f.input.dependencies.confirmDelivery=transitionConfirm;await runRemoteDelivery(f.input);};
+    if(transitionFirst){await transition();await comment();}else{await comment();await transition();}
+    const state=await f.store.read();assert.equal(state.stage,'tracker-status-confirmed');
+    assert.deepEqual(state.operations.filter(op=>op.state==='succeeded').map(op=>op.action).sort(),['merge','tracker-transition','tracker-update']);
+  }
+});
+
+test('indistinguishable tracker destinations fail closed without exposing an opaque-ID selector',async t=>{
+  const f=await transitionFixture(t);f.destinations[1]={...f.destinations[0],id:'32'};
+  let selected=false;f.input.dependencies.selectTrackerDestination=async()=>{selected=true;return 0;};
+  await assert.rejects(runRemoteDelivery(f.input));
+  assert.equal(selected,false);assert.equal(f.calls.dispatch,1);
+});
