@@ -9,7 +9,7 @@ import { createDeliveryService } from '../delivery/service.js';
 function fail(message, code = 'REPOSITORY_CONFLICT') {
   throw new CliError(message, code);
 }
-const ENDPOINTS = Object.freeze({ github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4' });
+const ENDPOINTS = Object.freeze({ github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4', bitbucket: 'https://api.bitbucket.org/2.0' });
 function providerFor(config, repository, flags, writing, operation = 'merge') {
   const providers = config.providers.providers.filter(
     (provider) =>
@@ -41,6 +41,8 @@ function headers(provider, environment, kind) {
     !/^[A-Z][A-Z0-9_]{1,127}$/.test(credentials[keys[0]])
   )
     fail('Configure one token environment reference for repository delivery.', 'MISSING_CONFIGURATION');
+  if (kind === 'bitbucket' && keys[0] !== 'accessTokenEnv')
+    fail('Bitbucket review creation requires accessTokenEnv for a Bearer access token. API tokens use a different authentication scheme and are not supported here.', 'MISSING_CONFIGURATION');
   const token = environment[credentials[keys[0]]];
   if (typeof token !== 'string' || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token))
     fail('The configured repository token is missing or invalid.', 'PROVIDER_UNAVAILABLE');
@@ -101,7 +103,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   }
   const kind = state.candidate.repository.provider;
   if (!Object.hasOwn(ENDPOINTS, kind))
-    fail('Native repository delivery currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');
+    fail('Native repository delivery supports GitHub.com, GitLab.com and Bitbucket Cloud review creation.', 'PROVIDER_UNAVAILABLE');
   if (action === 'merge' && kind === 'gitlab' && flags.method !== undefined && flags.method !== 'merge')
     fail(
       'GitLab currently supports --method=merge only; squash and rebase are unavailable.',
@@ -112,6 +114,8 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   const operation = action === 'reconcile'
     ? state.operations.find(op => ['dispatching', 'indeterminate'].includes(op.state))?.action
     : action;
+  if (kind === 'bitbucket' && operation !== 'review-request')
+    fail('Native Bitbucket delivery currently supports review creation and its reconciliation only. Native merge and deployment are unavailable.', 'PROVIDER_UNAVAILABLE');
   const deploying = operation === 'deploy';
   const reviewing = operation === 'review-request';
   let deployment;
@@ -131,7 +135,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   const executorFactory =
     (deploying ? dependencies.delivery?.deploymentExecutorFactory : reviewing ? dependencies.delivery?.reviewExecutorFactory : dependencies.delivery?.executorFactory) ??
     (deploying ? (await import('../delivery/github-deployment.js')).createGithubDeploymentExecutor : reviewing
-      ? (kind === 'github' ? (await import('../delivery/github-review.js')).createGithubReviewExecutor : (await import('../delivery/gitlab-review.js')).createGitlabReviewExecutor) :
+      ? (kind === 'github' ? (await import('../delivery/github-review.js')).createGithubReviewExecutor : kind === 'bitbucket' ? (await import('../delivery/bitbucket-review.js')).createBitbucketReviewExecutor : (await import('../delivery/gitlab-review.js')).createGitlabReviewExecutor) :
     (kind === 'github'
       ? (await import('../delivery/github.js')).createGithubDeliveryExecutor
       : (await import('../delivery/gitlab.js')).createGitlabDeliveryExecutor));
