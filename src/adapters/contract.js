@@ -205,6 +205,24 @@ function wireValue(write) {
   }
   else if (write.provider === 'github' && write.action === 'comment') value = { body: payload.body };
   else if (write.provider === 'github' && write.action === 'pr') value = payload;
+  else if (['github', 'gitlab'].includes(write.provider) && write.action === 'review-request') {
+    const github = write.provider === 'github';
+    const keys = github ? ['title', 'body', 'head', 'base', 'draft', 'maintainer_can_modify']
+      : ['title', 'description', 'source_branch', 'target_branch', 'remove_source_branch', 'squash'];
+    const body = github ? payload?.body : payload?.description;
+    const source = github ? payload?.head : payload?.source_branch;
+    const target = github ? payload?.base : payload?.target_branch;
+    const branch = value => typeof value === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._/-]{0,254}$/.test(value)
+      && !value.includes('..') && !value.includes('//');
+    if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))
+      || write.expectedState !== 'absent' || !/^[a-f0-9]{40}$/.test(write.expectedVersion) || !/^[a-f0-9]{64}$/.test(write.idempotencyKey)
+      || typeof payload.title !== 'string' || payload.title.length < 1 || payload.title.length > 256 || /[\u0000-\u001f\u007f]/.test(payload.title)
+      || typeof body !== 'string' || body.length > 32100 || !body.endsWith(`\n\n<!-- rivet-review-operation:${write.idempotencyKey} -->`)
+      || !branch(source) || !branch(target) || source === target
+      || (github ? payload.draft !== false || payload.maintainer_can_modify !== false : payload.remove_source_branch !== false || payload.squash !== false))
+      failProvider('invalid-request', { provider: write.provider });
+    value = payload;
+  }
   else if (write.provider === 'github' && write.action === 'merge') {
     if (!payload || Object.keys(payload).length !== 2
       || !Object.hasOwn(payload, 'sha') || !Object.hasOwn(payload, 'merge_method')

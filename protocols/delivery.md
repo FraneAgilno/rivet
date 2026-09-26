@@ -12,7 +12,7 @@ Review creation, merge, deployment and tracker updates are separate actions. Eac
 
 ## Stop conditions
 
-Stop for changed source or integration state, unknown required-check/review policy, failed CI, missing review, an unsupported executor capability, or absent action-specific authority. The CLI supports prepare/status and GitHub/GitLab refresh/interactive merge/reconcile. Native merge requires an existing same-repository exact-head PR/MR and the documented provider policy subset. GitLab supports merge commits only; Bitbucket writes are unavailable. GitHub Actions deployment is available through interactive delivery deploy with project.deployment configuration and a trusted project workflow. Jira/Linear delivery-summary comments are available through interactive delivery tracker-update. Tracker status transitions and live delivery qualification remain pending.
+Stop for changed source or integration state, an unsupported executor capability, or absent action-specific authority. Merging also stops for unknown required-check/review policy, failed CI or a missing review. The CLI supports prepare/status and GitHub/GitLab interactive review creation, refresh/interactive merge/reconcile. Native merge requires an existing same-repository exact-head PR/MR and the documented provider policy subset. GitLab supports merge commits only; Bitbucket writes are unavailable. GitHub Actions deployment is available through interactive delivery deploy with project.deployment configuration and a trusted project workflow. Jira/Linear delivery-summary comments are available through interactive delivery tracker-update. Tracker status transitions and live delivery qualification remain pending.
 
 ## External outcomes
 
@@ -31,3 +31,7 @@ Use `rivet delivery deploy` only after a confirmed merge. Show the actual merge 
 ## Tracker delivery summary
 
 Use `rivet delivery tracker-update` to append the previewed delivery summary to the run's recorded Jira/Linear source ticket after a confirmed merge. Require separate human approval. Include deployment only when confirmed. Never substitute another ticket, arbitrary text or a workflow status transition. Success requires exact comment read-back on the bound issue; reconcile uncertain outcomes without reposting. Preserve earlier merge/deployment evidence when tracker work fails.
+
+## Review creation
+
+Use `rivet delivery review` only when the accepted integration branch is already published at the verified SHA. Preview and obtain approval for the exact generated title/body, correlation marker, repository and branches. Creation does not push branches or authorize merging. The APIs select branches without an atomic SHA precondition; disclose that limitation and require strict readback before success. A concurrent change can leave an external review with an unconfirmed local result. Reconcile indeterminate outcomes through read-only marker lookup; never repost on absence. Repository or branch drift, content mismatch, multiple matches and deleted branches leave the outcome unknown. Keep merge policy checks separate.
