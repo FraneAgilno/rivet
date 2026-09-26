@@ -17,6 +17,7 @@ import {
 } from '../commands/install.js';
 import { deliveryCommand } from '../commands/delivery.js';
 import { repositoriesCommand } from '../commands/repositories.js';
+import { defaultIntegrationSetupPrompt } from './integration-setup-prompt.js';
 import { integrationsCommand } from '../commands/integrations.js';
 import { doctor } from '../commands/doctor.js';
 import { supportCommand } from '../commands/support.js';
@@ -67,6 +68,7 @@ const USAGE = `Usage:
   rivet delivery review [--project=<path>] [--run=<id>] [--provider=<id>]
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
+  rivet integrations setup [--project=<path>]  Guide local read-only provider configuration
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
   rivet models role --roles=<file> --role=<name> [--json]
   rivet models delegate "prompt" --roles=<file> --role=<name> [--project=<path>]
@@ -257,6 +259,7 @@ function resolveDependencies(overrides = {}) {
     runGit: overrides.runGit,
     setup: overrides.setup,
     integrationHost: overrides.integrationHost,
+    integrationSetupPrompt: overrides.integrationSetupPrompt ?? defaultIntegrationSetupPrompt,
     repositories: overrides.repositories,
     resolveCommandExecutable: overrides.resolveCommandExecutable,
     commands: {
