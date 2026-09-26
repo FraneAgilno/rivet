@@ -11,6 +11,7 @@ Rivet is an alpha. An implemented adapter, a passing fixture, and a successful t
 | Windows native | Spawned process adapters unsupported | Native platform implementation and qualification |
 | WSL | Unqualified | Separately qualified Linux installation, processes, filesystem and complete task checks |
 | GitHub source install | Operator-tested on macOS with npm 10.9.4; requires `--install-links` | Independent onboarding; see [first-use evidence](./first-task-trial.md) |
+| Project-only pinned runtime | macOS fresh-home tarball and Git-based npm-exec lifecycle without a global CLI; source and private dependency integrity checks | Public channel and independent collaborator onboarding |
 | Versioned release artifact | Release qualification pending | Downloaded artifact checksum, installation lifecycle and candidate evidence |
 
 Node 22 is the minimum declared runtime. A newer runtime is not automatically qualified by satisfying that minimum. CI records the actual runtime versions used in each run. Dependencies are resolved during installation; a Rivet tarball checksum does not make the dependency installation fully reproducible.
@@ -36,7 +37,7 @@ The observed versions are evidence, not a fixed version allowlist. Spawned adapt
 | GitHub / GitLab / Bitbucket inspection | Common read contracts and public repository/branch smoke | Authenticated private sandbox flows; see [repository matrix](./repositories.md) |
 | GitHub / GitLab merge | Exact-head merge executors and governed lifecycle fixtures for documented policy subsets | Authorized sandbox delivery |
 | GitHub Actions deployment | Approved workflow dispatch and correlated outcome verification fixtures | One configured nonproduction deployment |
-| Jira / Linear delivery comments | Separate approval, exact-content readback and reconciliation fixtures | Authorized live comments; status transitions remain separate work |
+| Jira / Linear delivery comments and status transitions | Separate approval, exact-content or target-status readback and reconciliation fixtures | Authorized live comments and status changes |
 
 Native review creation and title/description updates, source branch publication and Bitbucket writes must be checked against the current [delivery documentation](./delivery.md). A fixture for one provider does not qualify the others. Custom repository hosts and enterprise/self-managed editions require separate qualification.
 

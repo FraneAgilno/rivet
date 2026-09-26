@@ -629,6 +629,10 @@ export async function checkForUpdate(dependencies) {
 }
 
 export async function install(parsed, dependencies) {
+  if (parsed.flags['project-runtime']) {
+    const { projectRuntimeInstall } = await import('../install/project-runtime.js');
+    return projectRuntimeInstall(parsed, dependencies);
+  }
   if (parsed.flags.minimal) {
     const { managedInstall } = await import('../install/managed.js');
     return managedInstall(parsed, dependencies);

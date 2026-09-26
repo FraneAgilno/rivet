@@ -97,6 +97,8 @@ const USAGE = `Usage:
   rivet work verify <run-id> --project=<path> --expected-version=<n> --expected-runtime-version=<n> [--json]
   rivet work recover <run-id> --project=<path> [--json]
   rivet work status <run-id> --project=<path> [--json]
+  rivet install --project-runtime [--project=<path>] [--target=both|claude|codex] [--json] Pin a private project runtime and entry skills
+  rivet uninstall --project-runtime [--project=<path>] [--target=both|claude|codex] [--json] Remove owned project reference/skills; retain cache
   rivet install --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet uninstall --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet install --global           Interactive — pick which skills to install (global)
@@ -485,7 +487,7 @@ export async function main(argv, overrides = {}) {
     if (!handler) {
       throw new CliError(`Command '${parsed.command}' is not implemented.`, 'INVALID_INPUT');
     }
-    if (parsed.flags.json && LEGACY_COMMANDS.has(parsed.command) && parsed.flags.minimal !== true) {
+    if (parsed.flags.json && LEGACY_COMMANDS.has(parsed.command) && parsed.flags.minimal !== true && parsed.flags['project-runtime'] !== true) {
       throw new CliError(
         `JSON output is not available for legacy command '${parsed.command}'.`,
         'INVALID_INPUT',

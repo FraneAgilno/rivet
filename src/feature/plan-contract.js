@@ -73,7 +73,8 @@ function safeOwnedPath(path, sensitivePaths) {
   if (parts.some(part => !part || part === '.' || part === '..' || part.endsWith('.') || part.endsWith(' ')
     || WINDOWS_RESERVED.test(part))) fail('owned-path-invalid');
   const folded = parts.map(part => part.toLowerCase()).join('/');
-  if (folded === '.git' || folded.startsWith('.git/') || folded === '.rivet' || folded.startsWith('.rivet/')) fail('owned-path-protected');
+  if (folded === '.git' || folded.startsWith('.git/') || folded === '.rivet' || folded.startsWith('.rivet/')
+    || folded === '.rivet.cjs' || folded.startsWith('.rivet.cjs/')) fail('owned-path-protected');
   for (const pattern of sensitivePaths) {
     const prefix = pattern.replaceAll('\\', '/').split('*', 1)[0].replace(/\/$/, '').toLowerCase();
     if (folded === prefix || folded.startsWith(`${prefix}/`)) fail('owned-path-protected');

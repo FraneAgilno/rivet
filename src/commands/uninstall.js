@@ -115,6 +115,10 @@ async function resolveTargets(parsed, dependencies) {
 }
 
 export async function uninstall(parsed, dependencies) {
+  if (parsed.flags['project-runtime']) {
+    const { projectRuntimeInstall } = await import('../install/project-runtime.js');
+    return projectRuntimeInstall(parsed, dependencies);
+  }
   if (parsed.flags.minimal) {
     const { managedInstall } = await import('../install/managed.js');
     return managedInstall(parsed, dependencies);

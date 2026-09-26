@@ -32,11 +32,11 @@ const LEGACY_OPTIONS = {
     valued: new Set(['project']),
   },
   install: {
-    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal']),
+    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal', 'project-runtime']),
     valued: new Set(['target', 'project']),
   },
   uninstall: {
-    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal']),
+    boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal', 'project-runtime']),
     valued: new Set(['target', 'project']),
   },
 };
