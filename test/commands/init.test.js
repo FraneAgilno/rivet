@@ -189,8 +189,8 @@ test('reports unsupported Node versions', async () => {
   assert.equal(result.node.compatible, false);
 });
 
-test('supports Node 18 and rejects Node 17 for the v2 runtime contract', async t => {
-  for (const [major, supported] of [[18, true], [17, false]]) {
+test('diagnostics require Node 22 and reject older installation runtimes', async t => {
+  for (const [major, supported] of [[18, false], [20, false], [21, false], [22, true], [24, true]]) {
     await t.test(`Node ${major}`, async () => {
       const result = await discoverTools({}, {
         runner: async command => ({

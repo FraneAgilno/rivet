@@ -32,7 +32,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Versioned package distribution and discovery beyond bounded immediate child packages.
 - Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Direct JSON inputs remove the temporary-file obstruction from earlier noninteractive trials; private Git state/worktree permissions and live lifecycle trials still need validation. Direct adapters check required capabilities without a version allowlist; Claude `2.1.274` and Codex `0.155.0-alpha.16` have local terminal trials on macOS. Desktop host lifecycle qualification remains open.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
-- Shared Obsidian memory.
+- Shared Obsidian memory, deferred from the current implementation pass.
 - Live provider qualification for the integration registry and context intake.
 - Remaining repository delivery operations and live qualification of model executors and cross-harness routing.
 - External pilot, evaluations, and release qualification.

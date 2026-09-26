@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 
-export const SUPPORTED_NODE_MAJOR = 18;
+export const SUPPORTED_NODE_MAJOR = 22;
 export const RECOMMENDED_NODE_MAJOR = 22;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 3_000;
 export const DEFAULT_COMMAND_OUTPUT_BYTES = 16 * 1024;
