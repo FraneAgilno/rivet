@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com, GitLab.com and Bitbucket Cloud executors can create a review request for an already published verified branch. GitHub/GitLab merging uses the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket merging and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com, GitLab.com and Bitbucket Cloud executors can create a review request for an already published verified branch and separately update its title and description. GitHub/GitLab merging uses the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket merging and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -86,6 +86,20 @@ The executor binds repository and workspace UUIDs, repository path/URL, exact so
 Existing matching reviews in open, merged, declined or superseded states block another creation. Reconciliation searches those states with bounded pagination and rejects altered pagination destinations, ambiguous markers or changed repository/branch facts. It never sends another creation request. A matching closed review can establish creation only; it is not a merge receipt. Concurrent external creation remains possible between discovery and the POST, so an ambiguous result stays indeterminate.
 
 Bitbucket pull-request creation does not enable `delivery merge`; the missing qualified source-SHA merge precondition remains a separate limitation. Authenticated Bitbucket creation and recovery still require live sandbox qualification.
+
+## Update a review title and description
+
+```sh
+rivet delivery review-update --title="Updated review title" --body="Updated review description"
+```
+
+This separately approved operation updates an existing GitHub pull request, GitLab merge request or Bitbucket Cloud pull request. The selected provider needs `repository-read` and `review-update` capabilities with `mode: read-write-with-approval`. It uses the review attached to the prepared candidate or recorded by Rivet's successful creation operation. It does not select an unrelated review or change branches, draft state, closure or merge state. GitLab draft title prefixes and standalone quick-action lines are rejected because they can trigger additional provider actions.
+
+Supply both fields, including an empty `--body=""` when intentionally clearing the description. The preview shows the exact existing and proposed metadata, repository, review and verified commit. An existing Rivet creation marker is preserved in the proposed body before approval. A different supplied marker is rejected. The command requires an interactive terminal; project, run and provider selection follow the usual delivery rules.
+
+Approval binds the prior metadata, proposed metadata, repository identity, review number and source/target branch facts. Rivet rechecks them before sending one update and reads the result back. These APIs do not provide a shared atomic condition on the old metadata and branch facts. A concurrent edit can still race with the write and be overwritten; Rivet reports success only when readback matches the approved desired metadata and identity. This confirms the observed result without claiming exclusive causation or an atomic compare-and-swap.
+
+After an uncertain response, use `rivet delivery reconcile`. It only reads the same review. The exact approved desired state can confirm completion; another state remains indeterminate and never triggers a second write automatically. A later intentional update needs its own preview and approval. Updating metadata returns the delivery stage to review requested, so merge readiness must be refreshed separately. Live permissions and concurrency behavior still require sandbox qualification for each provider.
 
 ## Merge an existing GitHub pull request
 
@@ -313,11 +327,11 @@ Live transition permissions, workflow behavior and outcome visibility still requ
 | Tracker updated | A confirmed tracker comment is recorded. Inspect operation history for other outcomes. |
 | Tracker status confirmed | The recorded ticket was observed in the approved destination status. |
 
-The service also records each operation separately. A failed deployment or tracker update preserves an earlier successful merge. An unknown outcome remains visible until reconciled. Completing a tracker update does not prevent a later deployment; already successful actions cannot be repeated in the same delivery record. Inspect operation history to see both outcomes regardless of their order.
+The service also records each operation separately. A failed deployment or tracker update preserves an earlier successful merge. An unknown outcome remains visible until reconciled. Completing a tracker update does not prevent a later deployment; successful review metadata updates can be followed by a new separately approved update; other successful actions cannot be repeated in the same delivery record. Inspect operation history to see both outcomes regardless of their order.
 
 ## Executor and approval boundary
 
-The application service supports separate branch-publication, review-request, merge, deployment, tracker-update and tracker-transition operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
+The application service supports separate branch-publication, review-request, review-update, merge, deployment, tracker-update and tracker-transition operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -344,4 +358,4 @@ The CLI does not accept supplied success receipts or raw verification JSON. Bitb
 
 ## Bitbucket delivery boundary
 
-Bitbucket Cloud supports [read-only repository inspection](./repositories.md), create-only branch publication and separately approved pull-request creation. Native merging remains unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
+Bitbucket Cloud supports [read-only repository inspection](./repositories.md), create-only branch publication, separately approved pull-request creation and title/description updates. Native merging remains unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).

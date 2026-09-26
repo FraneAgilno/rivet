@@ -219,6 +219,14 @@ function wireValue(write) {
   }
   else if (write.provider === 'github' && write.action === 'comment') value = { body: payload.body };
   else if (write.provider === 'github' && write.action === 'pr') value = payload;
+  else if (['github', 'gitlab', 'bitbucket'].includes(write.provider) && write.action === 'review-update') {
+    const bodyKey = write.provider === 'github' ? 'body' : 'description';
+    if (!payload || Object.keys(payload).length !== 2 || !Object.hasOwn(payload, 'title') || !Object.hasOwn(payload, bodyKey)
+      || write.expectedState !== 'open' || !/^[a-f0-9]{40}$/.test(write.expectedVersion) || !/^[a-f0-9]{64}$/.test(write.idempotencyKey)
+      || typeof payload.title !== 'string' || !payload.title.trim() || Buffer.byteLength(payload.title) > 256 || /[\u0000-\u001f\u007f]/.test(payload.title)
+      || typeof payload[bodyKey] !== 'string' || Buffer.byteLength(payload[bodyKey]) > 32000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(payload[bodyKey])) failProvider('invalid-request', { provider: write.provider });
+    value = payload;
+  }
   else if (['github', 'gitlab', 'bitbucket'].includes(write.provider) && write.action === 'review-request') {
     const github = write.provider === 'github', bitbucket = write.provider === 'bitbucket';
     const keys = github ? ['title', 'body', 'head', 'base', 'draft', 'maintainer_can_modify']

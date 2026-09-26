@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { containsSecretMaterial } from '../clients/contract.js';
 import { parseRepositoryRemote } from '../repositories/identity.js';
 
-export const ACTIONS = Object.freeze(['branch-publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-transition']);
+export const ACTIONS = Object.freeze(['branch-publish', 'review-request', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-transition']);
 export const STAGES = Object.freeze([
   'locally-verified',
   'branch-published',

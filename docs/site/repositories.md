@@ -59,7 +59,9 @@ Repository inspection requires `repository-read`; review inspection also require
 | Common interface writes | Unavailable | Unavailable | Unavailable |
 | Separate HTTPS branch publication | Implemented, create-only | Implemented, create-only | Implemented, create-only |
 | Separate native review creation | Implemented | Implemented | Implemented |
-| Full review/merge/deployment lifecycle | Planned | Planned | Planned |
+| Separate review title/description updates | Implemented | Implemented | Implemented |
+| Separate native merge | Implemented for documented policies | Unavailable | Implemented for documented policies |
+| Project-configured deployment | GitHub Actions executor | Unavailable | Unavailable |
 | Public repository/branch read smoke | Passed | Passed | Passed |
 | Public review inspection smoke | Passed on Rivet PR #14 | Pending | Pending |
 | Authenticated sandbox and delivery qualification | Pending | Pending | Pending |
@@ -68,7 +70,7 @@ Public smoke checks on 2026-09-25 read `FraneAgilno/rivet`, `atlassian/atlassian
 
 The existing lower-level GitHub adapter retains its governed operations. The common repository interface is read-only. MCP and local CLI repository execution, custom API hosts, GitHub Enterprise, Bitbucket Data Center and self-managed GitLab are not qualified through this interface.
 
-For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Separate delivery executors support GitHub/Bitbucket PR and GitLab MR creation for already published verified branches, plus merges under documented bounded policy subsets. Create-only HTTPS branch publication is implemented separately for all three providers. Native Bitbucket merging and live qualification remain pending.
+For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Separate delivery executors support GitHub/Bitbucket PR and GitLab MR creation for already published verified branches, separately approved title/description updates for all three providers, plus GitHub/GitLab merges under documented bounded policy subsets. Create-only HTTPS branch publication is implemented separately for all three providers. Native Bitbucket merging and live qualification remain pending.
 
 ## Interpreting results
 

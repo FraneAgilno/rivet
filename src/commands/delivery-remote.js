@@ -10,14 +10,14 @@ function fail(message, code = 'REPOSITORY_CONFLICT') {
   throw new CliError(message, code);
 }
 const ENDPOINTS = Object.freeze({ github: 'https://api.github.com', gitlab: 'https://gitlab.com/api/v4', bitbucket: 'https://api.bitbucket.org/2.0' });
-function providerFor(config, repository, flags, writing, operation = 'merge') {
+export function providerFor(config, repository, flags, writing, operation = 'merge') {
   const providers = config.providers.providers.filter(
     (provider) =>
       provider.kind === 'git-ci' &&
       provider.mode !== 'disabled' &&
       (!writing || provider.mode === 'read-write-with-approval') &&
       (provider.transport ?? 'direct-api') === 'direct-api' &&
-      ['repository-read', ...(operation === 'deploy' ? ['deployments-read', 'actions-read'] : operation === 'review-request' ? [] : ['checks-read']), ...(writing ? [operation] : [])].every((cap) =>
+      ['repository-read', ...(operation === 'deploy' ? ['deployments-read', 'actions-read'] : ['review-request', 'review-update'].includes(operation) ? [] : ['checks-read']), ...(writing ? [operation] : [])].every((cap) =>
         provider.capabilities.includes(cap)
       ) &&
       (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
@@ -27,12 +27,12 @@ function providerFor(config, repository, flags, writing, operation = 'merge') {
   );
   if (providers.length !== 1)
     fail(
-      'Configure one scoped repository API provider. Review creation needs repository-read/review-request; merge needs repository-read/checks-read; deployment needs repository-read/deployments-read/actions-read. Writes require the action capability and read-write-with-approval mode.',
+      'Configure one scoped repository API provider. Review operations need repository-read and review-request or review-update; merge needs repository-read/checks-read; deployment needs repository-read/deployments-read/actions-read. Writes require the action capability and read-write-with-approval mode.',
       'MISSING_CONFIGURATION'
     );
   return providers[0];
 }
-function headers(provider, environment, kind) {
+export function headers(provider, environment, kind) {
   const credentials = provider.credentials ?? {};
   const keys = Object.keys(credentials);
   if (
@@ -42,7 +42,7 @@ function headers(provider, environment, kind) {
   )
     fail('Configure one token environment reference for repository delivery.', 'MISSING_CONFIGURATION');
   if (kind === 'bitbucket' && keys[0] !== 'accessTokenEnv')
-    fail('Bitbucket review creation requires accessTokenEnv for a Bearer access token. API tokens use a different authentication scheme and are not supported here.', 'MISSING_CONFIGURATION');
+    fail('Bitbucket review operations require accessTokenEnv for a Bearer access token. API tokens use a different authentication scheme and are not supported here.', 'MISSING_CONFIGURATION');
   const token = environment[credentials[keys[0]]];
   if (typeof token !== 'string' || !token || token.length > 8192 || /[\s\u0000-\u001f\u007f]/.test(token))
     fail('The configured repository token is missing or invalid.', 'PROVIDER_UNAVAILABLE');
@@ -71,8 +71,8 @@ async function confirm(dependencies, preview) {
 
 export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config, publicationContext }) {
   if (action === 'review') action = 'review-request';
-  const writing = ['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-transition'].includes(action);
-  if (!['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'refresh', 'reconcile'].includes(action))
+  const writing = ['publish', 'review-request', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-transition'].includes(action);
+  if (!['publish', 'review-request', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -87,6 +87,10 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   let state = await store.read();
   if (!state) fail('Run rivet delivery prepare after verification first.');
   const pendingAction = state.operations.find(op => ['dispatching','indeterminate'].includes(op.state))?.action;
+  if (action === 'review-update' || (action === 'reconcile' && pendingAction === 'review-update')) {
+    const {runReviewUpdate} = await import('./delivery-review-update.js');
+    return runReviewUpdate({action,state,store,config,flags,dependencies,reloadConfig,validateLocal,confirm:preview=>confirm(dependencies,preview)});
+  }
   if (action === 'publish' || (action === 'reconcile' && pendingAction === 'branch-publish')) {
     const {runPublicationDelivery} = await import('./delivery-publish.js');
     return runPublicationDelivery({action,store,config,flags,dependencies,validateLocal,reloadConfig,publicationContext,confirm: preview => confirm(dependencies,preview)});

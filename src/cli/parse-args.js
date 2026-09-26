@@ -41,7 +41,7 @@ const LEGACY_OPTIONS = {
   },
 };
 const STRICT_OPTIONS = {
-  delivery: { boolean: new Set(['json']), valued: new Set(['project', 'run', 'remote', 'provider', 'method']) },
+  delivery: { boolean: new Set(['json']), valued: new Set(['project', 'run', 'remote', 'provider', 'method', 'title', 'body']) },
   repositories: { boolean: new Set(['json']), valued: new Set(['project', 'remote', 'provider', 'review']) },
   integrations: { boolean: new Set(['json']), valued: new Set(['project', 'host-inventory-json']) },
   protocols: {
@@ -159,7 +159,7 @@ export function parseArgs(argv) {
       const separator = body.indexOf('=');
       const name = separator === -1 ? body : body.slice(0, separator);
       let value = separator === -1 ? true : body.slice(separator + 1);
-      if (!FLAG_NAME.test(name) || value === '') {
+      if (!FLAG_NAME.test(name) || (value === '' && !(command === 'delivery' && positionals[0] === 'review-update' && name === 'body' && separator !== -1))) {
         throw new ArgumentError(`Malformed flag '${token}'`);
       }
       if (Object.hasOwn(flags, name)) {

@@ -38,7 +38,7 @@ The observed versions are evidence, not a fixed version allowlist. Spawned adapt
 | GitHub Actions deployment | Approved workflow dispatch and correlated outcome verification fixtures | One configured nonproduction deployment |
 | Jira / Linear delivery comments | Separate approval, exact-content readback and reconciliation fixtures | Authorized live comments; status transitions remain separate work |
 
-Native review creation, source branch publication and Bitbucket writes must be checked against the current [delivery documentation](./delivery.md). A fixture for one provider does not qualify the others. Custom repository hosts and enterprise/self-managed editions require separate qualification.
+Native review creation and title/description updates, source branch publication and Bitbucket writes must be checked against the current [delivery documentation](./delivery.md). A fixture for one provider does not qualify the others. Custom repository hosts and enterprise/self-managed editions require separate qualification.
 
 ## Models and memory
 
