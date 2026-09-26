@@ -3,14 +3,12 @@ import { createHostExecution } from '../feature/host-execution.js';
 import { acquireHostRunLock } from '../feature/host-run-lock.js';
 import { resolveExistingFeatureRunPaths } from '../state/paths.js';
 import { loadProjectConfig } from '../config/load.js';
-import { discoverRepositoryRemotes, selectRepositoryRemote } from '../repositories/index.js';
+import { discoverRepositoryRemotes, selectConfiguredRepositoryRemote } from '../repositories/index.js';
 import { immutableJson } from '../clients/contract.js';
 
 export class DeliveryPreparationError extends Error {
-  constructor() {
-    super(
-      'Delivery requires a verified run and unchanged integration checkout. Inspect work status and verification results.'
-    );
+  constructor(message = 'Delivery requires a verified run and unchanged integration checkout. Inspect work status and verification results.') {
+    super(message);
     this.name = 'DeliveryPreparationError';
     this.code = 'ERR_DELIVERY_PREPARATION';
     this.safeMessage = this.message;
@@ -57,7 +55,9 @@ export async function loadDeliveryCandidate({ project, runId, remoteName, gitCli
     )
       fail();
     const remotes = await discoverRepositoryRemotes(project, runner ? { runner } : {});
-    const selected = selectRepositoryRemote(remotes, remoteName === undefined ? {} : { remoteName });
+    let selected;
+    try { selected = selectConfiguredRepositoryRemote(remotes, config.project.repository.remote, remoteName); }
+    catch { throw new DeliveryPreparationError('Repository remote is missing, ambiguous or changed. Review setup --remote=<name> or select --remote=<name> for this delivery operation.'); }
     const { remoteName: _remote, ...repository } = selected;
     const final = await gitClient.inspectRepository(checkout.path);
     if (final.dirty || final.headSha !== checkout.acceptedCommit || final.branch !== checkout.branch) fail();

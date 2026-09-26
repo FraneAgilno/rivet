@@ -1,3 +1,4 @@
+import { parseRepositoryRemote } from '../repositories/identity.js';
 import { readFileSync } from 'node:fs';
 
 import Ajv from 'ajv';
@@ -285,6 +286,12 @@ function validateConfigSemantics(config) {
 export function validateProjectConfiguration(config) {
   for (const name of ['project', 'providers', 'orchestration', 'quality']) {
     schemaValidate(name, config[name]);
+  }
+  if (config.project.repository.remote) {
+    try {
+      const identity = parseRepositoryRemote(config.project.repository.remote.url);
+      if (identity.url !== config.project.repository.remote.url) throw new Error();
+    } catch { throw new ConfigurationError('/project/repository/remote', 'invalid'); }
   }
   validateConfigSemantics(config);
   return true;

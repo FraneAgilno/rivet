@@ -29,7 +29,7 @@ const FLAG_NAME = /^[a-z][a-z0-9-]*$/;
 const LEGACY_OPTIONS = {
   init: {
     boolean: new Set(['json', 'overwrite', 'write']),
-    valued: new Set(['project']),
+    valued: new Set(['project', 'remote']),
   },
   install: {
     boolean: new Set(['all', 'claude', 'codex', 'global', 'json', 'minimal', 'project-runtime']),
@@ -65,7 +65,7 @@ const STRICT_OPTIONS = {
   },
   setup: {
     boolean: new Set(['global', 'write', 'json']),
-    valued: new Set(['project', 'target']),
+    valued: new Set(['project', 'target', 'remote']),
   },
   models: {
     boolean: new Set(['json']),

@@ -3,7 +3,8 @@ import { resolve, join } from 'node:path';
 
 import { CliError, EXIT_CODES } from '../cli/output.js';
 import { loadProjectConfig } from '../config/load.js';
-import { init } from './init.js';
+import { prepareSetupRemote } from './setup-remote.js';
+import { init, prepareRepositoryRemoteUpdate } from './init.js';
 import { inspectManagedInstall, managedInstall } from '../install/managed.js';
 
 const CONFIG_FILES = ['project.yaml', 'providers.yaml', 'orchestration.yaml', 'quality.yaml'];
@@ -65,10 +66,10 @@ function previewSteps(preview) {
 export async function setupCommand(parsed, dependencies) {
   const flags = parsed.flags;
   if (parsed.operands.length || parsed.subcommand !== null
-    || Object.keys(flags).some(key => !['project', 'global', 'target', 'write', 'json'].includes(key))
-    || (flags.global && flags.project !== undefined)
+    || Object.keys(flags).some(key => !['project', 'global', 'target', 'write', 'json', 'remote'].includes(key))
+    || (flags.global && (flags.project !== undefined || flags.remote !== undefined))
     || (flags.target !== undefined && !['claude', 'codex', 'both'].includes(flags.target))) {
-    throw new CliError('Use rivet setup [--project=<path>|--global] [--target=claude|codex|both] [--write].', 'INVALID_INPUT');
+    throw new CliError('Use rivet setup [--project=<path>|--global] [--remote=<name>] [--target=claude|codex|both] [--write].', 'INVALID_INPUT');
   }
   const fs = dependencies.fs ?? filesystem;
   const root = resolve(dependencies.cwd(), flags.project ?? '.');
@@ -85,14 +86,23 @@ export async function setupCommand(parsed, dependencies) {
   // Preflight every install destination before creating any project configuration.
   const installation = await inspect(installer, dependencies);
   let configuration = { status: 'not-applicable' };
-  let preview;
+  let preview, remote, remoteUpdate;
   if (!flags.global) {
     const retained = await existingConfiguration(root, fs);
-    if (retained) configuration = { status: 'preserved' };
+    const existing = retained ? await loadProjectConfig(root, {fs}) : null;
+    remote = await prepareSetupRemote(root, flags, dependencies, existing?.project.repository.remote);
+    if (retained) {
+      configuration = { status: 'preserved' };
+      if (remote.selected && JSON.stringify(remote.selected) !== JSON.stringify(existing.project.repository.remote)) {
+        const transaction = await prepareRepositoryRemoteUpdate(root, {fs, beforeCommit:remote.verify});
+        remoteUpdate = transaction.propose(remote.selected);
+        configuration = {status:'remote-proposed', projectYaml:remoteUpdate.yaml};
+      }
+    }
     else {
       preview = await captured(initialize, {
         command: 'init', subcommand: null, operands: [], flags: { project: root },
-      }, dependencies);
+      }, {...dependencies,setupRemoteSelection:remote});
       if (preview.code !== 0) return emit(parsed, dependencies, {
         ok: false, status: 'blocked', message: 'Project discovery failed. No setup files were written.',
         configuration: preview.value,
@@ -115,6 +125,7 @@ export async function setupCommand(parsed, dependencies) {
   const result = {
     ok: true, status: 'preview', scope: flags.global ? 'global' : 'project', target,
     configuration, installation, blockers, warnings,
+    ...(remote ? {repository:{status:remote.status,selected:remote.selected??null,choices:remote.choices}} : {}),
     message: 'Setup preview: no files were written.',
     nextSteps: blockers.length ? [...blockers, ...warnings] : [
       ...warnings,
@@ -125,6 +136,8 @@ export async function setupCommand(parsed, dependencies) {
       ] : []),
       ...(installation.targets ?? installation.result?.targets ?? [])
         .map(entry => `${entry.target} skill: ${entry.skillDir} (${entry.action})`),
+      ...(remote?.choices.length ? remote.choices.map(choice=>`${remote.selected?.name === choice.name ? 'Selected repository remote' : 'Available repository remote'}: ${choice.name} -> ${choice.url}`) : []),
+      ...(remote?.status === 'selection-required' ? ['Choose a repository with --remote=<name> when applying setup.'] : []),
       'Repeat with --write to apply this setup.',
     ],
   };
@@ -132,11 +145,17 @@ export async function setupCommand(parsed, dependencies) {
   if (blockers.length) return emit(parsed, dependencies, {
     ...result, ok: false, status: 'blocked', message: 'Resolve the setup checks before writing configuration.',
   }, EXIT_CODES.FAILED_GATE);
+  await remote?.verify();
   let configurationWritten = false;
+  if (remoteUpdate) {
+    const cleanup = await remoteUpdate.commit();
+    configuration = {status:'remote-written',cleanup};
+    configurationWritten = true;
+  }
   if (preview) {
     const written = await captured(initialize, {
       command: 'init', subcommand: null, operands: [], flags: { project: root, write: true },
-    }, dependencies);
+    }, {...dependencies,setupRemoteSelection:remote});
     if (written.code !== 0) return emit(parsed, dependencies, {
       ...result, ok: false, status: 'blocked', configuration: written.value,
       message: 'Configuration could not be written safely; harness installation was not started.',

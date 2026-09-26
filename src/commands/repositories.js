@@ -2,7 +2,7 @@ import { gitExecutable, resolveConfiguredProject } from '../cli/project-discover
 import { runArgv } from '../discovery/tools.js';
 import { CliError, EXIT_CODES } from '../cli/output.js';
 import { createNodeProviderTransport } from '../adapters/node-transport.js';
-import { createRepositoryProvider, discoverRepositoryRemotes, selectRepositoryRemote } from '../repositories/index.js';
+import { createRepositoryProvider, discoverRepositoryRemotes, selectConfiguredRepositoryRemote } from '../repositories/index.js';
 
 const ENDPOINTS = Object.freeze({github:'https://api.github.com',bitbucket:'https://api.bitbucket.org/2.0',gitlab:'https://gitlab.com/api/v4'});
 const ENV_NAME = /^[A-Z][A-Z0-9_]{1,127}$/;
@@ -51,9 +51,9 @@ export async function repositoriesCommand(parsed, dependencies) {
     const executable = await gitExecutable(dependencies.env);
     const runner = (_command, args, options) => (dependencies.runGit ?? runArgv)(executable, args, options);
     const remotes = await (dependencies.repositories?.discoverRemotes ?? discoverRepositoryRemotes)(project.root, {runner});
-    repository = selectRepositoryRemote(remotes, flags.remote === undefined ? {} : {remoteName:flags.remote});
+    repository = selectConfiguredRepositoryRemote(remotes, project.config.project.repository.remote, flags.remote);
   } catch {
-    fail('Repository remote is missing, ambiguous or unsupported. Choose a GitHub.com, Bitbucket Cloud or GitLab.com remote with --remote=<name>.','REPOSITORY_CONFLICT');
+    fail('Repository remote is missing, ambiguous, changed or unsupported. Review setup --remote=<name>, or choose a GitHub.com, Bitbucket Cloud or GitLab.com remote with --remote=<name>.','REPOSITORY_CONFLICT');
   }
   const provider = selectProvider(project.config,repository,flags);
   const auth = headers(provider,dependencies.env);

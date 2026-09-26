@@ -49,3 +49,11 @@ export async function discoverRepositoryRemotes(projectRoot, { runner = runArgv 
   if (remotes.length > 100) failProvider('invalid-request');
   return Object.freeze(remotes);
 }
+
+// Explicit per-operation choices do not rewrite the tracked onboarding preference.
+export function selectConfiguredRepositoryRemote(remotes, preference, remoteName) {
+  const selected = selectRepositoryRemote(remotes, remoteName !== undefined ? {remoteName}
+    : preference ? {remoteName: preference.name} : {});
+  if (remoteName === undefined && preference && selected.url !== preference.url) failProvider('invalid-request');
+  return selected;
+}
