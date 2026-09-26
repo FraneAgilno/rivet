@@ -1,3 +1,4 @@
+import { serializeProtocolLaunch } from '../protocols/presentation.js';
 import { spawn } from 'node:child_process';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -7,7 +8,7 @@ import { validateLaunchPayload } from '../prompts/launch-contract.js';
 import { parsePlanningResult, validatePlanningPayload } from '../prompts/planning-contract.js';
 
 const CONFIG_KEYS = new Set(['executable', 'interpreter', 'worktree', 'worktreeIdentity', 'environment', 'signal', 'launchTimeoutMs', 'timeoutMs', 'termGraceMs', 'killGraceMs', 'maxOutputBytes', 'maxInputBytes', 'allowOptionArgs']);
-const REQUEST_KEYS = new Set(['args', 'cwd', 'payload', 'signal']);
+const REQUEST_KEYS = new Set(['args', 'cwd', 'payload', 'signal', 'protocolContext']);
 // Keep the provider environment narrow, but preserve the non-secret account
 // context required by native macOS clients to resolve their local login
 // (Claude Code uses HOME and the shell identity variables when consulting its
@@ -481,6 +482,10 @@ export async function createProcessRunner(input) {
         ? validateLaunchPayload(request.payload)
         : validatePlanningPayload(request.payload);
     } catch { failAgent('invalid-contract'); }
+    if (protocol !== 'launch' && request.protocolContext !== undefined) failAgent('invalid-contract');
+    let stdinPayload = protocol === 'launch'
+      ? serializeProtocolLaunch(contract, request.protocolContext) : request.payload;
+    if (Buffer.byteLength(stdinPayload, 'utf8') > maxInputBytes) failAgent('invalid-contract');
     if (contract.worktree.path !== worktree
       || contract.worktree.dev !== worktreeIdentity.dev || contract.worktree.ino !== worktreeIdentity.ino) failAgent('cwd-unsafe');
     const requestSignal = captureSignal(request.signal);
@@ -501,6 +506,10 @@ export async function createProcessRunner(input) {
       guard();
       const currentTarget = await inspectLaunchTarget(executable, interpreter, launchTarget, guard);
       guard();
+      if (protocol === 'launch') {
+        stdinPayload = serializeProtocolLaunch(contract, request.protocolContext);
+        if (Buffer.byteLength(stdinPayload, 'utf8') > maxInputBytes) failAgent('invalid-contract');
+      }
       const command = invocation(currentTarget, args);
       return await new Promise((resolvePromise, rejectPromise) => {
         let child;
@@ -585,7 +594,7 @@ export async function createProcessRunner(input) {
         launchTimer = setTimeout(() => terminateChild('launch-timeout'), Math.min(launchTimeoutMs, runtimeLimit));
         launchTimer.unref?.();
         if (cancelled) { terminateChild('aborted'); return; }
-        try { child.stdin.end(request.payload, 'utf8'); } catch { terminateChild('provider-unavailable'); }
+        try { child.stdin.end(stdinPayload, 'utf8'); } catch { terminateChild('provider-unavailable'); }
       });
     } finally {
       terminateChild = undefined;

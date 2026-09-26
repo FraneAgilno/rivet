@@ -1,3 +1,5 @@
+import {assertSelectedProtocolRefs, selectedProtocolStatus} from '../protocols/project.js';
+import {createProtocolPresentation, protocolLookupContext} from '../protocols/presentation.js';
 import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
@@ -133,6 +135,7 @@ export function createHostExecution(input) {
   }
 
   async function runtimeContext(project, run) {
+    assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
     const [repository, config] = await Promise.all([
       gitClient.inspectRepository(project),
       loadProjectConfig(project),
@@ -140,6 +143,7 @@ export function createHostExecution(input) {
     if (repository.root !== project || repository.detached || repository.dirty
       || repository.branch !== config.project.repository.defaultBranch
       || repository.headSha !== run.featurePlan.baselineCommit) fail('repository');
+    assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
     const initialState = createFeatureRuntimeState({ config, run });
     const statePaths = await resolveStatePaths(project, run.runId);
     const integrationBranch = featureBranchFor(config, run.featurePlan, run.runId);
@@ -209,11 +213,13 @@ export function createHostExecution(input) {
         });
       },
       launchFor(node, intent) {
+        assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
         const planNode = planNodes.get(node.id);
         if (!planNode) fail('state-conflict');
         return createFeatureLaunchInput(node, intent, planNode, run);
       },
       async reconcile(node, intent, result) {
+        assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
         const reservations = await createReservationStore(statePaths).list();
         const matches = reservations.reservations.filter(item => item.nodeId === node.id
           && item.ownerId === node.owner.id && item.status === 'active');
@@ -298,6 +304,8 @@ export function createHostExecution(input) {
       if (prepared.action === null) {
         return immutableJson({ status: 'idle', runtimeVersion: prepared.version, action: null });
       }
+      const protocolContext = run.workRequest.contextRefs.some(ref => ref.startsWith('protocol:'))
+        ? protocolLookupContext(createProtocolPresentation({sourceRoot: value.project, refs: run.workRequest.contextRefs})) : null;
       const action = createWorkAction({
         runId: run.runId,
         runtimeVersion: prepared.version,
@@ -311,6 +319,7 @@ export function createHostExecution(input) {
       const wasAlreadyStarted = value.expectedRuntimeVersion === prepared.version;
       return immutableJson({
         status: wasAlreadyStarted ? 'waiting-for-result' : 'action',
+        ...(protocolContext ? {protocolContext} : {}),
         runtimeVersion: prepared.version,
         action,
       });
@@ -582,7 +591,8 @@ export function createHostExecution(input) {
     const hostRun = run.featurePlan.client === 'host';
     const verificationStale = verification !== null && accepted !== null
       && (verification.commitSha !== accepted.commitSha || checkout?.status !== 'clean');
-    const deliverable = run.status === 'awaiting-final-approval'
+    const protocols = selectedProtocolStatus(value.project, run.workRequest.contextRefs);
+    const deliverable = protocols.status === 'current' && run.status === 'awaiting-final-approval'
       && runtime !== null && readyForVerification
       && accepted !== null && checkout?.status === 'clean'
       && verification?.status === 'pass'
@@ -591,7 +601,7 @@ export function createHostExecution(input) {
       && verification.commitSha === accepted.commitSha
       && verification.integration.path === accepted.path
       && verification.integration.branch === accepted.branch;
-    const nextAction = checkout?.status === 'stale' || verificationStale
+    const nextAction = protocols.status === 'changed' ? protocols.message : checkout?.status === 'stale' || verificationStale
       ? 'The integration checkout no longer matches the accepted tested commit. Do not deliver it; create a new reviewed proposal for source changes.'
       : run.status === 'awaiting-final-approval' && !deliverable
       ? 'Final approval evidence is missing or inconsistent. Do not deliver this run; inspect private state and create a new reviewed proposal if it cannot be restored.'
@@ -616,7 +626,7 @@ export function createHostExecution(input) {
                 ? 'Use work prepare with run.version to create the isolated execution state.'
                 : 'Use rivet task resume to continue the approved spawned task.'
               : 'Review the proposal and current run state before proceeding.';
-    return immutableJson({ run, runtime, verification, checkout, workerCheckouts, deliveryReady: deliverable, blockedNodes, nextAction });
+    return immutableJson({ run, runtime, protocols, verification, checkout, workerCheckouts, deliveryReady: deliverable, blockedNodes, nextAction });
   }
 
   return Object.freeze({ prepare, nextAction, submitResult, verify, status, recover });

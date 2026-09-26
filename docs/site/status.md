@@ -11,7 +11,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Interactive `rivet run "task"` from a configured project root or nested folder, with automatic project discovery, a reviewed approval gate, and compatible installed Claude/Codex execution.
 - `rivet task status`, `rivet task resume`, and `rivet task deps` select a unique active run without asking for its ID. Dependency setup prepares a clean active host Worker or accepted integration checkout after separate interactive approval. Spawned Workers ask before installing locked dependencies in their isolated checkout.
 - Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
-- Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
+- Project protocol commands with completeness checks, draft/publish/retire lifecycle, revision and digest validation, imports, live discovery, and exact protocol checks during execution.
 - Redacted support diagnostics with optional local harness capability probes.
 - Read-only Worker checkout recovery details, including branch locations, preserved edits and expired leases. Explicit `rivet task recover` safely recovers abandoned host locks while preserving snapshots and worktrees; it does not resume Workers.
 - Extensible model registry, bounded text-only API/local delegation and explicit role selection. Terminal workflow worker roles can select Claude or Codex independently of the planning harness.
@@ -33,7 +33,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Direct JSON inputs remove the temporary-file obstruction from earlier noninteractive trials; private Git state/worktree permissions and live lifecycle trials still need validation. Direct adapters check required capabilities without a version allowlist; Claude `2.1.274` and Codex `0.155.0-alpha.16` have local terminal trials on macOS. Desktop host lifecycle qualification remains open.
 - A fresh-user M1 trial that completes a small task without manual shell repair.
 - Live provider qualification for the integration registry and context intake.
-- Remaining repository delivery operations and live qualification of model executors and cross-harness routing.
+- Live qualification of repository delivery, model executors, and cross-harness routing. Bitbucket PRs are merged manually for the MVP.
 - External pilot, evaluations, and release qualification.
 
 The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native GitHub Actions deployment is implemented for a configured workflow; Jira/Linear delivery-summary comments are implemented; separately approved tracker status transitions are implemented; live delivery qualification remains pending.
@@ -57,3 +57,5 @@ The source is published at [FraneAgilno/rivet](https://github.com/FraneAgilno/ri
 ## Post-MVP
 
 Shared Obsidian memory, synchronization and two-user continuity are planned after the MVP. They remain unimplemented and do not block the MVP release.
+
+Native automatic Bitbucket merging is also post-MVP. The MVP uses manual merging in Bitbucket after Rivet branch publication and PR preparation.

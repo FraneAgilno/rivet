@@ -6,7 +6,7 @@ The next milestone is a first-task trial: a new developer installs Rivet, connec
 
 1. **Simple installation:** global and project scopes, environment diagnostics, setup preview/apply, and a clear uninstall path.
 2. **Active-harness workflow:** the agent already in use can plan and execute sealed Rivet work without requiring a second model process.
-3. **Project protocols:** teams can add, import, validate, publish, revise, and discover reviewed project procedures through the CLI.
+3. **Project protocols:** teams can add, import, validate, publish, revise, retire, and discover reviewed project procedures through the CLI. Publication checks required content, and execution checks the selected revision and digest.
 4. **First-task controls:** terminal `run`, `task status`, `task resume`, and `task deps` manage project discovery, internal run values, and approved Worker or integration dependency setup while preserving plan approval, verification evidence, and final human review.
 
 ## Next MVP priorities
@@ -20,7 +20,7 @@ The repository is being kept focused on the reusable framework. Retired conferen
 ## Subsequent capabilities
 
 - Live qualification of the implemented MCP registry and sourced Jira/Linear, Figma and knowledge-context intake.
-- Live qualification of the common GitHub, Bitbucket Cloud and GitLab.com read interface, followed by native executors for governed review/merge/deployment workflows. [Delivery preparation and the durable service](./delivery.md) are implemented; native GitHub and GitLab merge are implemented for bounded policy subsets, along with project-configured GitHub Actions deployment and Jira/Linear delivery-summary comments; remaining provider operations and live qualification remain open.
+- Live qualification of the common GitHub, Bitbucket Cloud and GitLab.com read interface, followed by native executors for governed review/merge/deployment workflows. [Delivery preparation and the durable service](./delivery.md) are implemented; native GitHub and GitLab merge are implemented for bounded policy subsets, along with project-configured GitHub Actions deployment and Jira/Linear delivery-summary comments; Bitbucket uses manual merging for the MVP, with native automatic merging deferred to post-MVP. Live qualification remains open.
 - Live qualification of bounded API/local text execution and configured Claude/Codex worker routing; broader role/model routing remains planned.
 - Broader recovery and evaluation coverage. Explicit delivery lock recovery is implemented; interrupted-recovery markers and live-provider crash qualification remain open.
 
@@ -29,3 +29,5 @@ These remain planned until demonstrated. See [implementation status](./status.md
 ## Post-MVP
 
 - Shared project memory with an Obsidian-compatible provider, including synchronization and two-user continuity. It remains unimplemented and is not an MVP release requirement.
+
+- Native automatic Bitbucket merging, after a verified conditional merge approach is available. Manual Bitbucket merging is the MVP path.

@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com, GitLab.com and Bitbucket Cloud executors can create a review request for an already published verified branch and separately update its title and description. GitHub/GitLab merging uses the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket merging and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com, GitLab.com and Bitbucket Cloud executors can create a review request for an already published verified branch and separately update its title and description. GitHub/GitLab merging uses the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. For the MVP, merge Bitbucket PRs manually in Bitbucket; native automatic merging is post-MVP. Live qualification remains pending.
 
 ## Prepare verified work
 
@@ -85,7 +85,7 @@ The executor binds repository and workspace UUIDs, repository path/URL, exact so
 
 Existing matching reviews in open, merged, declined or superseded states block another creation. Reconciliation searches those states with bounded pagination and rejects altered pagination destinations, ambiguous markers or changed repository/branch facts. It never sends another creation request. A matching closed review can establish creation only; it is not a merge receipt. Concurrent external creation remains possible between discovery and the POST, so an ambiguous result stays indeterminate.
 
-Bitbucket pull-request creation does not enable `delivery merge`; the missing qualified source-SHA merge precondition remains a separate limitation. Authenticated Bitbucket creation and recovery still require live sandbox qualification.
+Bitbucket pull-request creation does not enable `delivery merge`. Manual merging in Bitbucket is the MVP path; native automatic merging is post-MVP until a source-SHA merge precondition is verified. Authenticated Bitbucket creation and recovery still require live sandbox qualification.
 
 ## Update a review title and description
 
@@ -354,8 +354,8 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket merging and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Native Bitbucket merging is post-MVP; live sandbox qualification remains open.
 
 ## Bitbucket delivery boundary
 
-Bitbucket Cloud supports [read-only repository inspection](./repositories.md), create-only branch publication, separately approved pull-request creation and title/description updates. Native merging remains unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
+Bitbucket Cloud supports [read-only repository inspection](./repositories.md), create-only branch publication, separately approved pull-request creation and title/description updates. For the MVP, review the PR and merge it manually in Bitbucket under your team’s approval and check requirements. Native automatic merging is post-MVP and remains unavailable. A manual merge does not create a Rivet merge receipt or unlock its receipt-dependent deployment/tracker operations. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).

@@ -1,201 +1,19 @@
 import * as filesystem from 'node:fs';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 
-import { containsSecretMaterial } from '../clients/contract.js';
 import { loadProjectConfig } from '../config/load.js';
 import { CliError, EXIT_CODES } from '../cli/output.js';
 
-const PROTOCOL_DIRECTORY = 'protocols';
-const MAX_PROTOCOL_BYTES = 128 * 1024;
+import { MAX_PROTOCOL_BYTES, PROTOCOL_DIRECTORY, MUTATION_LOCK, DIGEST, safeText, safeId, sameIdentity, lstatIfExists, readBounded, protocolRoot, canonicalBody, bodyDigest, validateDocument, protocolPath, discover, publicProtocol } from '../protocols/project.js';
+import { protocolCompleteness, requireProtocolCompleteness } from '../protocols/project.js';
 const MAX_QUERY_LENGTH = 256;
-const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const DIGEST = /^sha256:[a-f0-9]{64}$/;
-const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\..*)?$/i;
-const STATUSES = new Set(['draft', 'active']);
-const METADATA_KEYS = new Set(['schemaVersion', 'id', 'title', 'status', 'revision', 'digest', 'updatedAt']);
-const SUBCOMMANDS = new Set(['add', 'import', 'validate', 'find', 'show', 'update']);
-const MUTATION_LOCK = '.mutation.lock';
+const SUBCOMMANDS = new Set(['add', 'import', 'validate', 'find', 'show', 'update', 'retire']);
+function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
 
-function fail(message, code = 'INVALID_INPUT') {
-  throw new CliError(message, code);
-}
-
-function safeText(value, maximum, label) {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maximum
-    || value.normalize('NFKC') !== value || /[\u0000\r]/.test(value) || containsSecretMaterial(value)) {
-    fail(`${label} is invalid.`);
-  }
-  return value;
-}
-
-function safeId(value, label = 'Protocol id') {
-  if (typeof value !== 'string' || value.length > 64 || !ID.test(value)
-    || WINDOWS_RESERVED.test(value)) fail(`${label} is invalid.`);
-  return value;
-}
-
-function sameIdentity(left, right) {
-  return left.dev === right.dev && left.ino === right.ino;
-}
-
-function lstatIfExists(path, fs) {
-  return fs.lstatSync(path, { throwIfNoEntry: false });
-}
-
-function regularDirectory(path, fs, label) {
-  const status = lstatIfExists(path, fs);
-  if (!status) return null;
-  if (status.isSymbolicLink() || !status.isDirectory()) fail(`${label} must be a regular directory.`, 'REPOSITORY_CONFLICT');
-  return status;
-}
-
-function readBounded(path, fs, label) {
-  const before = lstatIfExists(path, fs);
-  if (!before || before.isSymbolicLink() || !before.isFile() || before.nlink !== 1 || before.size > MAX_PROTOCOL_BYTES) {
-    fail(`${label} must be a bounded regular file.`, 'REPOSITORY_CONFLICT');
-  }
-  let descriptor;
-  try {
-    descriptor = fs.openSync(path, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    const opened = fs.fstatSync(descriptor);
-    if (!opened.isFile() || opened.nlink !== 1 || !sameIdentity(before, opened) || opened.size > MAX_PROTOCOL_BYTES) {
-      fail(`${label} changed during validation.`, 'REPOSITORY_CONFLICT');
-    }
-    const bytes = Buffer.alloc(MAX_PROTOCOL_BYTES + 1);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const bytesRead = fs.readSync(descriptor, bytes, offset, bytes.length - offset, null);
-      if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > bytes.length - offset) {
-        fail(`${label} could not be read safely.`, 'REPOSITORY_CONFLICT');
-      }
-      if (bytesRead === 0) break;
-      offset += bytesRead;
-    }
-    if (offset > MAX_PROTOCOL_BYTES) fail(`${label} exceeds the size limit.`);
-    const after = fs.fstatSync(descriptor);
-    const current = lstatIfExists(path, fs);
-    if (!current || !sameIdentity(after, current) || after.size !== offset) {
-      fail(`${label} changed during validation.`, 'REPOSITORY_CONFLICT');
-    }
-    let text;
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, offset)); } catch { fail(`${label} is not valid UTF-8.`); }
-    return text;
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-  }
-}
-
-function protocolRoot(projectRoot, fs, { create = false } = {}) {
-  const root = resolve(projectRoot);
-  const project = regularDirectory(root, fs, 'Project root');
-  if (!project) fail('Project root does not exist.', 'MISSING_CONFIGURATION');
-  const configRoot = join(root, '.rivet');
-  const config = regularDirectory(configRoot, fs, 'Project .rivet configuration');
-  if (!config) fail('Project configuration is missing.', 'MISSING_CONFIGURATION');
-  const protocols = join(configRoot, PROTOCOL_DIRECTORY);
-  let status = regularDirectory(protocols, fs, 'Protocol directory');
-  if (!status && create) {
-    fs.mkdirSync(protocols, { mode: 0o700 });
-    status = regularDirectory(protocols, fs, 'Protocol directory');
-  }
-  return { root, configRoot, protocols, identity: status ? { dev: status.dev, ino: status.ino } : null };
-}
-
-function parseTimestamp(value) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) fail('Protocol updatedAt is invalid.');
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || date.toISOString() !== value) fail('Protocol updatedAt is invalid.');
-  return value;
-}
-
-function canonicalBody(body) {
-  return body.replaceAll('\r\n', '\n').trimEnd() + '\n';
-}
-
-function bodyDigest(metadata, body) {
-  const canonical = JSON.stringify({
-    schemaVersion: metadata.schemaVersion,
-    id: metadata.id,
-    title: metadata.title,
-    status: metadata.status,
-    revision: metadata.revision,
-    updatedAt: metadata.updatedAt,
-  }) + '\n' + canonicalBody(body);
-  return `sha256:${createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
-}
-
-function splitDocument(source) {
-  const normalized = source.replaceAll('\r\n', '\n');
-  const lines = normalized.split('\n');
-  if (lines[0] !== '---') fail('Protocol frontmatter is required.');
-  const closing = lines.indexOf('---', 1);
-  if (closing < 0) fail('Protocol frontmatter is incomplete.');
-  let metadata;
-  try {
-    const document = YAML.parseDocument(lines.slice(1, closing).join('\n'), {
-      maxAliasCount: 0, prettyErrors: false, strict: true, uniqueKeys: true, version: '1.2',
-    });
-    if (document.errors.length || document.warnings.length) fail('Protocol frontmatter is invalid.');
-    metadata = document.toJS({ maxAliasCount: 0, mapAsMap: false });
-  } catch (error) {
-    if (error instanceof CliError) throw error;
-    fail('Protocol frontmatter is invalid.');
-  }
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) fail('Protocol frontmatter is invalid.');
-  if (Reflect.ownKeys(metadata).some(key => !METADATA_KEYS.has(key))
-    || [...METADATA_KEYS].some(key => !Object.hasOwn(metadata, key))) fail('Protocol frontmatter fields are invalid.');
-  const body = lines.slice(closing + 1).join('\n').replace(/^\n/, '');
-  return { metadata, body };
-}
-
-function validateDocument(source, expectedId = null) {
-  safeText(source, MAX_PROTOCOL_BYTES, 'Protocol');
-  const { metadata, body } = splitDocument(source);
-  if (metadata.schemaVersion !== 1) fail('Protocol schemaVersion is invalid.');
-  safeId(metadata.id);
-  if (expectedId !== null && metadata.id !== expectedId) fail('Protocol id does not match its filename.');
-  safeText(metadata.title, 120, 'Protocol title');
-  if (!STATUSES.has(metadata.status)) fail('Protocol status is invalid.');
-  if (!Number.isSafeInteger(metadata.revision) || metadata.revision < 1 || metadata.revision > 1_000_000_000) fail('Protocol revision is invalid.');
-  parseTimestamp(metadata.updatedAt);
-  if (!DIGEST.test(metadata.digest) || metadata.digest !== bodyDigest(metadata, body)) fail('Protocol digest is invalid.', 'REPOSITORY_CONFLICT');
-  if (!/^#\s+\S/.test(body.trim())) fail('Protocol body must begin with a Markdown heading.');
-  return Object.freeze({ metadata, body, source });
-}
-
-function protocolPath(root, id) {
-  safeId(id);
-  return join(root.protocols, `${id}.md`);
-}
-
-function discover(root, fs, includeDrafts = true) {
-  if (!root.identity) return [];
-  const entries = fs.readdirSync(root.protocols, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name));
-  return entries.map(entry => {
-    if (entry.name === MUTATION_LOCK) {
-      if (!entry.isFile() || entry.isSymbolicLink()) fail('Protocol mutation lock is unsafe.', 'REPOSITORY_CONFLICT');
-      return null;
-    }
-    if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith('.md')) fail('Protocol directory contains an unsupported entry.', 'REPOSITORY_CONFLICT');
-    const id = entry.name.slice(0, -3);
-    safeId(id);
-    const record = validateDocument(readBounded(join(root.protocols, entry.name), fs, `Protocol '${id}'`), id);
-    return record.metadata.status === 'draft' && !includeDrafts ? null : record;
-  }).filter(Boolean);
-}
-
-function publicProtocol(record, includeBody = false) {
-  return {
-    id: record.metadata.id,
-    title: record.metadata.title,
-    status: record.metadata.status,
-    revision: record.metadata.revision,
-    digest: record.metadata.digest,
-    updatedAt: record.metadata.updatedAt,
-    ...(includeBody ? { body: record.body } : {}),
-  };
+function draftGuidance(id, revision) {
+  return `Write the missing sections in a project-contained Markdown source file without inventing team policy, then run rivet protocols update ${id} --from=<file> --expected-revision=${revision}. Add --publish only after review and complete validation.`;
 }
 
 function now() {
@@ -268,7 +86,7 @@ function sourcePath(root, input, fs) {
 function requireFlags(parsed) {
   if (!parsed || parsed.command !== 'protocols' || !SUBCOMMANDS.has(parsed.subcommand)
     || !Array.isArray(parsed.operands) || !parsed.flags || typeof parsed.flags !== 'object') fail('Invalid protocols command.');
-  const allowed = new Set(['project', 'json', 'from', 'include-drafts', 'publish', 'expected-revision']);
+  const allowed = new Set(['project', 'json', 'from', 'include-drafts', 'include-retired', 'publish', 'expected-revision', 'expected-digest']);
   if (Object.keys(parsed.flags).some(key => !allowed.has(key))) fail('Invalid protocols command options.');
   if (parsed.flags.project !== undefined && (typeof parsed.flags.project !== 'string' || parsed.flags.project.length === 0)) fail("Option '--project' is invalid.");
   return parsed;
@@ -282,7 +100,7 @@ function emit(dependencies, parsed, result, code = EXIT_CODES.SUCCESS) {
     dependencies.output.json({ ok: true, command: 'protocols', result }, 'stdout');
   }
   else if (code === EXIT_CODES.SUCCESS) dependencies.output.log(JSON.stringify(result, null, 2));
-  else dependencies.output.error(`ERROR: ${result.message ?? 'Protocol operation failed.'}`);
+  else dependencies.output.error(`ERROR: ${result.error?.message ?? result.message ?? 'Protocol operation failed.'}`);
   return code;
 }
 
@@ -303,9 +121,18 @@ export async function protocolsCommand(input, dependencies = {}) {
     const fs = dependencies.fs ?? filesystem;
     const projectRoot = resolve(parsed.flags.project ?? dependencies.cwd?.() ?? process.cwd());
     await (dependencies.configLoader ?? loadProjectConfig)(projectRoot, { fs });
-    const root = protocolRoot(projectRoot, fs, { create: ['add', 'import', 'update'].includes(parsed.subcommand) });
+    const root = protocolRoot(projectRoot, fs, { create: ['add', 'import'].includes(parsed.subcommand) });
     const operands = parsed.operands;
-    if (parsed.subcommand === 'add' && (operands.length !== 1 || parsed.flags.from !== undefined)) fail('Use rivet protocols add <slug>.');
+    const command = parsed.subcommand, flags = parsed.flags;
+    if (flags.from !== undefined && !['add','import','update'].includes(command)) fail("Option '--from' is only valid for add/import/update.");
+    if (flags.publish !== undefined && command !== 'update') fail("Only update --publish activates a protocol.");
+    if ((flags['include-drafts'] !== undefined || flags['include-retired'] !== undefined) && !['find','show'].includes(command)) fail('Status inclusion options are only valid for find/show.');
+    if (flags['expected-digest'] !== undefined && command !== 'show') fail("Option '--expected-digest' is only valid for show.");
+    if (flags['expected-revision'] !== undefined && !['update','retire','show'].includes(command)) fail("Option '--expected-revision' is only valid for update/retire/show.");
+    if (command === 'show' && (flags['expected-revision'] !== undefined || flags['expected-digest'] !== undefined)
+      && (!/^[1-9][0-9]{0,9}$/.test(String(flags['expected-revision'] ?? '')) || Number(flags['expected-revision']) > 1_000_000_000 || !DIGEST.test(flags['expected-digest'] ?? ''))) fail('Exact protocol lookup requires both --expected-revision and --expected-digest from the approved run.');
+    if (command === 'retire' && (operands.length !== 1 || !/^[1-9][0-9]{0,9}$/.test(String(flags['expected-revision'] ?? '')) || Number(flags['expected-revision']) > 1_000_000_000)) fail('Use rivet protocols retire <slug> --expected-revision=<current revision>.');
+    if (parsed.subcommand === 'add' && (operands.length !== 1 || (parsed.flags.from !== undefined && typeof parsed.flags.from !== 'string'))) fail('Use rivet protocols add <slug>.');
     if (parsed.subcommand === 'import' && (operands.length !== 1 || typeof parsed.flags.from !== 'string')) fail('Use rivet protocols import <slug> --from=<path>.');
     if (parsed.subcommand === 'validate' && operands.length > 1) fail('Use rivet protocols validate [<slug>].');
     if (parsed.subcommand === 'find' && (operands.length !== 1 || typeof operands[0] !== 'string' || operands[0].length < 1 || operands[0].length > MAX_QUERY_LENGTH)) fail('Use rivet protocols find <query>.');
@@ -313,20 +140,20 @@ export async function protocolsCommand(input, dependencies = {}) {
     if (parsed.subcommand === 'update' && (operands.length !== 1 || typeof parsed.flags.from !== 'string' || parsed.flags.publish && parsed.flags['include-drafts'])) fail('Use rivet protocols update <slug> --from=<path> [--publish].');
     if (parsed.subcommand === 'update' && (!/^\d+$/.test(String(parsed.flags['expected-revision'] ?? '')) || Number(parsed.flags['expected-revision']) < 1)) fail("Option '--expected-revision' is required for update.");
 
-    if (parsed.subcommand === 'add') {
+    if (parsed.subcommand === 'add' && parsed.flags.from === undefined) {
       const id = safeId(operands[0]);
       const path = protocolPath(root, id);
       if (lstatIfExists(path, fs)) fail(`Protocol '${id}' already exists.`, 'REPOSITORY_CONFLICT');
       const metadata = { schemaVersion: 1, id, title: id.replaceAll('-', ' ').replace(/\b\w/g, letter => letter.toUpperCase()), status: 'draft', revision: 1, updatedAt: now() };
-      const body = canonicalBody(`# ${metadata.title}\n\nDescribe the reviewed procedure.\n`);
+      const body = canonicalBody(`# ${metadata.title}\n\n## Owner\n\n## Purpose\n\n## Applies when\n\n## Procedure\n\n## Required checks and evidence\n`);
       metadata.digest = bodyDigest(metadata, body);
       const source = render(metadata, body);
       const record = validateDocument(source, id);
       atomicWrite(path, source, fs, root.identity);
-      return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Created draft protocol '${id}'.` });
+      return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Created draft protocol '${id}'. ${draftGuidance(id, 1)}` });
     }
 
-    if (parsed.subcommand === 'import') {
+    if (parsed.subcommand === 'import' || parsed.subcommand === 'add') {
       const id = safeId(operands[0]);
       const path = protocolPath(root, id);
       if (lstatIfExists(path, fs)) fail(`Protocol '${id}' already exists.`, 'REPOSITORY_CONFLICT');
@@ -338,33 +165,44 @@ export async function protocolsCommand(input, dependencies = {}) {
       const source = render(metadata, body);
       const record = validateDocument(source, id);
       atomicWrite(path, source, fs, root.identity);
-      return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Imported draft protocol '${id}'.` });
+      return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Imported draft protocol '${id}'. ${draftGuidance(id, 1)}` });
+    }
+
+    if (parsed.subcommand === 'show') {
+      const id = safeId(operands[0]);
+      const record = validateDocument(readBounded(protocolPath(root, id), fs, `Protocol '${id}'`), id);
+      if (!record || (record.metadata.status === 'draft' && parsed.flags['include-drafts'] !== true) || (record.metadata.status === 'retired' && parsed.flags['include-retired'] !== true)) fail(`Protocol '${id}' was not found.`);
+      if (parsed.flags['expected-revision'] !== undefined && (record.metadata.status !== 'active' || record.metadata.revision !== Number(parsed.flags['expected-revision']) || record.metadata.digest !== parsed.flags['expected-digest'])) fail('Selected protocol changed or is no longer active. Create a new reviewed proposal.', 'REPOSITORY_CONFLICT');
+      return emit(dependencies, parsed, { protocol: publicProtocol(record, true), message: `Showing protocol '${id}'.` });
     }
 
     const all = discover(root, fs, true);
     if (parsed.subcommand === 'validate') {
       const records = operands.length === 1 ? all.filter(record => record.metadata.id === operands[0]) : all;
       if (operands.length === 1 && records.length === 0) fail(`Protocol '${operands[0]}' was not found.`);
-      return emit(dependencies, parsed, { protocols: records.map(record => publicProtocol(record)), message: `Validated ${records.length} protocol${records.length === 1 ? '' : 's'}.` });
+      return emit(dependencies, parsed, { protocols: records.map(record => publicProtocol(record)), message: `Validated integrity of ${records.length} protocol${records.length === 1 ? '' : 's'}. Completeness diagnostics are reported separately; incomplete records cannot publish a new revision.` });
     }
     if (parsed.subcommand === 'find') {
       const query = parsed.operands[0].normalize('NFKC').toLocaleLowerCase();
-      const records = discover(root, fs, parsed.flags['include-drafts'] === true)
+      const records = discover(root, fs, parsed.flags['include-drafts'] === true, parsed.flags['include-retired'] === true)
         .filter(record => `${record.metadata.title}\n${record.body}`.toLocaleLowerCase().includes(query));
       return emit(dependencies, parsed, { protocols: records.map(record => publicProtocol(record)), message: `Found ${records.length} matching protocol${records.length === 1 ? '' : 's'}.` });
     }
-    if (parsed.subcommand === 'show') {
-      const id = safeId(operands[0]);
-      const record = all.find(candidate => candidate.metadata.id === id);
-      if (!record || (record.metadata.status === 'draft' && parsed.flags['include-drafts'] !== true)) fail(`Protocol '${id}' was not found.`);
-      return emit(dependencies, parsed, { protocol: publicProtocol(record, true), message: `Showing protocol '${id}'.` });
-    }
+
 
     const id = safeId(operands[0]);
     const current = all.find(record => record.metadata.id === id);
     if (!current) fail(`Protocol '${id}' was not found.`);
     if (current.metadata.revision !== Number(parsed.flags['expected-revision'])) fail('Protocol revision conflict.', 'REPOSITORY_CONFLICT');
+    if (parsed.subcommand === 'retire') {
+      const metadata = { ...current.metadata, status: 'retired', revision: current.metadata.revision + 1, updatedAt: now() };
+      metadata.digest = bodyDigest(metadata, current.body);
+      const source = render(metadata, current.body), record = validateDocument(source, id);
+      atomicWrite(protocolPath(root, id), source, fs, root.identity, current.metadata.digest);
+      return emit(dependencies, parsed, {protocol: publicProtocol(record), message: `Retired protocol '${id}'. Existing runs require a new reviewed proposal.`});
+    }
     const body = canonicalBody(readBounded(sourcePath(root, parsed.flags.from, fs), fs, 'Protocol update source'));
+    if (parsed.flags.publish === true) requireProtocolCompleteness(body);
     const heading = body.match(/^#\s+(\S.*)$/m);
     if (!heading) fail('Protocol update source must contain a Markdown heading.');
     const metadata = { ...current.metadata, title: safeText(heading[1].trim(), 120, 'Protocol title'), status: parsed.flags.publish === true ? 'active' : 'draft', revision: current.metadata.revision + 1, updatedAt: now() };
@@ -372,7 +210,7 @@ export async function protocolsCommand(input, dependencies = {}) {
     const source = render(metadata, body);
     const record = validateDocument(source, id);
     atomicWrite(protocolPath(root, id), source, fs, root.identity, current.metadata.digest);
-    return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Updated protocol '${id}'.` });
+    return emit(dependencies, parsed, { protocol: publicProtocol(record), message: `Updated protocol '${id}'.${metadata.status === 'draft' ? ' ' + draftGuidance(id, metadata.revision) : ''}` });
   } catch (error) {
     const safe = error instanceof CliError ? error : new CliError('Protocol operation could not complete safely.', 'INTERNAL_ERROR');
     return emit(dependencies, parsed ?? input, errorResult(safe), safe.exitCode);
@@ -382,7 +220,7 @@ export async function protocolsCommand(input, dependencies = {}) {
 export function activeProtocolContextRefs(projectRoot, options = {}) {
   const fs = options.fs ?? filesystem;
   const root = protocolRoot(resolve(projectRoot), fs);
-  return Object.freeze(discover(root, fs, false).map(record => (
+  return Object.freeze(discover(root, fs, false, false).map(record => (
     `protocol:${record.metadata.id}:${record.metadata.revision}:${record.metadata.digest}`
   )));
 }

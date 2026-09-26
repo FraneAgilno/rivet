@@ -1,3 +1,4 @@
+import {assertSelectedProtocolRefs, selectedProtocolStatus} from '../protocols/project.js';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { assertGitClient } from '../git/client.js';
@@ -279,6 +280,7 @@ export function createFeatureWorkflow(input) {
   }
 
   async function validateSavedPlan(project, record) {
+    assertSelectedProtocolRefs(project, record.workRequest.contextRefs);
     const config = await loadConfig(absolute(project));
     createFeaturePlan({ proposal: record.featurePlan, config, workRequest: record.workRequest,
       baselineCommit: record.featurePlan.baselineCommit, client: record.featurePlan.client });
@@ -305,7 +307,8 @@ export function createFeatureWorkflow(input) {
 
   async function status(raw) {
     const request = capture(raw, new Set(['project', 'runId']));
-    return lifecycleView((await readRun(request.project, request.runId)).record);
+    const record = (await readRun(request.project, request.runId)).record;
+    return immutableJson({...lifecycleView(record), protocols: selectedProtocolStatus(request.project, record.workRequest.contextRefs)});
   }
 
   async function resume(raw, options = {}) {

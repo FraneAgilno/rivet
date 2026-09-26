@@ -103,7 +103,7 @@ test('find excludes drafts by default while show and explicit discovery can incl
 
 test('update requires the current revision, increments it, and publishes only explicitly', async t => {
   const root = await project(t);
-  await writeFile(join(root, 'protocol-source.md'), '# Deployment\n\nUpdated procedure.\n');
+  await writeFile(join(root, 'protocol-source.md'), complete('Updated procedure.'));
   await run(root, 'import', ['deployment'], { from: 'protocol-source.md' });
 
   const updated = await run(root, 'update', ['deployment'], {
@@ -125,7 +125,7 @@ test('update requires the current revision, increments it, and publishes only ex
 
 test('active discovery sees a protocol added after installation without reinstalling a skill', async t => {
   const root = await project(t);
-  await writeFile(join(root, 'protocol-source.md'), '# Database Migration\n\nRun migrations in order.\n');
+  await writeFile(join(root, 'protocol-source.md'), complete('Run migrations in order.'));
   await run(root, 'import', ['database-migrations'], { from: 'protocol-source.md' });
   await run(root, 'update', ['database-migrations'], {
     from: 'protocol-source.md',
@@ -170,8 +170,8 @@ test('protocol imports reject symlinked parent directories and invalid generated
 
 test('concurrent updates cannot both publish the same expected revision', async t => {
   const root = await project(t);
-  await writeFile(join(root, 'one.md'), '# Procedure\n\nFirst update.\n');
-  await writeFile(join(root, 'two.md'), '# Procedure\n\nSecond update.\n');
+  await writeFile(join(root, 'one.md'), complete('First update.'));
+  await writeFile(join(root, 'two.md'), complete('Second update.'));
   await run(root, 'import', ['procedure'], { from: 'one.md' });
 
   const results = await Promise.all([
@@ -233,4 +233,63 @@ test('config loader rejects a symlink in place of the optional protocols directo
   await symlink(external, join(root, '.rivet', 'protocols'));
 
   await assert.rejects(() => loadProjectConfig(root), /invalid/i);
+});
+
+const complete = (procedure = 'Apply the approved migration.') => `# Database changes\n\n## Owner\nDatabase team\n\n## Purpose\nKeep database changes reviewable.\n\n## Applies when\nA database schema changes.\n\n## Procedure\n${procedure}\n\n## Required checks and evidence\nRecord the migration test and rollback instructions.\n`;
+test('publication requires complete non-placeholder sections and leaves incomplete drafts unchanged', async t => {
+ const root=await project(t);await writeFile(join(root,'source.md'),'# Incomplete\n\n## Owner\nTODO\n');
+ const added=await run(root,'add',['incomplete'],{from:'source.md'});assert.equal(added.code,0);
+ assert.equal(added.payload.result.protocol.completeness.ready,false);
+ const path=join(root,'.rivet/protocols/incomplete.md'),before=await readFile(path,'utf8');
+ const result=await run(root,'update',['incomplete'],{from:'source.md','expected-revision':'1',publish:true});
+ assert.equal(result.code,EXIT_CODES.INVALID_INPUT);assert.match(result.payload.error.message,/Owner.*Purpose.*Applies when.*Procedure.*Required checks/s);
+ assert.equal(await readFile(path,'utf8'),before);
+});
+test('retirement retains history, exact show guards bytes, and only explicit complete publication reactivates', async t => {
+ const root=await project(t);await writeFile(join(root,'source.md'),complete());
+ await run(root,'import',['database'],{from:'source.md'});
+ const published=await run(root,'update',['database'],{from:'source.md','expected-revision':'1',publish:true});assert.equal(published.code,0);
+ const selected=published.payload.result.protocol;
+ assert.equal((await run(root,'show',['database'],{'expected-revision':'2','expected-digest':selected.digest})).code,0);
+ const retired=await run(root,'retire',['database'],{'expected-revision':'2'});assert.equal(retired.code,0);assert.equal(retired.payload.result.protocol.status,'retired');assert.equal(retired.payload.result.protocol.revision,3);
+ assert.deepEqual((await run(root,'find',['database'],{'include-drafts':true})).payload.result.protocols,[]);
+ assert.equal((await run(root,'show',['database'],{'include-retired':true})).code,0);
+ const stale=await run(root,'show',['database'],{'include-retired':true,'expected-revision':'2','expected-digest':selected.digest});assert.notEqual(stale.code,0);assert.equal(stale.payload.result,undefined);
+ assert.equal((await run(root,'update',['database'],{from:'source.md','expected-revision':'3'})).payload.result.protocol.status,'draft');
+ assert.equal((await run(root,'update',['database'],{from:'source.md','expected-revision':'4',publish:true})).payload.result.protocol.status,'active');
+});
+test('fenced headings do not satisfy completeness and duplicate sections cannot publish',async t=>{
+ const root=await project(t);await writeFile(join(root,'source.md'),'# Fenced\n\n```markdown\n'+complete()+'\n```\n');
+ await run(root,'import',['fenced'],{from:'source.md'});assert.notEqual((await run(root,'update',['fenced'],{from:'source.md','expected-revision':'1',publish:true})).code,0);
+ await writeFile(join(root,'source.md'),complete()+'\n## Owner\nOther owner\n');
+ assert.notEqual((await run(root,'update',['fenced'],{from:'source.md','expected-revision':'1',publish:true})).code,0);
+});
+
+test('human publication errors name missing sections and their correction command',async t=>{
+ const root=await project(t);await writeFile(join(root,'source.md'),complete().replace('Database team','TODO: add owner'));
+ await run(root,'import',['human-guide'],{from:'source.md'});const output=capture();
+ const code=await main(['protocols','update','human-guide','--project='+root,'--from=source.md','--expected-revision=1','--publish'],{cwd:()=>root,output:output.output});
+ assert.equal(code,EXIT_CODES.INVALID_INPUT);const text=output.writes.map(([,text])=>text).join('');assert.match(text,/Owner/);assert.match(text,/--from=<file>/);assert.match(text,/Do not invent team policy/);
+});
+test('show expectation flags require a pair, remain show-only, and parse through main',async t=>{
+ const root=await project(t);await writeFile(join(root,'source.md'),complete());await run(root,'import',['exact-guide'],{from:'source.md'});
+ const result=await run(root,'update',['exact-guide'],{from:'source.md','expected-revision':'1',publish:true}),digest=result.payload.result.protocol.digest;
+ const output=capture();assert.equal(await main(['protocols','show','exact-guide','--project='+root,'--expected-revision=2','--expected-digest='+digest,'--json'],{output:output.output}),0);
+ assert.notEqual((await run(root,'show',['exact-guide'],{'expected-revision':'2'})).code,0);
+ assert.notEqual((await run(root,'validate',[],{'expected-digest':digest})).code,0);
+});
+
+test('HTML-comment-only metadata cannot make an incomplete protocol publishable',async t=>{
+ const root=await project(t);await writeFile(join(root,'source.md'),'# Hidden\n\n<!--\n'+complete()+'-->\n');
+ await run(root,'import',['hidden'],{from:'source.md'});const file=join(root,'.rivet/protocols/hidden.md'),before=await readFile(file,'utf8');
+ const result=await run(root,'update',['hidden'],{from:'source.md','expected-revision':'1',publish:true});
+ assert.equal(result.code,EXIT_CODES.INVALID_INPUT);assert.match(result.payload.error.message,/Owner/);assert.equal(await readFile(file,'utf8'),before);
+});
+
+test('exact selected lookup ignores unrelated malformed drafts without replacing the approved body',async t=>{
+ const root=await project(t);await writeFile(join(root,'source.md'),complete());await run(root,'import',['selected'],{from:'source.md'});
+ const published=await run(root,'update',['selected'],{from:'source.md','expected-revision':'1',publish:true});
+ await writeFile(join(root,'.rivet/protocols/unrelated.md'),'unfinished unrelated draft');
+ const result=await run(root,'show',['selected'],{'expected-revision':'2','expected-digest':published.payload.result.protocol.digest});
+ assert.equal(result.code,0);assert.equal(result.payload.result.protocol.body,complete());
 });
