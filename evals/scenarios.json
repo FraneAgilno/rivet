@@ -90,7 +90,7 @@
     {
       "id": "memory-continuity",
       "status": "not-implemented",
-      "reason": "Shared memory is deferred to the final implementation lane."
+      "reason": "Shared memory and two-user continuity are post-MVP."
     }
   ]
 }

@@ -50,6 +50,8 @@ Run the candidate's build/tests, documentation build, deterministic evaluations 
 node scripts/package-smoke.mjs --artifact-dir=/absolute/candidate --tag=v0.1.0-alpha.0 --source-sha=<full-source-commit> --artifact-sha256=<trusted-sha256> --report=/absolute/new-install-evidence.json
 ```
 
+For a user-facing installation of an approved local tarball, the [verified bootstrap](./installation.md#install-a-verified-candidate-tarball) checks an explicitly trusted SHA-256 before npm runs. Maintainers should still record the broader lifecycle evidence below.
+
 External-artifact mode verifies and installs the supplied tarball without repacking the checkout or testing a different Git source. Keep the three package assets in the candidate directory and put the new report elsewhere. It requires registry access for dependencies and creates disposable local repositories; it makes no model or external delivery requests.
 
 The installation lifecycle must exercise the actual `rivet` executable through PATH, project setup, readiness checks, a small project's real build/test commands, repeated setup and uninstall preservation. Record resolved dependency versions alongside the runtime versions. The tarball checksum covers Rivet's package bytes; registry dependencies are resolved separately during installation.
