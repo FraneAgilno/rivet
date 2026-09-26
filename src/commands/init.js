@@ -7,6 +7,7 @@ import YAML from 'yaml';
 
 import { EXIT_CODES } from '../cli/output.js';
 import { loadProjectConfig } from '../config/load.js';
+import { snapshot } from '../integrations/capabilities.js';
 import { validateProjectConfiguration } from '../config/validate.js';
 import { withPinnedTargetDirectory } from './install.js';
 import { discoverGit } from '../discovery/git.js';
@@ -711,6 +712,87 @@ export async function init(parsed, dependencies = {}) {
       error instanceof InitTransactionError ? { recovery: error.recovery }
         : error instanceof ProjectDiscoveryError ? { discovery: error.details } : {});
   }
+}
+
+/** Append providers under the init lock without replacing the .rivet directory.
+ * Protocols stay in place; all four configuration snapshots must remain current.
+ */
+export async function prepareProviderAppend(root, options = {}) {
+  const fs = options.fs ?? filesystem;
+  const anchor = verifiedRoot(root, fs);
+  const directory = join(anchor.path, '.rivet');
+  const metadata = fs.lstatSync(directory);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error('Existing configuration is required');
+  const directoryIdentity = identityOf(metadata);
+  const files = {}, snapshots = {};
+  let entries, protocolsIdentity;
+  const config = await loadProjectConfig(anchor.path, { fs });
+  withPinnedTargetDirectory(directory, directoryIdentity, fs, () => {
+    entries = fs.readdirSync('.').sort();
+    if (entries.includes('protocols')) protocolsIdentity = identityOf(fs.lstatSync('protocols'));
+    for (const name of FILES) {
+      const before = fs.lstatSync(name);
+      const content = readBoundedRegular(name, before, fs);
+      files[name] = content;
+      snapshots[name] = { dev: before.dev, ino: before.ino, size: before.size, mode: before.mode & 0o7777, digest: contentDigest(content) };
+    }
+  });
+  const verifyTopology = (temporary) => {
+    const current = fs.readdirSync('.').filter(name => name !== temporary).sort();
+    if (JSON.stringify(current) !== JSON.stringify(entries)
+      || (protocolsIdentity && !directoryMatches('protocols', protocolsIdentity, fs))) throw new Error('Configuration topology changed');
+  };
+  const verify = () => {
+    if (!directoryMatches(anchor.path, anchor.identity, fs) || !directoryMatches(directory, directoryIdentity, fs)) throw new Error('Configuration identity changed');
+    withPinnedTargetDirectory(directory, directoryIdentity, fs, () => {
+      verifyTopology();
+      for (const name of FILES) if (!fileMatchesSnapshot(name, fs.lstatSync(name, { throwIfNoEntry: false }), snapshots[name], fs)) throw new Error('Configuration changed');
+    });
+  };
+  // Bind the parsed values to the byte snapshots, including any edits during load.
+  const reloaded = await loadProjectConfig(anchor.path, { fs });
+  if (JSON.stringify(config) !== JSON.stringify(reloaded)) throw new Error('Configuration changed');
+  verify();
+  let committed = false;
+  return Object.freeze({ config, propose(additions) {
+    const added = snapshot(additions, MAX_TEMPLATE_BYTES);
+    if (!Array.isArray(added) || !added.length) throw new Error('Provider additions are required');
+    const updated = { ...config, providers: { ...config.providers, providers: [...config.providers.providers, ...added] } };
+    validateProjectConfiguration(updated);
+    const document = YAML.parseDocument(files['providers.yaml']);
+    for (const provider of added) document.get('providers', true).add(provider);
+    const proposed = String(document);
+    if (Buffer.byteLength(proposed, 'utf8') > MAX_TEMPLATE_BYTES) throw new Error('Provider configuration is too large');
+    return Object.freeze({ providersYaml: proposed, async commit() {
+      if (committed) throw new Error('Configuration proposal has already been used');
+      committed = true;
+      verify();
+      const lock = acquireInitLock(anchor.path, fs);
+      const temporary = `.rivet-providers-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
+      let staged = null, cleanup;
+      try {
+        verify();
+        withPinnedTargetDirectory(directory, directoryIdentity, fs, () => {
+          fs.writeFileSync(temporary, proposed, { encoding: 'utf8', flag: 'wx', mode: snapshots['providers.yaml'].mode });
+          const metadata = fs.lstatSync(temporary);
+          staged = { dev: metadata.dev, ino: metadata.ino, size: metadata.size, mode: metadata.mode & 0o7777, digest: contentDigest(proposed) };
+          verifyTopology(temporary);
+          for (const name of FILES) if (!fileMatchesSnapshot(name, fs.lstatSync(name, { throwIfNoEntry: false }), snapshots[name], fs)) throw new Error('Configuration changed');
+          if (!fileMatchesSnapshot(temporary, metadata, staged, fs)) throw new Error('Staged providers changed');
+          fs.renameSync(temporary, 'providers.yaml');
+          staged = null;
+        });
+      } finally {
+        if (staged) {
+          try { withPinnedTargetDirectory(directory, directoryIdentity, fs, () => {
+            if (fileMatchesSnapshot(temporary, fs.lstatSync(temporary, { throwIfNoEntry: false }), staged, fs)) fs.unlinkSync(temporary);
+          }); } catch {}
+        }
+        cleanup = releaseInitLock(lock, fs);
+      }
+      return cleanup;
+    } });
+  } });
 }
 
 export { atomicWrite };

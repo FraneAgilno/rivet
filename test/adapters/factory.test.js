@@ -135,3 +135,14 @@ test('direct tracker selection respects configured project scope',()=>{
  const scoped={...config([provider({projectIds:['another-project']})]),project:{id:'demo'}};
  assert.throws(()=>createTrackerProviderFactory({config:scoped,environment:{JIRA_USERNAME:'user',JIRA_API_TOKEN:'token'},transport:transport()}).create(),TrackerProviderFactoryError);
 });
+
+for (const kind of ['jira','linear']) test(`direct ${kind} factory enforces exact resource scope before any provider read`,async()=>{
+  let reads=0;const selected=provider({kind,resourceIds:['DEMO-42'],...(kind==='linear'?{credentials:{apiTokenEnv:'JIRA_API_TOKEN'}}:{})});
+  const factory=createTrackerProviderFactory({config:config([selected]),environment:{JIRA_USERNAME:'user',JIRA_API_TOKEN:'token'},transport:transport(async()=>{reads++;return Response.json({});})});
+  const adapter=factory.create({tracker:kind});
+  for(const id of ['DEMO-43','DEMO','https://example.test/DEMO-42'])await assert.rejects(adapter.read({kind:'issue',id}),TrackerProviderFactoryError);
+  assert.equal(reads,0);
+  selected.resourceIds.push('DEMO-43');
+  await assert.rejects(adapter.read({kind:'issue',id:'DEMO-43'}),TrackerProviderFactoryError);assert.equal(reads,0);
+  await assert.rejects(adapter.read({kind:'issue',id:'DEMO-42'}));assert.equal(reads,1);
+});

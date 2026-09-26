@@ -1,3 +1,4 @@
+import { createAdapter, captureRecord } from './contract.js';
 import { createJiraAdapter } from './jira.js';
 import { createLinearAdapter } from './linear.js';
 import { providerCredentialStatus } from '../config/load.js';
@@ -101,7 +102,17 @@ export function createTrackerProviderFactory(input) {
           headers: credentialsFor(selected, captured.environment),
           ...(captured.clock === undefined ? {} : { clock: captured.clock }),
         };
-        return selected.kind === 'jira' ? createJiraAdapter(common) : createLinearAdapter(common);
+        const adapter = selected.kind === 'jira' ? createJiraAdapter(common) : createLinearAdapter(common);
+        const scope = selected.resourceIds === undefined ? [] : [...selected.resourceIds];
+        if (!Array.isArray(selected.resourceIds ?? []) || scope.some(id => typeof id !== 'string' || !id || id.length > 200)) fail();
+        if (!scope.length) return adapter;
+        return createAdapter({ provider: adapter.provider, fixtureSource: adapter.fixtureSource, capabilities: adapter.capabilities, write: adapter.write,
+          async read(input) {
+            const request = captureRecord(input, new Set(['kind', 'id', 'signal']), ['kind', 'id']);
+            if (!scope.includes(request.id)) fail();
+            return adapter.read(request);
+          },
+        });
       } catch (error) {
         if (error instanceof TrackerProviderFactoryError) throw error;
         fail();

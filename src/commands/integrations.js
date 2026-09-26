@@ -21,6 +21,7 @@ function readHostInventory(flags, dependencies) {
 
 export async function integrationsCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
+  if (subcommand === 'setup') return (await import('./integration-setup.js')).integrationSetup(parsed, dependencies);
   if (!['list', 'check'].includes(subcommand) || operands.length
     || Object.keys(flags).some(key => !['project', 'json', 'host-inventory-json'].includes(key))) {
     throw new CliError('Use rivet integrations list or check [--project=<path>] [--host-inventory-json=<json>] [--json].', 'INVALID_INPUT');

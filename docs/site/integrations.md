@@ -9,6 +9,20 @@ rivet integrations check
 
 Both commands report readiness and remedies. They do not call providers or prove authentication. Direct API entries report credential presence; MCP entries require an explicit host inventory; local CLI entries are descriptors only and cannot execute yet. An unavailable optional MCP integration does not block an unrelated local task.
 
+## Guided configuration
+
+After configuring the project with `rivet setup`, run this optional guide from inside it:
+
+```sh
+rivet integrations setup
+```
+
+Choose Jira, Linear, Figma or Confluence, then the supported transport and resource scope. The guide binds each integration to the current project. For direct Jira/Linear access, enter the names of credential environment variables, never their secret values. For harness MCP access, use the actual connected tool names. Figma and Confluence choices configure linked MCP context; they do not enable direct context retrieval by the standalone CLI.
+
+Review the proposed provider settings and confirm once to write them locally. Existing provider entries are preserved. The guide stops on conflicts or configuration changes during the session; cancellation writes nothing. It requires an interactive terminal. Ordinary `rivet setup` preview and `--write` behavior remains unchanged, and local tasks do not require any integration.
+
+Configuration is not proof of access. Set the referenced credentials in your environment or connect the tools in your harness, then inspect readiness with `rivet integrations check`. MCP access still requires a current host inventory. The guide does not authenticate accounts or call external providers.
+
 ## Harness-connected tools
 
 The active harness discovers tools through its own supported connector interface. It supplies only the configured project, provider IDs, authentication observations and tool names, never credentials or private application databases. For example:
@@ -90,6 +104,6 @@ Use [repository inspection](./repositories.md) to read GitHub, Bitbucket Cloud a
 | Custom MCP | Configurable descriptors, tool inventory and generic context snapshots | Per-server qualification required |
 | Notion / Playwright / Sentry | Optional capability descriptions only | Not qualified |
 | Local CLI transports | Registry descriptors only | Execution not implemented |
-| Shared Obsidian memory | Planned, deferred to the final implementation lane | Not qualified |
+| Shared Obsidian memory | Planned post-MVP; not an MVP release requirement | Not implemented or qualified |
 
 A standalone CLI cannot inherit another application's MCP connection. The active harness performs authorized reads and supplies the bounded snapshots. No live account compatibility is implied by fixture tests.

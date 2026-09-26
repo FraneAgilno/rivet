@@ -157,6 +157,7 @@ export async function setupCommand(parsed, dependencies) {
         ...(flags.global ? ['Run rivet setup from each project root to configure that project.'] : [
           'Review and commit the generated setup files. Confirm repository.defaultBranch in .rivet/project.yaml and switch to that branch before starting a task.',
           `Run rivet doctor${projectArgument} to inspect configured readiness.`,
+          `Optionally run rivet integrations setup${projectArgument} to guide read-only tracker and context configuration.`,
           `Run rivet preflight --mode=host${projectArgument} before starting a task.`,
         ]),
         'This configures instructions and policy; model authentication and active-harness execution are separate.',
