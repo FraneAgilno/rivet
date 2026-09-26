@@ -46,7 +46,7 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'merge', 'deploy', 'tracker-update', 'reconcile', 'recover'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
       (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
@@ -55,14 +55,14 @@ export async function deliveryCommand(parsed, dependencies) {
     flags.run?.length > 64 ||
     (subcommand !== 'prepare' && flags.remote !== undefined) ||
     (flags.provider !== undefined &&
-      (!['refresh', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) ||
+      (!['refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) ||
         !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
     (flags.method !== undefined &&
       (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
-    (['merge', 'deploy', 'tracker-update'].includes(subcommand) && flags.json)
+    (['review', 'merge', 'deploy', 'tracker-update'].includes(subcommand) && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|merge|deploy|tracker-update|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
+      'Use rivet delivery prepare|status|refresh|review|merge|deploy|tracker-update|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -133,7 +133,7 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
-    if (['refresh', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) {
+    if (['refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) {
       result = await runRemoteDelivery({
         action: subcommand,
         store,
@@ -176,6 +176,7 @@ export async function deliveryCommand(parsed, dependencies) {
       );
   } catch (error) {
     if (error instanceof CliError) throw error;
+    if (error?.code === 'ERR_DELIVERY_BRANCH_NOT_PUBLISHED') fail(error.safeMessage, 'REPOSITORY_CONFLICT');
     if (subcommand === 'recover') fail(
       'Delivery recovery stopped. Locks must be at least five minutes old and owned by a provably dead process on this machine. Live, foreign, unsafe or previously claimed locks require investigation; no force option is available.',
       'REPOSITORY_CONFLICT'
@@ -186,10 +187,10 @@ export async function deliveryCommand(parsed, dependencies) {
     );
   }
   const incomplete =
-    ['merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) &&
+    ['review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) &&
     (result.operations.some((op) => ['dispatching', 'indeterminate'].includes(op.state)) ||
-      (['merge', 'deploy', 'tracker-update'].includes(subcommand) &&
-        !result.operations.some((op) => op.action === subcommand && op.state === 'succeeded')));
+      (['review', 'merge', 'deploy', 'tracker-update'].includes(subcommand) &&
+        !result.operations.some((op) => op.action === (subcommand === 'review' ? 'review-request' : subcommand) && op.state === 'succeeded')));
   if (flags.json) dependencies.output.json({ ok: !incomplete, result });
   else {
     dependencies.output.log(`Recorded delivery stage: ${result.stage}`);

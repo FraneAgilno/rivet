@@ -44,3 +44,15 @@ test('delivery parser accepts scoped remote operations and explicit merge method
   assert.equal(parsed.flags.method, 'squash');
   assert.equal(parsed.flags.provider, 'github-team');
 });
+
+test('review creation accepts only scoped interactive delivery options', async () => {
+  const { parseArgs } = await import('../../src/cli/parse-args.js');
+  const parsed = parseArgs(['delivery', 'review', '--provider=github-team']);
+  assert.equal(parsed.subcommand, 'review');
+  for (const extra of ['--json', '--title=custom', '--body=custom', '--method=merge', '--force']) {
+    const code = await main(['delivery', 'review', extra], {
+      cwd: () => '/missing-delivery-project', env: {}, output: { json() {}, error() {}, log() {} },
+    });
+    assert.notEqual(code, 0);
+  }
+});

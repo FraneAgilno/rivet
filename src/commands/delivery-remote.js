@@ -17,7 +17,7 @@ function providerFor(config, repository, flags, writing, operation = 'merge') {
       provider.mode !== 'disabled' &&
       (!writing || provider.mode === 'read-write-with-approval') &&
       (provider.transport ?? 'direct-api') === 'direct-api' &&
-      ['repository-read', ...(operation === 'deploy' ? ['deployments-read', 'actions-read'] : ['checks-read']), ...(writing ? [operation] : [])].every((cap) =>
+      ['repository-read', ...(operation === 'deploy' ? ['deployments-read', 'actions-read'] : operation === 'review-request' ? [] : ['checks-read']), ...(writing ? [operation] : [])].every((cap) =>
         provider.capabilities.includes(cap)
       ) &&
       (!provider.projectIds?.length || provider.projectIds.includes(config.project.id)) &&
@@ -27,7 +27,7 @@ function providerFor(config, repository, flags, writing, operation = 'merge') {
   );
   if (providers.length !== 1)
     fail(
-      'Configure one scoped repository API provider. Merge needs repository-read/checks-read; deployment needs repository-read/deployments-read/actions-read. Writes require the action capability and read-write-with-approval mode.',
+      'Configure one scoped repository API provider. Review creation needs repository-read/review-request; merge needs repository-read/checks-read; deployment needs repository-read/deployments-read/actions-read. Writes require the action capability and read-write-with-approval mode.',
       'MISSING_CONFIGURATION'
     );
   return providers[0];
@@ -68,8 +68,9 @@ async function confirm(dependencies, preview) {
 }
 
 export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config }) {
-  const writing = ['merge', 'deploy', 'tracker-update'].includes(action);
-  if (!['merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
+  if (action === 'review') action = 'review-request';
+  const writing = ['review-request', 'merge', 'deploy', 'tracker-update'].includes(action);
+  if (!['review-request', 'merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -91,7 +92,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   }
   const kind = state.candidate.repository.provider;
   if (!Object.hasOwn(ENDPOINTS, kind))
-    fail('Native merge currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');
+    fail('Native repository delivery currently supports GitHub.com and GitLab.com only.', 'PROVIDER_UNAVAILABLE');
   if (action === 'merge' && kind === 'gitlab' && flags.method !== undefined && flags.method !== 'merge')
     fail(
       'GitLab currently supports --method=merge only; squash and rebase are unavailable.',
@@ -103,6 +104,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     ? state.operations.find(op => ['dispatching', 'indeterminate'].includes(op.state))?.action
     : action;
   const deploying = operation === 'deploy';
+  const reviewing = operation === 'review-request';
   let deployment;
   let mergeReceipt;
   if (deploying) {
@@ -115,11 +117,12 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     if (!mergeReceipt) fail('Deployment requires a confirmed merge receipt.');
   }
   const selectedFlags = deploying ? { ...flags, provider: deployment.providerId } : flags;
-  const provider = providerFor(config, state.candidate.repository, selectedFlags, writing, deploying ? 'deploy' : 'merge');
+  const provider = providerFor(config, state.candidate.repository, selectedFlags, writing, deploying ? 'deploy' : reviewing ? 'review-request' : 'merge');
   const auth = headers(provider, dependencies.env, kind);
   const executorFactory =
-    (deploying ? dependencies.delivery?.deploymentExecutorFactory : dependencies.delivery?.executorFactory) ??
-    (deploying ? (await import('../delivery/github-deployment.js')).createGithubDeploymentExecutor :
+    (deploying ? dependencies.delivery?.deploymentExecutorFactory : reviewing ? dependencies.delivery?.reviewExecutorFactory : dependencies.delivery?.executorFactory) ??
+    (deploying ? (await import('../delivery/github-deployment.js')).createGithubDeploymentExecutor : reviewing
+      ? (kind === 'github' ? (await import('../delivery/github-review.js')).createGithubReviewExecutor : (await import('../delivery/gitlab-review.js')).createGitlabReviewExecutor) :
     (kind === 'github'
       ? (await import('../delivery/github.js')).createGithubDeliveryExecutor
       : (await import('../delivery/gitlab.js')).createGitlabDeliveryExecutor));
@@ -147,7 +150,7 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     approvalRegistry: createApprovalRegistry({ approvers: [{ id: 'terminal-human', principal: 'human' }] }),
   });
   if (action === 'reconcile') return service.reconcile({ expectedVersion: state.version });
-  if (action === 'merge') await validateLocal(state.candidate);
+  if (action === 'merge' || reviewing) await validateLocal(state.candidate);
   state = await service.refresh({ expectedVersion: state.version });
   if (!writing) return state;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
@@ -155,12 +158,19 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
     expectedVersion: state.version,
     action,
     expiresAt,
-    payload: deploying ? {workflow: deployment.workflow, environment: deployment.environment, productionEnvironment: deployment.productionEnvironment} : {
+    payload: reviewing ? (await import('../delivery/review-request.js')).reviewRequestPayload(state.candidate) : deploying ? {workflow: deployment.workflow, environment: deployment.environment, productionEnvironment: deployment.productionEnvironment} : {
       reviewNumber: state.observation.review?.number,
       mergeMethod: flags.method ?? (kind === 'github' ? 'squash' : 'merge'),
     },
   });
-  if (deploying) {
+  if (reviewing) {
+    const content = (await import('../delivery/review-request.js')).reviewRequestContent({ ...state.proposal, digest: state.proposal.digest });
+    dependencies.output.log(`Create review: ${state.candidate.repository.url}`);
+    dependencies.output.log(`${state.candidate.sourceBranch} (${state.candidate.headSha}) -> ${state.candidate.targetBranch} (${state.observation.baseSha})`);
+    dependencies.output.log('Branch selection is not atomic. Rivet verifies the created review afterward; a changed or uncertain result requires reconciliation.');
+    dependencies.output.log(`Title: ${content.title}`);
+    dependencies.output.log(`Body:\n${content.body}`);
+  } else if (deploying) {
     dependencies.output.log(`Deploy ${mergeReceipt.commitSha} to ${deployment.environment}`);
     dependencies.output.log(`Workflow: ${deployment.workflow}. Production environment: ${deployment.productionEnvironment}.`);
   } else {
@@ -174,13 +184,19 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   }
   if (!(await confirm(dependencies, state)))
     fail('Delivery operation was not approved. Nothing was dispatched.', 'INVALID_INPUT');
+  if (reviewing) {
+    const currentConfig = await reloadConfig();
+    const currentProvider = providerFor(currentConfig, state.candidate.repository, selectedFlags, true, 'review-request');
+    if (hash(currentProvider) !== hash(provider) || hash(currentConfig.project) !== hash(config.project))
+      fail('Review configuration changed. Review a new proposal.');
+  }
   if (deploying) {
     const currentConfig = await reloadConfig();
     const currentProvider = providerFor(currentConfig, state.candidate.repository, selectedFlags, true, 'deploy');
     if (hash(currentConfig.project.deployment) !== hash(deployment) || hash(currentProvider) !== hash(provider))
       fail('Deployment configuration changed. Review a new proposal.');
   }
-  if (action === 'merge') await validateLocal(state.candidate);
+  if (action === 'merge' || reviewing) await validateLocal(state.candidate);
   const approval = createApprovalReceipt({
     id: `${action}-${randomUUID()}`,
     approverId: 'terminal-human',

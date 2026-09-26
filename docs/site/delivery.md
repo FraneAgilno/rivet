@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can merge an existing review request under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Bitbucket writes, review creation, tracker status transitions and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Branch publication, Bitbucket writes, tracker status transitions and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -24,9 +24,29 @@ Preparation requires an accepted integration commit, passing recorded verificati
 
 `status` reads the saved record. It does not refresh CI, reviews or remote delivery state. A locally verified record does not mean a pull request was created or the work was merged.
 
+## Create a GitHub pull request or GitLab merge request
+
+Publish the accepted integration branch through your normal repository tools first. The remote source branch must point to the exact locally verified commit. Rivet does not upload Git objects or push branches in this command.
+
+```sh
+rivet delivery prepare
+rivet delivery review
+rivet delivery status
+```
+
+The configured repository API provider needs `repository-read` and `review-request` capabilities, scoped to this project and repository, with `mode: read-write-with-approval`. Use the GitHub or GitLab endpoint and token configuration shown below. Creation does not require `checks-read`; merging later still requires it and the supported repository policy.
+
+`review` selects the prepared run and shows its repository, source/target branches, verified SHA, generated title and exact body before asking for approval. The body includes verification identity and a correlation marker. Review creation requires an interactive terminal; `--json` and unattended approval flags are unavailable. Use `--run=<id>` or `--provider=<id>` only when selection is ambiguous.
+
+The operation creates a same-repository, non-draft review without merging or deleting the source branch. Rivet records dispatch before the write, performs one creation request, then reads the created object to verify repository identity, branches, source SHA, title, body and URL. Existing or ambiguous reviews prevent another creation request. Repeating a confirmed operation returns its saved result.
+
+These creation APIs accept branch names rather than an atomic source-SHA condition. Rivet checks before dispatch and verifies the result afterward. A concurrent branch change can still create an external review for changed content; Rivet records no successful creation receipt if readback differs. Approval for creation never grants permission to merge. See [GitHub creation](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request) and [GitLab creation](https://docs.gitlab.com/api/merge_requests/#create-a-merge-request).
+
+After a timeout or uncertain response, use `rivet delivery reconcile`. Reconciliation only reads provider state and requires one review with the exact operation marker and approved content. It does not repost, edit, reopen or close reviews. An absent or ambiguous result remains indeterminate because absence cannot prove that an earlier request will never complete. A matching closed review can establish that creation happened only while the approved repository and branch facts still match; changed or deleted source/target branches leave the outcome unknown. Closure still blocks subsequent merging.
+
 ## Merge an existing GitHub pull request
 
-After host verification, publish the accepted integration branch and open its PR through your normal repository tools. Rivet currently requires that PR to exist and to match the prepared source branch, target branch and exact commit. It does not push branches or create PRs in this flow.
+After host verification, publish the accepted integration branch and open its PR using `rivet delivery review` or your repository tools. Merging requires that PR to match the prepared source branch, target branch and exact commit. Rivet does not push branches in this flow.
 
 ```sh
 rivet delivery prepare
@@ -72,7 +92,7 @@ GitHub's merge API atomically checks the source SHA. Target refs, target SHA and
 
 ## Merge an existing GitLab merge request
 
-The same `prepare`, `refresh`, interactive `merge` and read-only `reconcile` commands support GitLab.com. Publish the verified integration branch and create its merge request through your repository tools first. The MR must belong to the same project as the target and match the prepared branches and exact commit.
+The same `prepare`, `refresh`, interactive `merge` and read-only `reconcile` commands support GitLab.com. Publish the verified integration branch, then create its merge request with `rivet delivery review` or your repository tools first. The MR must belong to the same project as the target and match the prepared branches and exact commit.
 
 Configure the provider before starting the feature run:
 

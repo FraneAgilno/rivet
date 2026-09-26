@@ -25,8 +25,9 @@ const inFlight = new Map();
 // describe a provider-verified effect for the exact operation; not-applied means
 // terminal proof that no effect occurred or can later occur. An eventually
 // consistent absence check is not sufficient. Native transports are not qualified
-// by this constructor: conditional mutation and reconciliation remain obligations
-// of the implementation supplied here.
+// by this constructor: mutation guarantees and reconciliation remain obligations
+// of the implementation supplied here. Review creation alone may explicitly use
+// post-creation verification instead of an atomic conditional-head mutation.
 export function createTrustedDeliveryExecutor(input) {
   ensure(input && typeof input === 'object');
   const { provider, capabilities } = input;
@@ -34,12 +35,13 @@ export function createTrustedDeliveryExecutor(input) {
   const captured = plain(capabilities);
   ensure(Array.isArray(captured) && captured.length <= ACTIONS.length);
   for (const capability of captured) {
-    exact(capability, ['action', 'conditionalHead', 'reconcile']);
-    ensure(
-      ACTIONS.includes(capability.action) &&
-        capability.conditionalHead === true &&
-        capability.reconcile === true
-    );
+    if (capability.action === 'review-request' && capability.conditionalHead === false) {
+      exact(capability, ['action', 'conditionalHead', 'verifiesCreatedReview', 'reconcile']);
+      ensure(capability.verifiesCreatedReview === true && capability.reconcile === true);
+    } else {
+      exact(capability, ['action', 'conditionalHead', 'reconcile']);
+      ensure(ACTIONS.includes(capability.action) && capability.conditionalHead === true && capability.reconcile === true);
+    }
   }
   ensure(new Set(captured.map((value) => value.action)).size === captured.length);
   const unavailable = () => fail('executor-unavailable');

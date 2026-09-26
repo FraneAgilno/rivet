@@ -61,6 +61,7 @@ const USAGE = `Usage:
   rivet delivery prepare|status|refresh|reconcile|recover [--run=<id>] [--project=<path>] [--json]
   rivet delivery tracker-update [--run=<id>] [--provider=<id>] [--project=<path>]
   rivet delivery deploy [--run=<id>] [--project=<path>]
+  rivet delivery review [--project=<path>] [--run=<id>] [--provider=<id>]
   rivet delivery merge [--run=<id>] [--provider=<id>] [--method=merge|squash|rebase] [--project=<path>]
   rivet repositories inspect [--review=<number>] [--remote=<name>] [--provider=<id>] [--project=<path>] [--json]
   rivet integrations list|check [--project=<path>] [--host-inventory-json=<json>] [--json]
