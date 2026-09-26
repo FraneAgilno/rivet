@@ -1,3 +1,5 @@
+import {assertSelectedProtocolRefs, selectedProtocolStatus} from '../protocols/project.js';
+import {createProtocolPresentation} from '../protocols/presentation.js';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -507,6 +509,8 @@ export function createFeatureExecutor(input) {
     const repository = await configured.gitClient.inspectRepository(project).catch(() => fail());
     const config = await loadProjectConfig(project).catch(() => fail());
     const run = validRun(config, request.run);
+    assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
+    const protocolRecovery = () => selectedProtocolStatus(project, run.workRequest.contextRefs).message;
     if (run.featurePlan.client === 'host') fail();
     if (repository.root !== project || repository.detached || repository.dirty
       || repository.branch !== config.project.repository.defaultBranch
@@ -580,7 +584,9 @@ export function createFeatureExecutor(input) {
           const selected = selectedClients.get(execution.client);
           if (!selected) fail();
           const { version, ...sealedInput } = payload;
-          return await selected.launch(sealedInput, options);
+          const protocolContext = run.workRequest.contextRefs.some(ref => ref.startsWith('protocol:'))
+            ? createProtocolPresentation({sourceRoot: project, refs: run.workRequest.contextRefs}) : undefined;
+          return await selected.launch(sealedInput, {...options, ...(protocolContext ? {protocolContext} : {})});
         }
         catch (error) {
           const detail = typeof error?.details?.reason === 'string' ? `:${error.details.reason}` : '';
@@ -662,6 +668,7 @@ export function createFeatureExecutor(input) {
       },
       async reconcile(node, intent, result) {
         try {
+          assertSelectedProtocolRefs(project, run.workRequest.contextRefs);
           let leaseId = leases.get(node.id);
           if (leaseId === undefined) {
             const reservations = await createReservationStore(statePaths).list();
@@ -739,7 +746,7 @@ export function createFeatureExecutor(input) {
           const preparation = preparationReason ? ` Preparation reason: ${preparationReason}.` : '';
           const execution = executionReason ? ` Execution reason: ${executionReason}.` : '';
           const reconciliation = reconciliationReason ? ` Reconciliation reason: ${reconciliationReason}.` : '';
-          return blocked(run, state, `Runtime stopped at ${outcome.terminal}${stopped.length ? ` (${stopped.join(', ')})` : ''}.${preparation}${execution}${reconciliation} Correct the reported condition and resume the feature run.`);
+          return blocked(run, state, protocolRecovery() ?? `Runtime stopped at ${outcome.terminal}${stopped.length ? ` (${stopped.join(', ')})` : ''}.${preparation}${execution}${reconciliation} Correct the reported condition and resume the feature run.`);
         }
         const finalNode = state.graph.nodes.find(node => node.approvalGate === 'final-delivery');
         const nonHumanComplete = state.graph.nodes
@@ -751,7 +758,7 @@ export function createFeatureExecutor(input) {
     } catch (error) {
       state = await inspectFeatureRuntime(instance).catch(() => state);
       const reason = typeof error?.code === 'string' ? ` Runtime reason: ${error.code}.` : '';
-      return blocked(run, state, `Feature execution stopped safely.${reason} Correct the reported condition and resume the feature run.`);
+      return blocked(run, state, protocolRecovery() ?? `Feature execution stopped safely.${reason} Correct the reported condition and resume the feature run.`);
     }
 
     if (signal?.aborted) return blocked(run, state, 'Feature execution was interrupted. Inspect the run before resuming.');

@@ -6,6 +6,7 @@ import { createProcessRunner } from './process-runner.js';
 import { agentResultContract } from './result-contract.js';
 import { featureDecompositionResultContract } from '../feature/decomposition-contract.js';
 import { serializeLaunchContract } from '../prompts/launch-contract.js';
+import { serializeProtocolLaunch } from '../protocols/presentation.js';
 import { serializePlanningContract } from '../prompts/planning-contract.js';
 import { CLAUDE_FEATURE_PROFILE } from '../feature/client-profile.js';
 
@@ -127,7 +128,7 @@ export function createClaudeClient(input) {
   const maxOutputBytes = config.maxOutputBytes;
 
   async function launch(contractInput, optionInput = {}) {
-    const options = capture(optionInput, new Set(['signal']), []);
+    const options = capture(optionInput, new Set(['signal','protocolContext']), []);
     const signalState = stable(() => {
       const value = options.signal;
       if (value !== undefined && (!(value instanceof AbortSignal) || Object.getPrototypeOf(value) !== AbortSignal.prototype)) failAgent('template-invalid');
@@ -135,6 +136,7 @@ export function createClaudeClient(input) {
     });
     if (signalState.aborted) failAgent('aborted');
     const contract = createLaunchContract(contractInput);
+    serializeProtocolLaunch(contract, options.protocolContext);
     const runner = await createProcessRunner({
       executable, interpreter, worktree: contract.worktree.path,
       worktreeIdentity: { dev: contract.worktree.dev, ino: contract.worktree.ino },
@@ -149,7 +151,7 @@ export function createClaudeClient(input) {
         '--json-schema', JSON.stringify(agentResultContract(contract.evidence).schema),
         '--max-budget-usd', String(contract.budget.maxCostUsd),
       ]),
-      cwd: '.', payload: serializeLaunchContract(contract), signal: signalState.value,
+      cwd: '.', payload: serializeLaunchContract(contract), protocolContext: options.protocolContext, signal: signalState.value,
     });
   }
 

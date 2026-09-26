@@ -4,6 +4,7 @@ import { checkCompatibility, validVersion } from './compatibility.js';
 import { createLaunchContract, failAgent } from './contract.js';
 import { createProcessRunner } from './process-runner.js';
 import { serializeLaunchContract } from '../prompts/launch-contract.js';
+import { serializeProtocolLaunch } from '../protocols/presentation.js';
 import { serializePlanningContract } from '../prompts/planning-contract.js';
 
 const ARGS = Object.freeze(['exec', '--ephemeral', '--ignore-user-config', '--color', 'never', '{stdin}']);
@@ -109,7 +110,7 @@ export function createCodexClient(input) {
   const maxOutputBytes = config.maxOutputBytes;
 
   async function launch(contractInput, optionInput = {}) {
-    const options = capture(optionInput, new Set(['signal']), []);
+    const options = capture(optionInput, new Set(['signal','protocolContext']), []);
     const signalState = stable(() => {
       const value = options.signal;
       if (value !== undefined && (!(value instanceof AbortSignal) || Object.getPrototypeOf(value) !== AbortSignal.prototype)) failAgent('template-invalid');
@@ -117,6 +118,7 @@ export function createCodexClient(input) {
     });
     if (signalState.aborted) failAgent('aborted');
     const contract = createLaunchContract(contractInput);
+    serializeProtocolLaunch(contract, options.protocolContext);
     const runner = await createProcessRunner({
       executable, interpreter, worktree: contract.worktree.path,
       worktreeIdentity: { dev: contract.worktree.dev, ino: contract.worktree.ino },
@@ -125,7 +127,7 @@ export function createCodexClient(input) {
       maxOutputBytes, allowOptionArgs: true,
     });
     await checkCompatibility(runner, 'codex', args, expectedVersion);
-    return runner.run({ args, cwd: '.', payload: serializeLaunchContract(contract), signal: signalState.value });
+    return runner.run({ args, cwd: '.', payload: serializeLaunchContract(contract), protocolContext: options.protocolContext, signal: signalState.value });
   }
 
   return Object.freeze({ provider: 'codex', syntaxVersion: 1, launch });

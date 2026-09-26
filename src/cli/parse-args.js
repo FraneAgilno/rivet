@@ -45,8 +45,8 @@ const STRICT_OPTIONS = {
   repositories: { boolean: new Set(['json']), valued: new Set(['project', 'remote', 'provider', 'review']) },
   integrations: { boolean: new Set(['json']), valued: new Set(['project', 'host-inventory-json']) },
   protocols: {
-    boolean: new Set(['json', 'include-drafts', 'publish']),
-    valued: new Set(['expected-revision', 'from', 'project']),
+    boolean: new Set(['json', 'include-drafts', 'include-retired', 'publish']),
+    valued: new Set(['expected-revision', 'expected-digest', 'from', 'project']),
   },
   work: {
     boolean: new Set(['json']),
@@ -220,7 +220,7 @@ export function parseArgs(argv) {
   if (NESTED_COMMANDS.has(command) && positionals.length === 0) {
     throw new ArgumentError(`Command '${command}' requires a subcommand`);
   }
-  if (command === 'protocols' && !['add', 'import', 'validate', 'find', 'show', 'update'].includes(positionals[0])) {
+  if (command === 'protocols' && !['add', 'import', 'validate', 'find', 'show', 'update', 'retire'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported protocol subcommand');
   }
   if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify', 'recover'].includes(positionals[0])) {

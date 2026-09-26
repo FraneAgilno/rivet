@@ -1,3 +1,4 @@
+import {bodyDigest} from '../../src/protocols/project.js';
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
 import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
@@ -24,7 +25,10 @@ import { createVerificationReportStore } from '../../src/feature/verification-re
 const execFile = promisify(execFileCallback);
 const CONFIG = new URL('../fixtures/config/valid/.rivet/', import.meta.url);
 const NOW = '2029-01-01T00:00:00.000Z';
-const PROTOCOL_REF = `protocol:database-changes:3:sha256:${'a'.repeat(64)}`;
+const PROTOCOL_BODY = '# Database changes\n\nExisting reviewed procedure.\n';
+const PROTOCOL_METADATA = {schemaVersion: 1, id: 'database-changes', title: 'Database changes', status: 'active', revision: 3, updatedAt: '2026-09-26T00:00:00.000Z'};
+PROTOCOL_METADATA.digest = bodyDigest(PROTOCOL_METADATA, PROTOCOL_BODY);
+const PROTOCOL_REF = `protocol:database-changes:3:${PROTOCOL_METADATA.digest}`;
 
 async function git(root, ...args) {
   return (await execFile('/usr/bin/git', ['-C', root, ...args])).stdout.trim();
@@ -136,6 +140,8 @@ async function fixture(t, { now = NOW, schemaV2 = false, ownedPaths = ['app/agen
         content: { title: 'Add agenda', description: 'Add the agenda implementation.', acceptanceCriteria: ['Add the agenda implementation.'] } }],
     } };
   }
+  await mkdir(join(root, '.rivet', 'protocols'), {recursive: true});
+  await writeFile(join(root, '.rivet', 'protocols', 'database-changes.md'), '---\n' + YAML.stringify(PROTOCOL_METADATA) + '---\n\n' + PROTOCOL_BODY);
   await execFile('/usr/bin/git', ['init', '--quiet', '--initial-branch=main', root]);
   await git(root, 'add', '.');
   await git(root, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--quiet', '-m', 'fixture');

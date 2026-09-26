@@ -100,7 +100,7 @@ test('guide cancellation after collection does not create a lock or staging file
 test('provider append preserves an existing published project protocol and its discovery',async t=>{
   const f=await fixture(t);const {protocolsCommand}=await import('../../src/commands/protocols.js');let value;
   const protocol=async(subcommand,operands,flags={})=>protocolsCommand({command:'protocols',subcommand,operands,flags:{project:f.root,json:true,...flags}},{cwd:()=>f.root,output:{json:result=>{value=result;},log(){},error(){}}});
-  assert.equal(await protocol('add',['team-guide']),0);await writeFile(join(f.root,'guide.md'),'# Team guide\n\nUse recorded evidence.\n');
+  assert.equal(await protocol('add',['team-guide']),0);await writeFile(join(f.root,'guide.md'),'# Team guide\n\n## Owner\nTest team\n\n## Purpose\nKeep team work reviewable.\n\n## Applies when\nThe team prepares a change.\n\n## Procedure\nUse recorded evidence.\n\n## Required checks and evidence\nRecord the completed verification results.\n');
   assert.equal(await protocol('update',['team-guide'],{from:'guide.md','expected-revision':'1',publish:true}),0);
   const path=join(f.root,'.rivet','protocols','team-guide.md'),before=await readFile(path,'utf8');
   assert.equal(await f.run(),0);assert.equal(await readFile(path,'utf8'),before);
