@@ -349,3 +349,15 @@ test('worker harness rejects nonworker overrides and unsupported clients', async
     await assert.rejects(planner.propose({config,workRequest:request(),baselineCommit:BASELINE,client:'codex'}));
   }
 });
+
+test('rejects ownership of the pinned project launcher and descendants with case-insensitive matching', async () => {
+  const config = await configuration();
+  for (const path of ['.rivet.cjs', '.RIVET.CJS', '.rivet.cjs/child']) {
+    const proposal = decomposition();
+    proposal.workItems[0].ownedPaths = [path];
+    const planner = createFeaturePlanner({ planningClient: { propose: async () => proposal } });
+    await assert.rejects(() => planner.propose({
+      config, workRequest: request(), baselineCommit: BASELINE, client: 'codex',
+    }), error => error.details.violation === 'owned-path-protected');
+  }
+});

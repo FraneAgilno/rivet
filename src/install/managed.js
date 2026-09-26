@@ -1,3 +1,4 @@
+import { reference, runtimeSkill } from './project-reference.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -74,7 +75,7 @@ function readRegularFile(path, fs, { maxBytes, label, missing = false }) {
   }
 }
 
-function readSource(dependencies) {
+function readSource(dependencies, projectRoot) {
   const { fs, packageRoot } = dependencies;
   let metadata;
   try {
@@ -99,10 +100,13 @@ function readSource(dependencies) {
     maxBytes: MAX_SKILL_BYTES,
     label: 'Rivet harness skill template',
   });
+  const pinned = projectRoot ? reference(projectRoot, fs) : null;
+  const skillBytes = dependencies.managedSkillBytes ?? (pinned ? runtimeSkill(skill.bytes, pinned.id) : skill.bytes);
+  if (!Buffer.isBuffer(skillBytes) || skillBytes.length > MAX_SKILL_BYTES) throw conflict('Managed skill source is invalid.');
   return Object.freeze({
     package: Object.freeze({ name: PACKAGE_NAME, version: metadata.version }),
-    skillBytes: skill.bytes,
-    skillHash: skill.hash,
+    skillBytes,
+    skillHash: sha256(skillBytes),
   });
 }
 
@@ -296,8 +300,8 @@ function buildPlan(parsed, dependencies) {
     throw new CliError('Managed installation requires --minimal.', 'INVALID_INPUT');
   }
   const operation = parsed.command === 'uninstall' ? 'uninstall' : 'install';
-  const source = readSource(dependencies);
   const projectRoot = projectScope(parsed, dependencies);
+  const source = readSource(dependencies, projectRoot);
   const locations = selectedTargets(parsed.flags)
     .map(target => targetLocation(target, parsed, dependencies, projectRoot));
   const targets = locations.map(location => inspectTarget(

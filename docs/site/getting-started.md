@@ -8,6 +8,8 @@ npm install --global --install-links github:FraneAgilno/rivet#main
 
 Confirm `rivet --help` works before continuing. Keep `--install-links` in the GitHub installation command; see [installation details](./installation.md).
 
+For a project-only installation without a global CLI, use the [pinned project runtime](./installation.md#install-for-one-project-without-a-global-cli). Run the commands below through `node .rivet.cjs` instead of `rivet` when using that installation.
+
 ## Connect a project
 
 From your project root, preview the setup:
