@@ -35,6 +35,7 @@ export default defineConfig({
         { text: 'Implementation status', link: '/status' },
         { text: 'Roadmap', link: '/roadmap' },
         { text: 'Troubleshooting', link: '/troubleshooting' },
+        { text: 'Evaluations and user trials', link: '/evaluations' },
         { text: 'Contributing', link: '/contributing' },
       ] },
     ],

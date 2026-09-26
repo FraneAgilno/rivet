@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run docs:build
+      - name: Evaluate deterministic workflow mechanics
+        timeout-minutes: 15
+        run: npm run evals -- --mode=fixture
       - name: Verify global tarball and Git installation plus first use
         timeout-minutes: 10
         run: npm run package:smoke

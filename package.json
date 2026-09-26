@@ -14,7 +14,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "docs:dev": "vitepress docs",
-    "package:smoke": "node scripts/package-smoke.mjs"
+    "package:smoke": "node scripts/package-smoke.mjs",
+    "evals": "node scripts/run-evals.mjs"
   },
   "files": [
     "bin/",

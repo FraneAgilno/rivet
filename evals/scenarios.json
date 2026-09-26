@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "intake",
+      "file": "test/integrations/context-intake.test.js",
+      "criteria": [
+        {
+          "id": "sourced-criteria",
+          "test": "normalizes both trackers and linked design context with source assurance and user additions"
+        },
+        {
+          "id": "reject-forged-context",
+          "test": "rejects missing criteria, resource ambiguity, wrong project, auth failures and forged assurance"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "file": "test/feature/host-execution.test.js",
+      "criteria": [
+        {
+          "id": "durable-handoff",
+          "test": "prepare and nextAction durably hand one Worker to the host without a model client"
+        },
+        {
+          "id": "verified-human-gate",
+          "test": "submitResult integrates an exact restarted host action and verify stops at final human approval"
+        }
+      ]
+    },
+    {
+      "id": "repository-adapter",
+      "file": "test/adapters/github.test.js",
+      "criteria": [
+        {
+          "id": "source-contract",
+          "test": "reads GitHub repository, branch, PR, check, review, and artifact metadata"
+        },
+        {
+          "id": "conditional-authority",
+          "test": "GitHub child comments require trusted atomic parent-state compare-and-mutate"
+        }
+      ]
+    },
+    {
+      "id": "authority",
+      "file": "test/core/authority.test.js",
+      "criteria": [
+        {
+          "id": "delegation-ceiling",
+          "test": "worker cannot inherit authority its manager does not have"
+        },
+        {
+          "id": "approval-binding",
+          "test": "approval authority, principal, policy, and decision mismatches fail closed"
+        }
+      ]
+    },
+    {
+      "id": "recovery",
+      "file": "test/runtime/recovery.test.js",
+      "criteria": [
+        {
+          "id": "version-authority",
+          "test": "retry and cancellation mutations require exact version and structural authority"
+        },
+        {
+          "id": "bounded-recovery",
+          "test": "corrective and stale recovery nodes stay bounded, parented, and evidence-reasoned"
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "file": "test/models/delegation.test.js",
+      "criteria": [
+        {
+          "id": "unverified-output",
+          "test": "delegation makes one pinned hosted request and returns explicitly unverified output"
+        },
+        {
+          "id": "reject-unsupported",
+          "test": "invalid profiles, prompts, credentials, spend limits and unsupported providers fail before network"
+        }
+      ]
+    }
+  ],
+  "deferred": [
+    {
+      "id": "memory-continuity",
+      "status": "not-implemented",
+      "reason": "Shared memory is deferred to the final implementation lane."
+    }
+  ]
+}
