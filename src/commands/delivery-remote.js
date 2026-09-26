@@ -67,10 +67,10 @@ async function confirm(dependencies, preview) {
   }
 }
 
-export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config }) {
+export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config, publicationContext }) {
   if (action === 'review') action = 'review-request';
-  const writing = ['review-request', 'merge', 'deploy', 'tracker-update'].includes(action);
-  if (!['review-request', 'merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
+  const writing = ['publish', 'review-request', 'merge', 'deploy', 'tracker-update'].includes(action);
+  if (!['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -85,6 +85,10 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   let state = await store.read();
   if (!state) fail('Run rivet delivery prepare after verification first.');
   const pendingAction = state.operations.find(op => ['dispatching','indeterminate'].includes(op.state))?.action;
+  if (action === 'publish' || (action === 'reconcile' && pendingAction === 'branch-publish')) {
+    const {runPublicationDelivery} = await import('./delivery-publish.js');
+    return runPublicationDelivery({action,store,config,flags,dependencies,validateLocal,reloadConfig,publicationContext,confirm: preview => confirm(dependencies,preview)});
+  }
   if (action === 'tracker-update' || (action === 'reconcile' && pendingAction === 'tracker-update')) {
     const {runTrackerDelivery} = await import('./delivery-tracker.js');
     return runTrackerDelivery({action,state,store,config,flags,dependencies,reloadConfig,loadTrackerTarget,

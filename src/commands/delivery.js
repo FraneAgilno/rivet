@@ -46,7 +46,7 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile', 'recover'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
       (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
@@ -55,14 +55,14 @@ export async function deliveryCommand(parsed, dependencies) {
     flags.run?.length > 64 ||
     (subcommand !== 'prepare' && flags.remote !== undefined) ||
     (flags.provider !== undefined &&
-      (!['refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) ||
+      (!['refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) ||
         !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
     (flags.method !== undefined &&
       (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
-    (['review', 'merge', 'deploy', 'tracker-update'].includes(subcommand) && flags.json)
+    (['publish', 'review', 'merge', 'deploy', 'tracker-update'].includes(subcommand) && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|review|merge|deploy|tracker-update|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
+      'Use rivet delivery prepare|status|refresh|publish|review|merge|deploy|tracker-update|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -133,9 +133,10 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
-    if (['refresh', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) {
+    if (['refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) {
       result = await runRemoteDelivery({
         action: subcommand,
+        publicationContext: {project: project.root, gitExecutable: executable},
         store,
         config: project.config,
         reloadConfig: () => loadProjectConfig(project.root),
@@ -145,14 +146,14 @@ export async function deliveryCommand(parsed, dependencies) {
         validateLocal: async (expected) => {
           const gitClient = await createGitClient({ gitExecutable: executable });
           // Select the previously recorded repository even if another remote exists.
-          const { discoverRepositoryRemotes } = await import('../repositories/index.js');
+          const { discoverRepositoryRemotes, parseRepositoryRemote } = await import('../repositories/index.js');
           const remotes = await discoverRepositoryRemotes(project.root, { runner });
-          const remote = remotes.find((item) => item.url === expected.repository.url);
+          const remote = remotes.find((item) => {try {return hash(parseRepositoryRemote(item.url)) === hash(expected.repository);} catch {return false;}});
           if (!remote) fail('The prepared repository remote is no longer configured.', 'REPOSITORY_CONFLICT');
           const current = await loadDeliveryCandidate({
             project: project.root,
             runId: paths.runId,
-            remoteName: remote.remoteName,
+            remoteName: remote.name,
             gitClient,
             runner,
           });
@@ -186,11 +187,7 @@ export async function deliveryCommand(parsed, dependencies) {
       'REPOSITORY_CONFLICT'
     );
   }
-  const incomplete =
-    ['review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand) &&
-    (result.operations.some((op) => ['dispatching', 'indeterminate'].includes(op.state)) ||
-      (['review', 'merge', 'deploy', 'tracker-update'].includes(subcommand) &&
-        !result.operations.some((op) => op.action === (subcommand === 'review' ? 'review-request' : subcommand) && op.state === 'succeeded')));
+  const incomplete = deliveryOutcomeIncomplete(subcommand, result);
   if (flags.json) dependencies.output.json({ ok: !incomplete, result });
   else {
     dependencies.output.log(`Recorded delivery stage: ${result.stage}`);
@@ -204,4 +201,13 @@ export async function deliveryCommand(parsed, dependencies) {
     );
   }
   return incomplete ? EXIT_CODES.PROVIDER_UNAVAILABLE : EXIT_CODES.SUCCESS;
+}
+
+export function deliveryOutcomeIncomplete(subcommand, result) {
+  if (!['publish', 'review', 'merge', 'deploy', 'tracker-update', 'reconcile'].includes(subcommand)) return false;
+  if (result.operations.some(op => ['dispatching', 'indeterminate'].includes(op.state))) return true;
+  if (subcommand === 'reconcile') return false;
+  const action = subcommand === 'publish' ? 'branch-publish' : subcommand === 'review' ? 'review-request' : subcommand;
+  const alreadyPublished = subcommand === 'publish' && result.observation?.publication?.remoteSha === result.candidate.headSha;
+  return !alreadyPublished && !result.operations.some(op => op.action === action && op.state === 'succeeded');
 }
