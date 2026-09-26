@@ -259,6 +259,7 @@ Jira/Linear adapters have contract and failure-path tests. Authorized live track
 | Recorded stage | Meaning |
 | --- | --- |
 | Locally verified | Accepted commit and verification evidence are recorded. |
+| Branch published | The approved publication operation confirmed the exact commit at the destination branch. |
 | Review requested | A review request was confirmed externally. |
 | Checks passed | A trusted executor observed known required-check and review policies satisfied for the candidate commit. |
 | Merge approved | Exact delivery authority was accepted and dispatch intent was persisted. The merge outcome may still be unknown. |
@@ -270,7 +271,7 @@ The service also records each operation separately. A failed deployment or track
 
 ## Executor and approval boundary
 
-The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
+The application service supports separate branch-publication, review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -293,8 +294,8 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, tracker status transitions and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket review creation/merge, tracker status transitions and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 
-Bitbucket Cloud remains available for [read-only repository inspection](./repositories.md). A native executor that enforces the delivery contract has not yet been qualified. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
+Bitbucket Cloud supports [read-only repository inspection](./repositories.md) and the separately approved create-only branch publication described above. Native review creation and merging remain unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
