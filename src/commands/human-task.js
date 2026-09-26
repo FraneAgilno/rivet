@@ -172,6 +172,7 @@ export async function humanTaskCommand(parsed, dependencies) {
   if (parsed.subcommand === 'status') {
     if (typeof dependencies.work?.status !== 'function') fail('Task status is unavailable.', 'MISSING_CONFIGURATION');
     const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
+    dependencies.output.log(`Run: ${record.runId}`);
     dependencies.output.log(`Task: ${visible(record.workRequest.acceptanceCriteria[0] ?? record.workRequest.title)}`);
     dependencies.output.log(`State: ${visible(record.status)}`);
     if (record.featurePlan.nodes.some(node => node.execution)) {
@@ -204,6 +205,7 @@ export async function humanTaskCommand(parsed, dependencies) {
   if (record.featurePlan.client === 'host') {
     const status = await invokeFeature(dependencies.work, 'status', { project: project.root, runId: record.runId });
     renderWorkerCheckouts(status, dependencies.output);
+    dependencies.output.log(`Run: ${record.runId}`);
     dependencies.output.log(`Host task: ${visible(status.run.status)}. ${visible(status.nextAction)}`);
     dependencies.output.log('Continue in the coding harness that owns this task; Rivet will not launch a second worker.');
     return EXIT_CODES.SUCCESS;
