@@ -99,7 +99,7 @@ If the ticket has no criteria and the user has supplied none, Rivet stops with g
 
 ## Repository providers
 
-Use [repository inspection](./repositories.md) to read GitHub, Bitbucket Cloud and GitLab.com repository and review state through a shared interface. Its capability matrix distinguishes implemented reads from the planned delivery lifecycle and pending live qualification.
+Use [repository inspection](./repositories.md) to read GitHub, Bitbucket Cloud and GitLab.com repository and review state through a shared interface. Its capability matrix distinguishes implemented reads from separately governed delivery actions and pending live qualification.
 
 ## Qualification status
 

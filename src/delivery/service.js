@@ -39,7 +39,7 @@ export function createTrustedDeliveryExecutor(input) {
     if (capability.action === 'review-request' && capability.conditionalHead === false) {
       exact(capability, ['action', 'conditionalHead', 'verifiesCreatedReview', 'reconcile']);
       ensure(capability.verifiesCreatedReview === true && capability.reconcile === true);
-    } else if (capability.action === 'tracker-transition' && capability.conditionalHead === false) {
+    } else if (['tracker-transition', 'review-update'].includes(capability.action) && capability.conditionalHead === false) {
       exact(capability, ['action', 'conditionalHead', 'verifiesDesiredState', 'reconcile']);
       ensure(capability.verifiesDesiredState === true && capability.reconcile === true);
     } else {
@@ -140,6 +140,7 @@ export function createDeliveryService(config) {
           !state.operations.some((value) => value.action === 'merge' && value.state === 'succeeded'),
         'not-ready'
       );
+    else if (action === 'review-update') ensure(state.observation?.review?.state === 'open' && !state.operations.some(op => op.action === 'merge' && op.state === 'succeeded'), 'not-ready');
     else if (action === 'review-request')
       ensure(
         state.observation?.review === null &&
@@ -252,6 +253,7 @@ export function createDeliveryService(config) {
     const stage = {
       'branch-publish': 'branch-published',
       'review-request': 'review-requested',
+      'review-update': 'review-requested',
       merge: 'merged',
       deploy: 'deployed',
       'tracker-update': 'tracker-updated',

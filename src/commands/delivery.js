@@ -46,23 +46,24 @@ async function selectRun(project, flags, subcommand, runner) {
 export async function deliveryCommand(parsed, dependencies) {
   const { subcommand, operands, flags } = parsed;
   if (
-    !['prepare', 'status', 'refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile', 'recover'].includes(subcommand) ||
+    !['prepare', 'status', 'refresh', 'publish', 'review', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile', 'recover'].includes(subcommand) ||
     operands.length ||
     Object.keys(flags).some(
-      (key) => !['project', 'run', 'remote', 'json', 'provider', 'method'].includes(key)
+      (key) => !['project', 'run', 'remote', 'json', 'provider', 'method', 'title', 'body'].includes(key)
     ) ||
+    (subcommand === 'review-update' ? typeof flags.title !== 'string' || typeof flags.body !== 'string' : flags.title !== undefined || flags.body !== undefined) ||
     (flags.run !== undefined && !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(flags.run)) ||
     flags.run?.length > 64 ||
     (subcommand !== 'prepare' && flags.remote !== undefined) ||
     (flags.provider !== undefined &&
-      (!['refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand) ||
+      (!['refresh', 'publish', 'review', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand) ||
         !/^[a-z][a-z0-9-]{0,63}$/.test(flags.provider))) ||
     (flags.method !== undefined &&
       (subcommand !== 'merge' || !['merge', 'squash', 'rebase'].includes(flags.method))) ||
-    (['publish', 'review', 'merge', 'deploy', 'tracker-update', 'tracker-transition'].includes(subcommand) && flags.json)
+    (['publish', 'review', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-transition'].includes(subcommand) && flags.json)
   ) {
     fail(
-      'Use rivet delivery prepare|status|refresh|publish|review|merge|deploy|tracker-update|tracker-status|tracker-transition|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
+      'Use rivet delivery prepare|status|refresh|publish|review|review-update|merge|deploy|tracker-update|tracker-status|tracker-transition|reconcile|recover [--run=<id>] [--project=<path>]. Prepare accepts --remote; remote operations accept --provider; interactive merge accepts --method=merge|squash|rebase. JSON is unavailable for delivery writes.'
     );
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), flags.project, {
@@ -133,7 +134,7 @@ export async function deliveryCommand(parsed, dependencies) {
         result = await service.initialize(candidate);
       }
     }
-    if (['refresh', 'publish', 'review', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand)) {
+    if (['refresh', 'publish', 'review', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand)) {
       result = await runRemoteDelivery({
         action: subcommand,
         publicationContext: {project: project.root, gitExecutable: executable},
@@ -194,6 +195,7 @@ export async function deliveryCommand(parsed, dependencies) {
       dependencies.output.log(`Tracker: ${result.trackerStatus.target.issueUrl}\nCurrent status: ${result.trackerStatus.current.name}`);
       for (const choice of result.trackerStatus.destinations) dependencies.output.log(`${choice.state.name} (${choice.name}; ${choice.state.type})${choice.eligible ? '' : ' - unavailable: requires fields or screen'}`);
     }
+    if (result.reviewUpdateNoop) dependencies.output.log('The review already has the requested title and body. No write was sent.');
     if (result.trackerTransitionNoop) dependencies.output.log('The selected destination is already current. No write was sent and no transition receipt was created.');
     dependencies.output.log(`Recorded delivery stage: ${result.stage}`);
     dependencies.output.log(`Run: ${result.candidate.runId}`);
@@ -209,9 +211,10 @@ export async function deliveryCommand(parsed, dependencies) {
 }
 
 export function deliveryOutcomeIncomplete(subcommand, result) {
+  if (subcommand === 'review-update' && result.reviewUpdateNoop) return false;
   if (subcommand === 'tracker-transition' && result.trackerTransitionNoop) return false;
   if (subcommand === 'tracker-status') return false;
-  if (!['publish', 'review', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand)) return false;
+  if (!['publish', 'review', 'review-update', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'reconcile'].includes(subcommand)) return false;
   if (result.operations.some(op => ['dispatching', 'indeterminate'].includes(op.state))) return true;
   if (subcommand === 'reconcile') return false;
   const action = subcommand === 'publish' ? 'branch-publish' : subcommand === 'review' ? 'review-request' : subcommand;
