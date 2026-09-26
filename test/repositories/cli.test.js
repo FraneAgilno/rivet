@@ -122,3 +122,14 @@ test('review inspection requires checks-read before accessing the provider',asyn
   assert.equal(await main(['repositories','inspect','--review=14','--json'],f.deps),EXIT_CODES.MISSING_CONFIGURATION);
   assert.equal(f.calls(),0);
 });
+
+test('inspection uses saved canonical remote preference and rejects URL drift before network',async t=>{
+ const f=await fixture(t),path=join(f.root,'.rivet/project.yaml');
+ const project=parse(await readFile(path,'utf8'));project.repository.remote={name:'upstream',url:'https://github.com/team/demo'};await writeFile(path,stringify(project));
+ f.deps.repositories.discoverRemotes=async()=>[{name:'origin',url:'https://github.com/other/repo'},{name:'upstream',url:'git@github.com:team/demo.git'}];
+ assert.equal(await main(['repositories','inspect','--json'],f.deps),0);assert.equal(f.calls(),1);
+ const changed=await fixture(t),changedPath=join(changed.root,'.rivet/project.yaml');
+ const config=parse(await readFile(changedPath,'utf8'));config.repository.remote=project.repository.remote;await writeFile(changedPath,stringify(config));
+ changed.deps.repositories.discoverRemotes=async()=>[{name:'upstream',url:'https://github.com/team/substituted'}];
+ assert.equal(await main(['repositories','inspect','--json'],changed.deps),EXIT_CODES.REPOSITORY_CONFLICT);assert.equal(changed.calls(),0);
+});

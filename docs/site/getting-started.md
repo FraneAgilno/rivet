@@ -26,6 +26,8 @@ rivet setup --write
 
 Setup creates `.rivet` project policy and one minimal Rivet skill for Claude Code and Codex. Use `--target=claude` or `--target=codex` to select one. Existing valid configuration is preserved; edited or unowned skill files are never silently replaced. Setup does not execute your build or test scripts.
 
+Setup also previews the supported Git publishing remotes. If several are available, choose one when applying setup, or pass `--remote=<name>` explicitly for automation. Rivet saves its name and repository identity in project policy and checks them before later inspection or delivery. A project without a supported remote can still use local tasks. See [publishing remote selection](./repositories.md#choose-a-publishing-remote-during-setup).
+
 For Jira, Linear, Figma or Confluence, optionally run `rivet integrations setup` next. The [integration guide](./integrations.md#guided-configuration) walks through project scope, transport and credential references with a preview before writing. Skip this for local tasks.
 
 Setup inspects the root package and bounded immediate child package directories. A root script takes precedence for its logical check. Otherwise, Rivet proposes the matching child scripts in stable path order. For example, a root with no scripts, a `backend` with `build` and `test`, and a `frontend` with `build` and `type-check` produces two ordered build steps, one backend test step, and an optional frontend typecheck step. Preview shows every exact `cwd` and `argv`, its provenance, unresolved required checks, and package-level coverage warnings. The checks have not run at preview time; `--write` is the explicit confirmation to store generated child steps.

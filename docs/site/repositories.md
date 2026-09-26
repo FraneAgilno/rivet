@@ -13,13 +13,30 @@ rivet repositories inspect --review=14
 
 The first command reads repository metadata. The second captures a pull request (GitHub/Bitbucket) or merge request (GitLab), its head commit, checks and review observations. Use the number from the selected repository.
 
-If multiple distinct repositories or configured providers match, select them explicitly:
+If no saved publishing choice resolves multiple repositories, or several configured providers match, select them explicitly:
 
 ```sh
 rivet repositories inspect --remote=upstream --provider=team-github --review=14 --json
 ```
 
 Rivet does not assume that `origin` is the publishing target. An explicit `--project=/absolute/project` is available when running elsewhere. These commands perform network reads; `rivet integrations check` only reports configuration readiness.
+
+## Choose a publishing remote during setup
+
+`rivet setup` previews locally configured Git remotes without network access. It proposes a single supported remote; when several names are available, it asks you to choose while applying setup in an interactive terminal. It never assumes `origin` is the publishing destination.
+
+For an explicit choice, including scripts and JSON output:
+
+```sh
+rivet setup --remote=upstream
+rivet setup --remote=upstream --write
+```
+
+The preview shows the selected name and canonical repository URL. Applying setup stores them in `repository.remote` in `.rivet/project.yaml`. Other project settings, comments, provider files and project protocols are preserved. Local-only projects do not need a publishing remote.
+
+Repository inspection and delivery preparation reuse this choice. A per-command `--remote` selects another destination for that operation without rewriting the saved choice or authorizing a write. Provider scope, review and merge approvals still apply separately.
+
+If the saved remote disappears or points to a different repository, Rivet stops and asks you to review the choice again. Run setup with an explicit remote and inspect its preview before applying the replacement. Cancellation and conflicting changes during setup leave the selection unwritten.
 
 ## Configure read access
 

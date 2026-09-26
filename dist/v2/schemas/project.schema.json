@@ -24,6 +24,7 @@
       "additionalProperties": false,
       "required": ["defaultBranch", "branchPattern"],
       "properties": {
+        "remote": {"type": "object", "additionalProperties": false, "required": ["name", "url"], "properties": {"name": {"type": "string", "maxLength": 100, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}, "url": {"type": "string", "maxLength": 2048, "pattern": "^https://(github\\.com|gitlab\\.com|bitbucket\\.org)/[A-Za-z0-9_][A-Za-z0-9._/-]*$"}}},
         "defaultBranch": { "$ref": "#/$defs/refName" },
         "branchPattern": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._/{\\}-]+$" },
         "sensitivePaths": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/relativePath" } }

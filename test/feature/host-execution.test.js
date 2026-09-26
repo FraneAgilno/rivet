@@ -35,7 +35,7 @@ async function npmExecutable() {
   return realpath(stdout.trim());
 }
 
-async function fixture(t, { now = NOW, schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false, hostContext = false } = {}) {
+async function fixture(t, { now = NOW, schemaV2 = false, ownedPaths = ['app/agenda.js'], lockedDependencies = false, hostContext = false, repositoryRemote } = {}) {
   const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-host-execution-')));
   const root = join(parent, 'project');
   await mkdir(root);
@@ -113,6 +113,12 @@ async function fixture(t, { now = NOW, schemaV2 = false, ownedPaths = ['app/agen
     await writeFile(join(root, 'package.json'), JSON.stringify({
       scripts: { build: 'x', test: 'x', lint: 'x', typecheck: 'x', dev: 'x' },
     }));
+  }
+  if (repositoryRemote) {
+    const path = join(root, '.rivet', 'project.yaml');
+    const config = YAML.parse(await readFile(path, 'utf8'));
+    config.repository.remote = repositoryRemote;
+    await writeFile(path, YAML.stringify(config));
   }
   let hostSource;
   if (hostContext) {
@@ -287,7 +293,7 @@ test('task deps installs in the active host Worker before handoff', async t => {
 
 test('submitResult integrates an exact restarted host action and verify stops at final human approval', async t => {
   const now = new Date().toISOString();
-  const { root, gitClient, approved, gate } = await fixture(t, { now });
+  const { root, gitClient, approved, gate } = await fixture(t, { now, repositoryRemote: {name:'origin',url:'https://github.com/team/demo'} });
   const execution = createHostExecution({
     gitClient,
     now: () => now,
@@ -333,9 +339,15 @@ test('submitResult integrates an exact restarted host action and verify stops at
   assert.equal(observed.deliveryReady, true);
   const delivery = await import('../../src/delivery/prepare.js');
   await git(root, 'remote', 'add', 'origin', 'https://github.com/team/demo.git');
+  await git(root, 'remote', 'add', 'alternate', 'https://github.com/team/alternate.git');
   const candidate = await delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient });
   assert.equal(candidate.localVerification.headSha, observed.checkout.acceptedCommit);
   assert.equal(candidate.repository.fullName, 'team/demo');
+  const override = await delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient, remoteName:'alternate' });
+  assert.equal(override.repository.fullName, 'team/alternate');
+  await git(root, 'remote', 'set-url', 'origin', 'https://github.com/team/substituted.git');
+  await assert.rejects(delivery.loadDeliveryCandidate({ project: root, runId: approved.runId, gitClient }));
+  await git(root, 'remote', 'set-url', 'origin', 'https://github.com/team/demo.git');
   assert.match(candidate.localVerification.evidenceDigest, /^[a-f0-9]{64}$/);
   assert.equal(candidate.targetBranch, 'main');
   let deliveryOutput;

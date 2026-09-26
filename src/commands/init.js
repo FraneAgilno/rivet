@@ -1,3 +1,4 @@
+import { prepareSetupRemote } from './setup-remote.js';
 import * as filesystem from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -5,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import YAML from 'yaml';
 
-import { EXIT_CODES } from '../cli/output.js';
+import { CliError, EXIT_CODES } from '../cli/output.js';
 import { loadProjectConfig } from '../config/load.js';
 import { snapshot } from '../integrations/capabilities.js';
 import { validateProjectConfiguration } from '../config/validate.js';
@@ -140,7 +141,7 @@ function proposalProvenance(config, discovery, git) {
   return Object.freeze(provenance);
 }
 
-function proposalFromTemplates(discovery, git, packageRoot, fs) {
+function proposalFromTemplates(discovery, git, packageRoot, fs, remote) {
   const config = {
     project: boundedTemplate(packageRoot, 'project.yaml', fs),
     providers: boundedTemplate(packageRoot, 'providers.yaml', fs),
@@ -152,6 +153,7 @@ function proposalFromTemplates(discovery, git, packageRoot, fs) {
   config.project.schemaVersion = discovery.proposal.schemaVersion;
   config.project.stack = discovery.proposal.stack;
   config.project.repository.defaultBranch = git.defaultBranch ?? 'main';
+  if (remote) config.project.repository.remote = remote;
   config.project.commands = discovery.proposal.commands;
   for (const command of ['lint', 'typecheck']) {
     if (config.project.commands[command]) {
@@ -569,6 +571,7 @@ async function atomicWrite(root, files, state, fs, options = {}) {
     });
     context.stageSnapshots = validateStagedDirectory(context.stagePath, context.stageIdentity, files, fs);
     options.beforePublish?.();
+    await options.beforePublicationCheck?.();
     withPinnedTargetDirectory(anchor.path, anchor.identity, fs, () => {
       verifyStateRelative(state, fs);
       options.beforeFirstMutation?.();
@@ -621,7 +624,8 @@ export async function init(parsed, dependencies = {}) {
       playwright: discovery.features.playwright,
       storybook: discovery.features.storybook,
     }, { cwd: projectRoot, runner: dependencies.runner });
-    const proposal = proposalFromTemplates(discovery, git, dependencies.packageRoot ?? PACKAGE_ROOT, fs);
+    const remote = dependencies.setupRemoteSelection ?? await prepareSetupRemote(projectRoot, parsed.flags, dependencies);
+    const proposal = proposalFromTemplates(discovery, git, dependencies.packageRoot ?? PACKAGE_ROOT, fs, remote.selected);
     if (!parsed.flags.write) {
       const state = targetState(projectRoot, proposal.files, fs);
       const result = {
@@ -629,6 +633,8 @@ export async function init(parsed, dependencies = {}) {
         status: 'proposal',
         project: { id: discovery.proposal.id, root: '.' },
         proposal: {
+          repository: proposal.config.project.repository,
+          remoteSelection: {status:remote.status, choices:remote.choices},
           schemaVersion: discovery.proposal.schemaVersion,
           commands: discovery.proposal.commands,
           qualityGates: proposal.config.quality.commandGates,
@@ -646,6 +652,8 @@ export async function init(parsed, dependencies = {}) {
         checksExecuted: false,
       };
       result.message = `Proposed ${FILES.length} configuration files; no files were written.\n${FILES.map(filename => `  ${filename}: ${state.diffs[filename].action}`).join('\n')}`;
+      if (remote.selected) result.message += `\nSelected repository remote: ${remote.selected.name} -> ${remote.selected.url}`;
+      else if (remote.status === 'selection-required') result.message += '\nChoose a repository remote with --remote=<name> when applying this configuration.';
       return emit(output, json, result, EXIT_CODES.SUCCESS);
     }
     const lock = acquireInitLock(projectRoot, fs);
@@ -658,6 +666,8 @@ export async function init(parsed, dependencies = {}) {
         status: 'written',
         project: { id: discovery.proposal.id, root: '.' },
         proposal: {
+          repository: proposal.config.project.repository,
+          remoteSelection: {status:remote.status, choices:remote.choices},
           schemaVersion: discovery.proposal.schemaVersion,
           commands: discovery.proposal.commands,
           qualityGates: proposal.config.quality.commandGates,
@@ -686,7 +696,9 @@ export async function init(parsed, dependencies = {}) {
             'Configuration write was cancelled.', { diffs: state.diffs });
         }
       }
+      await remote.verify();
       result.cleanup = await atomicWrite(projectRoot, proposal.files, state, fs, {
+        beforePublicationCheck: remote.verify,
         beforePublish: dependencies.beforePublish,
         beforeFirstMutation: dependencies.beforeFirstMutation,
         beforePublishRename: dependencies.beforePublishRename,
@@ -705,19 +717,20 @@ export async function init(parsed, dependencies = {}) {
       };
     }
     result.message = `Wrote ${FILES.length} configuration files to .rivet/.${result.cleanup.residueCount > 0 ? ' Backup cleanup requires attention.' : ''}`;
+    if (remote.selected) result.message += `\nSelected repository remote: ${remote.selected.name} -> ${remote.selected.url}`;
     return emit(output, json, result, EXIT_CODES.SUCCESS);
   } catch (error) {
     return failure(output, json, 'REPOSITORY_CONFLICT', EXIT_CODES.REPOSITORY_CONFLICT,
-      'Project configuration could not be proposed or written safely.',
+      error instanceof CliError ? error.message : 'Project configuration could not be proposed or written safely.',
       error instanceof InitTransactionError ? { recovery: error.recovery }
         : error instanceof ProjectDiscoveryError ? { discovery: error.details } : {});
   }
 }
 
-/** Append providers under the init lock without replacing the .rivet directory.
+/** Update one configuration file under the init lock without replacing .rivet.
  * Protocols stay in place; all four configuration snapshots must remain current.
  */
-export async function prepareProviderAppend(root, options = {}) {
+async function prepareConfigFileUpdate(root, filename, transform, options = {}) {
   const fs = options.fs ?? filesystem;
   const anchor = verifiedRoot(root, fs);
   const directory = join(anchor.path, '.rivet');
@@ -755,17 +768,17 @@ export async function prepareProviderAppend(root, options = {}) {
   verify();
   let committed = false;
   return Object.freeze({ config, propose(additions) {
-    const added = snapshot(additions, MAX_TEMPLATE_BYTES);
-    if (!Array.isArray(added) || !added.length) throw new Error('Provider additions are required');
-    const updated = { ...config, providers: { ...config.providers, providers: [...config.providers.providers, ...added] } };
+    const document = YAML.parseDocument(files[filename]);
+    const updated = structuredClone(config);
+    transform(updated, document, additions);
     validateProjectConfiguration(updated);
-    const document = YAML.parseDocument(files['providers.yaml']);
-    for (const provider of added) document.get('providers', true).add(provider);
     const proposed = String(document);
-    if (Buffer.byteLength(proposed, 'utf8') > MAX_TEMPLATE_BYTES) throw new Error('Provider configuration is too large');
-    return Object.freeze({ providersYaml: proposed, async commit() {
+    if (Buffer.byteLength(proposed, 'utf8') > MAX_TEMPLATE_BYTES) throw new Error('Configuration is too large');
+    return Object.freeze({ providersYaml: proposed, yaml: proposed, async commit() {
       if (committed) throw new Error('Configuration proposal has already been used');
       committed = true;
+      verify();
+      await options.beforeCommit?.();
       verify();
       const lock = acquireInitLock(anchor.path, fs);
       const temporary = `.rivet-providers-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
@@ -773,13 +786,13 @@ export async function prepareProviderAppend(root, options = {}) {
       try {
         verify();
         withPinnedTargetDirectory(directory, directoryIdentity, fs, () => {
-          fs.writeFileSync(temporary, proposed, { encoding: 'utf8', flag: 'wx', mode: snapshots['providers.yaml'].mode });
+          fs.writeFileSync(temporary, proposed, { encoding: 'utf8', flag: 'wx', mode: snapshots[filename].mode });
           const metadata = fs.lstatSync(temporary);
           staged = { dev: metadata.dev, ino: metadata.ino, size: metadata.size, mode: metadata.mode & 0o7777, digest: contentDigest(proposed) };
           verifyTopology(temporary);
           for (const name of FILES) if (!fileMatchesSnapshot(name, fs.lstatSync(name, { throwIfNoEntry: false }), snapshots[name], fs)) throw new Error('Configuration changed');
           if (!fileMatchesSnapshot(temporary, metadata, staged, fs)) throw new Error('Staged providers changed');
-          fs.renameSync(temporary, 'providers.yaml');
+          fs.renameSync(temporary, filename);
           staged = null;
         });
       } finally {
@@ -796,3 +809,18 @@ export async function prepareProviderAppend(root, options = {}) {
 }
 
 export { atomicWrite };
+
+export async function prepareProviderAppend(root, options = {}) {
+  return prepareConfigFileUpdate(root, 'providers.yaml', (config, document, additions) => {
+    const added = snapshot(additions, MAX_TEMPLATE_BYTES);
+    if (!Array.isArray(added) || !added.length) throw new Error('Provider additions are required');
+    config.providers.providers.push(...added);
+    for (const provider of added) document.get('providers', true).add(provider);
+  }, options);
+}
+export async function prepareRepositoryRemoteUpdate(root, options = {}) {
+  return prepareConfigFileUpdate(root, 'project.yaml', (config, document, remote) => {
+    config.project.repository.remote = snapshot(remote, MAX_TEMPLATE_BYTES);
+    document.setIn(['repository', 'remote'], config.project.repository.remote);
+  }, options);
+}
