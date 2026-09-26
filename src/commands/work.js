@@ -8,7 +8,7 @@ import { CliError, EXIT_CODES } from '../cli/output.js';
 const RUN_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const MAX_DECOMPOSITION_BYTES = 128 * 1024;
 const MAX_INLINE_JSON_BYTES = 64 * 1024;
-const SUBCOMMANDS = new Set(['propose', 'prepare', 'next', 'status', 'submit', 'verify']);
+const SUBCOMMANDS = new Set(['propose', 'prepare', 'next', 'status', 'submit', 'verify', 'recover']);
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
 
@@ -154,11 +154,19 @@ export async function workCommand(parsed, dependencies) {
     prepare: ['project', 'expected-version', 'json'],
     next: ['project', 'expected-runtime-version', 'json'],
     status: ['project', 'json'],
+    recover: ['project', 'json'],
     submit: ['project', 'expected-runtime-version', 'action', 'action-json', 'result', 'result-json', 'json'],
     verify: ['project', 'expected-version', 'expected-runtime-version', 'json'],
   };
   if (Object.keys(parsed.flags).some(key => !allowedFlags[parsed.subcommand].includes(key))) {
     fail(`Work ${parsed.subcommand} options are invalid.`);
+  }
+  if (parsed.subcommand === 'recover') {
+    const result = immutableJson(await invoke(service(dependencies, 'work', 'recover'), 'recover', lifecycleInput(parsed)));
+    const ok = result.status === 'recovered';
+    if (parsed.flags.json) dependencies.output.json({ ok, command: 'work', subcommand: 'recover', result }, ok ? 'stdout' : 'stderr');
+    else (ok ? dependencies.output.log : dependencies.output.error)(JSON.stringify(result, null, 2));
+    return ok ? EXIT_CODES.SUCCESS : EXIT_CODES.REPOSITORY_CONFLICT;
   }
   if (parsed.subcommand === 'propose') {
     return emit(parsed, dependencies, await invoke(

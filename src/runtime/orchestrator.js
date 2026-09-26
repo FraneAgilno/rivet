@@ -207,6 +207,11 @@ function canonicalState(input, expectedInstanceId, retryDelaysMs = null) {
   return state;
 }
 
+/** Validate a saved default-policy host runtime without acquiring locks or writing state. */
+export function validateRuntimeSnapshot(input, instanceId) {
+  return immutableJson(canonicalState(input, instanceId, [0, 0]));
+}
+
 async function transaction(instance, expectedVersion, operation, retryDelaysMs = null) {
   assertInstance(instance);
   const lock = await instance.acquire();

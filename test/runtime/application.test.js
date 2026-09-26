@@ -50,7 +50,7 @@ test('constructs one inert narrow application surface with explicit host work ca
     'start', 'status', 'watch',
   ]);
   assert.deepEqual(Object.keys(application.work).sort(), [
-    'nextAction', 'prepare', 'status', 'submitResult', 'verify',
+    'nextAction', 'prepare', 'recover', 'status', 'submitResult', 'verify',
   ]);
   for (const retained of ['push', 'merge', 'mergeDefault', 'deploy', 'providerWrite', 'trackerWrite']) {
     assert.equal(Object.hasOwn(application.feature, retained), false);

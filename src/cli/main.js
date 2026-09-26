@@ -73,6 +73,7 @@ const USAGE = `Usage:
   rivet install --all              Install all skills (project)
   rivet setup [--project=<path>|--global] [--target=claude|codex|both] [--write] [--json]
   rivet run "task" [--harness=claude|codex] [--project=<path>]
+  rivet task recover [--project=<path>] [--run=<id>]
   rivet task status [--project=<path>] [--run=<id>]
   rivet task resume [--project=<path>] [--run=<id>]
   rivet task deps [--project=<path>] [--run=<id>]
@@ -87,6 +88,7 @@ const USAGE = `Usage:
   rivet work next <run-id> --project=<path> --expected-runtime-version=<n> [--json]
   rivet work submit <run-id> --project=<path> --expected-runtime-version=<n> (--action=<file>|--action-json=<json>) (--result=<file>|--result-json=<json>) [--json]
   rivet work verify <run-id> --project=<path> --expected-version=<n> --expected-runtime-version=<n> [--json]
+  rivet work recover <run-id> --project=<path> [--json]
   rivet work status <run-id> --project=<path> [--json]
   rivet install --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]
   rivet uninstall --minimal [--project=<path>|--global] [--target=claude|codex|both] [--json]

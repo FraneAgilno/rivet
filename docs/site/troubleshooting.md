@@ -40,7 +40,18 @@ For a pending action, get `runtime.version` from `work status`, then call `work 
 
 If `work verify` reports a missing accepted integration identity, the private record of the reconciled Worker commit is unavailable. The run cannot be verified by treating the checkout's current HEAD as accepted; create a new reviewed proposal. If `work status` reports missing or inconsistent final approval evidence, do not deliver that checkout.
 
-An interrupted host operation can leave a private host lock. Rivet will report that the lock needs inspection and will not remove it automatically. Inspect the run and operation state before any manual recovery; do not delete a lock merely to make a command proceed.
+An interrupted host operation can leave private locks. From the configured project, inspect task status and then explicitly request recovery:
+
+```sh
+rivet task recover
+rivet task status
+```
+
+If several active host tasks exist, add `--run=<id>` using the displayed list. Outside the project, add `--project=<path>`. Harnesses can use `rivet work recover <run-id> --project=<absolute-path> --json`.
+
+Recovery only removes an unchanged abandoned owner on the same machine, with a provably dead process and a lock at least five minutes old. Fresh, live, foreign, malformed or already-claimed owners stay blocked. Saved run/runtime state and the current configuration must validate before recovery; missing state after execution began is blocked. An interrupted preparation can be recovered before it created a runtime snapshot. Do not edit private state or delete locks to bypass these checks.
+
+The response lists exactly which locks were recovered. A later blocked lock produces a nonzero result even if earlier locks were recovered. Task state, verification evidence and worktrees are preserved; recovery does not launch or resume a Worker. Read status afterward and continue through the owning harness. Spawned tasks are excluded because removing a host lock cannot establish that their Worker has stopped.
 
 
 ## No compatible CLI was found
