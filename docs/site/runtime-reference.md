@@ -32,6 +32,8 @@ The terminal flow needs a real interactive terminal for review; piped input cann
 
 The feature commands accept a Markdown request or configured Jira/Linear intake. `feature propose` produces a reviewable plan; `feature start` requires the exact reviewed proposal and current version. `feature status` reports progress. `feature resume` applies to spawned runs; host runs use the `work` commands. The CLI does not silently replace stale approvals or widen scope.
 
+Direct ticket intake accepts `--acceptance-criteria '<user criteria>'` alongside `--ticket` on `work propose`, `feature propose` and `feature run`. Separate multiple criteria with newlines. Rivet retains their user origin separately from tracker criteria and includes them in the request digest. When both sources are empty, ask the user for criteria and retry; do not invent them. This option is invalid for Markdown, inline or MCP requests. See [tracker criteria](./integrations.md#direct-tracker-acceptance-criteria).
+
 Host mode uses this lifecycle:
 
 ```text

@@ -394,3 +394,24 @@ test('real application composes a Linear read into a proposal without a Markdown
   await assert.rejects(() => missing.feature.propose({ project: fixture.root, source: { kind: 'ticket', value: 'ENG-7' }, tracker: 'linear', client: 'claude' }), error => error.code === 'ERR_TRACKER_PROVIDER_CONFIGURATION');
   assert.equal(reads, 1);
 });
+
+test('feature ticket proposals accept supplemental criteria and reject invalid or local-source additions', async () => {
+  const {featureCommand}=await import('../../src/commands/feature.js');let received;
+  const dependencies={output:{log(){},json(){}},feature:{async propose(input){received=input;return {runId:'run-one',version:1,proposalDigest:'a'.repeat(64)};}}};
+  const parsed={command:'feature',subcommand:'propose',operands:[],flags:{project:'/repo',ticket:'DEMO-42','acceptance-criteria':'First\nSecond'}};
+  assert.equal(await featureCommand(parsed,dependencies),0);assert.deepEqual(received.userAcceptanceCriteria,['First','Second']);
+  received=null;
+  await assert.rejects(featureCommand({...parsed,flags:{project:'/repo','request-text':'local',client:'codex','acceptance-criteria':'Unexpected'}},dependencies));assert.equal(received,null);
+  assert.equal(parseArgs(['feature','run','--project=/repo','--ticket=DEMO-42','--acceptance-criteria=First']).flags['acceptance-criteria'],'First');
+});
+
+test('feature ticket run previews tracker and user criteria separately before activation, and JSON retains provenance', async () => {
+  const {featureCommand}=await import('../../src/commands/feature.js');const lines=[];let json;
+  const workRequest={acceptanceCriteria:['Source','User'],criteriaProvenance:{sourceAcceptanceCriteria:['Source'],userAcceptanceCriteria:['User']}};
+  const result={runId:'run-one',version:1,proposalDigest:'a'.repeat(64),workRequest};
+  const dependencies={output:{log(value){lines.push(value);},json(value){json=value;}},feature:{async propose(){return result;},async start(){throw new Error('must not activate');},async watch(){throw new Error('must not execute');}},async confirmFeatureActivation(){assert.match(lines.join('\n'),/Tracker acceptance criteria:[\s\S]*Source[\s\S]*User-supplied acceptance criteria:[\s\S]*User/);return false;}};
+  const parsed={command:'feature',subcommand:'run',operands:[],flags:{project:'/repo',ticket:'DEMO-42','acceptance-criteria':'User'}};
+  assert.equal(await featureCommand(parsed,dependencies),0);
+  assert.equal(await featureCommand({...parsed,subcommand:'propose',flags:{...parsed.flags,json:true}},dependencies),0);
+  assert.deepEqual(JSON.parse(JSON.stringify(json.result.workRequest.criteriaProvenance)),workRequest.criteriaProvenance);
+});

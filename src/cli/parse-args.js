@@ -52,7 +52,7 @@ const STRICT_OPTIONS = {
     boolean: new Set(['json']),
     valued: new Set([
       'action', 'action-json', 'decomposition', 'decomposition-json', 'result-json', 'expected-runtime-version', 'expected-version', 'project', 'result',
-      'request', 'request-text', 'ticket', 'tracker', 'host-context-json',
+      'request', 'request-text', 'ticket', 'tracker', 'host-context-json', 'acceptance-criteria',
     ]),
   },
   run: {
@@ -82,7 +82,7 @@ const STRICT_OPTIONS = {
   feature: {
     boolean: new Set(['json']),
     valued: new Set([
-      'client', 'expected-version', 'project', 'proposal-digest', 'request', 'request-text', 'ticket', 'tracker',
+      'client', 'expected-version', 'project', 'proposal-digest', 'request', 'request-text', 'ticket', 'tracker', 'acceptance-criteria',
     ]),
   },
   preflight: {

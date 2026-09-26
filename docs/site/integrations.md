@@ -91,6 +91,12 @@ Rivet computes content digests and retains source identity, revision, capture ti
 
 External text is inert context. It cannot change commands, owned paths, budgets or approval rules. It is not delivery evidence. Inspect persisted context with `rivet work status`; actual repository checks still determine verification.
 
+### Direct tracker acceptance criteria
+
+For direct Jira or Linear ticket proposals, an agent can supply the user's additions with `--acceptance-criteria 'The requested observable result'`. This option belongs with `--ticket`; it does not replace tracker content or apply to local requests or MCP bundles. For several criteria, use separate lines in the quoted value. MCP intake continues to use the bundle's `userAcceptanceCriteria` field.
+
+If the ticket has no criteria and the user has supplied none, Rivet stops with guidance to ask the user and retry the proposal. It does not invent criteria, save an incomplete run, or update the ticket. Source criteria and user additions remain separately recorded, and their combined acceptance list is bound to the reviewed request digest. Review both origins before approving the plan. A changed source or changed criteria requires a new proposal.
+
 ## Repository providers
 
 Use [repository inspection](./repositories.md) to read GitHub, Bitbucket Cloud and GitLab.com repository and review state through a shared interface. Its capability matrix distinguishes implemented reads from the planned delivery lifecycle and pending live qualification.

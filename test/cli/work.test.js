@@ -468,3 +468,32 @@ test('integration input and readiness errors keep actionable CLI exit codes', as
     assert.doesNotMatch(output.stderr(),/private details/);
   }
 });
+
+test('ticket proposal forwards explicit newline criteria and rejects non-ticket use before the service', async () => {
+  let received;const output=capture();
+  const dependencies={output:output.output,feature:{async propose(input){received=input;return {runId:'run-one',version:1,proposalDigest:'a'.repeat(64)};}}};
+  const base=['work','propose','--project=/repo','--ticket=DEMO-42','--decomposition-json={"schemaVersion":1}'];
+  assert.equal(await main([...base,'--acceptance-criteria=First user criterion\nSecond user criterion','--json'],dependencies),0);
+  assert.deepEqual(received.userAcceptanceCriteria,['First user criterion','Second user criterion']);
+  received=null;
+  assert.notEqual(await main(['work','propose','--project=/repo','--request-text=local','--acceptance-criteria=Unexpected'],dependencies),0);
+  assert.equal(received,null);
+});
+
+test('missing tracker criteria keeps its useful input error through both human and JSON CLI boundaries', async () => {
+  const {WorkRequestError}=await import('../../src/work-request/contract.js');
+  for(const json of [false,true]){
+    const output=capture();const error=new WorkRequestError();error.safeMessage='The tracker has no acceptance criteria. Ask the user and retry with --acceptance-criteria.';
+    const code=await main(['work','propose','--project=/repo','--ticket=DEMO-42','--decomposition-json={}',...(json?['--json']:[])],{output:output.output,feature:{async propose(){throw error;}}});
+    assert.equal(code,EXIT_CODES.INVALID_INPUT);assert.match(output.stderr(),/Ask the user/);assert.match(output.stderr(),/--acceptance-criteria/);
+    if(json)assert.equal(JSON.parse(output.stderr()).error.code,'INVALID_INPUT');
+  }
+});
+
+test('invalid supplemental text is an input error without invoking proposal service',async()=>{
+  for(const value of ['', 'First\n', 'First\nFirst', 'authorization: Bearer abcdefghijklmnop', '\tFirst', 'First\r']){
+    const output=capture();let calls=0;
+    const code=await main(['work','propose','--project=/repo','--ticket=DEMO-42','--decomposition-json={}',`--acceptance-criteria=${value}`,'--json'],{output:output.output,feature:{async propose(){calls++;}}});
+    assert.equal(code,EXIT_CODES.INVALID_INPUT);assert.equal(calls,0);
+  }
+});

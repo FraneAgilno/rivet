@@ -1,3 +1,4 @@
+import { parseAcceptanceCriteriaText } from '../work-request/contract.js';
 import * as filesystem from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { TextDecoder } from 'node:util';
@@ -11,6 +12,11 @@ const MAX_INLINE_JSON_BYTES = 64 * 1024;
 const SUBCOMMANDS = new Set(['propose', 'prepare', 'next', 'status', 'submit', 'verify', 'recover']);
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
+
+function supplementalCriteria(value) {
+  try { return parseAcceptanceCriteriaText(value); }
+  catch { fail('Acceptance criteria must be nonempty bounded text, one criterion per line, without duplicates, control characters or credentials.'); }
+}
 
 function absolute(value, label) {
   if (typeof value !== 'string' || value.length < 2 || value.length > 4096 || !isAbsolute(value)
@@ -129,11 +135,13 @@ function proposalInput(parsed, dependencies) {
   else if (selected === 'host-context-json') {
     source = { kind: 'host-observation', value: inputJson(project, parsed.flags, 'host-context', dependencies.fs ?? filesystem, 'Host context') };
   } else source = { kind: 'ticket', value: parsed.flags.ticket };
+  if (selected !== 'ticket' && parsed.flags['acceptance-criteria'] !== undefined) fail('--acceptance-criteria requires --ticket.');
   if (selected !== 'ticket' && parsed.flags.tracker !== undefined) fail('--tracker is only valid with --ticket.');
   return Object.freeze({
     project,
     source: Object.freeze(source),
     client: 'host',
+    ...(parsed.flags['acceptance-criteria'] === undefined ? {} : { userAcceptanceCriteria: supplementalCriteria(parsed.flags['acceptance-criteria']) }),
     decomposition: inputJson(project, parsed.flags, 'decomposition', dependencies.fs ?? filesystem, 'Work decomposition'),
     ...(parsed.flags.tracker === undefined ? {} : { tracker: parsed.flags.tracker }),
   });
@@ -150,7 +158,7 @@ export async function workCommand(parsed, dependencies) {
   if (!parsed || parsed.command !== 'work' || !SUBCOMMANDS.has(parsed.subcommand)
     || !Array.isArray(parsed.operands) || !parsed.flags || typeof parsed.flags !== 'object') fail('Work command is invalid.');
   const allowedFlags = {
-    propose: ['project', 'request', 'request-text', 'host-context-json', 'ticket', 'tracker', 'decomposition', 'decomposition-json', 'json'],
+    propose: ['project', 'request', 'request-text', 'host-context-json', 'ticket', 'tracker', 'acceptance-criteria', 'decomposition', 'decomposition-json', 'json'],
     prepare: ['project', 'expected-version', 'json'],
     next: ['project', 'expected-runtime-version', 'json'],
     status: ['project', 'json'],

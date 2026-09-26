@@ -5,7 +5,7 @@ import { immutableJson } from '../clients/contract.js';
 import { activeProtocolContextRefs } from '../commands/protocols.js';
 import { loadProjectConfig } from '../config/load.js';
 import { resolveFeatureRunPaths } from '../state/paths.js';
-import { createWorkRequest } from '../work-request/contract.js';
+import { createWorkRequest, userAcceptanceCriteria } from '../work-request/contract.js';
 import { resolveInlineWorkRequest, resolveMarkdownWorkRequest } from '../work-request/local.js';
 import { resolveHostWorkRequest } from '../work-request/host.js';
 import { resolveTrackerWorkRequest } from '../work-request/tracker.js';
@@ -207,13 +207,15 @@ export function createFeatureWorkflow(input) {
     const signal = executionSignal(options);
     const request = capture(
       raw,
-      new Set(['project', 'source', 'client', 'tracker', 'decomposition']),
+      new Set(['project', 'source', 'client', 'tracker', 'decomposition', 'userAcceptanceCriteria']),
       new Set(['project', 'source']),
     );
     const { observed, config } = await repository(request.project);
     const selectedClient = request.client ?? 'claude';
     if (!CLIENTS.has(selectedClient)) fail('invalid-input');
     const source = capture(request.source, new Set(['kind', 'value']));
+    const additions = request.userAcceptanceCriteria === undefined ? undefined : userAcceptanceCriteria(request.userAcceptanceCriteria);
+    if (additions && source.kind !== 'ticket') fail('invalid-input');
     let workRequest;
     if (source.kind === 'inline') {
       workRequest = resolveInlineWorkRequest({ text: source.value, capturedAt: now() });
@@ -228,7 +230,7 @@ export function createFeatureWorkflow(input) {
       if (typeof trackerAdapterFor !== 'function') fail('configuration');
       const provider = selectedTracker(config, request.tracker);
       const adapter = await trackerAdapterFor(immutableJson({ provider, config, project: observed.root }));
-      workRequest = await resolveTrackerWorkRequest({ provider, ticketId: source.value, adapter });
+      workRequest = await resolveTrackerWorkRequest({ provider, ticketId: source.value, adapter, ...(additions ? { userAcceptanceCriteria: additions } : {}) });
     } else fail('invalid-input');
     let protocolRefs;
     try { protocolRefs = await protocolsFor(observed.root); } catch { fail('configuration'); }
@@ -239,6 +241,7 @@ export function createFeatureWorkflow(input) {
       workRequest = createWorkRequest({
         source: workRequest.source,
         ...(workRequest.context === undefined ? {} : { context: workRequest.context }),
+        ...(workRequest.criteriaProvenance === undefined ? {} : { criteriaProvenance: workRequest.criteriaProvenance }),
         title: workRequest.title,
         description: workRequest.description,
         acceptanceCriteria: workRequest.acceptanceCriteria,
