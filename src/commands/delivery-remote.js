@@ -69,8 +69,8 @@ async function confirm(dependencies, preview) {
 
 export async function runRemoteDelivery({ action, store, config, flags, dependencies, validateLocal, loadTrackerTarget, reloadConfig = async () => config, publicationContext }) {
   if (action === 'review') action = 'review-request';
-  const writing = ['publish', 'review-request', 'merge', 'deploy', 'tracker-update'].includes(action);
-  if (!['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'refresh', 'reconcile'].includes(action))
+  const writing = ['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-transition'].includes(action);
+  if (!['publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-status', 'tracker-transition', 'refresh', 'reconcile'].includes(action))
     fail('Unsupported delivery action.', 'INVALID_INPUT');
   if (
     writing &&
@@ -88,6 +88,11 @@ export async function runRemoteDelivery({ action, store, config, flags, dependen
   if (action === 'publish' || (action === 'reconcile' && pendingAction === 'branch-publish')) {
     const {runPublicationDelivery} = await import('./delivery-publish.js');
     return runPublicationDelivery({action,store,config,flags,dependencies,validateLocal,reloadConfig,publicationContext,confirm: preview => confirm(dependencies,preview)});
+  }
+  if (['tracker-status', 'tracker-transition'].includes(action) || (action === 'reconcile' && pendingAction === 'tracker-transition')) {
+    const {runTrackerTransition} = await import('./delivery-transition.js');
+    return runTrackerTransition({action,state,store,config,flags,dependencies,reloadConfig,loadTrackerTarget,
+      confirm: preview => confirm(dependencies,preview)});
   }
   if (action === 'tracker-update' || (action === 'reconcile' && pendingAction === 'tracker-update')) {
     const {runTrackerDelivery} = await import('./delivery-tracker.js');

@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket review/merge writes, tracker status transitions and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket review/merge writes and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -254,6 +254,28 @@ A timeout, failed read, duplicate matching comment or ambiguous response preserv
 
 Jira/Linear adapters have contract and failure-path tests. Authorized live tracker posting and visibility/permission qualification remain acceptance work.
 
+## Jira and Linear status transitions
+
+For the same recorded tracker ticket after a confirmed merge:
+
+```sh
+rivet delivery tracker-status
+rivet delivery tracker-transition
+rivet delivery reconcile
+```
+
+`tracker-status` reads the ticket's current status and available destinations. `tracker-transition` presents those choices, then previews the exact ticket, current status and selected destination for a separate approval. Select by the displayed number; no internal status or transition ID is required. Rivet does not infer that a merged change means the ticket should be marked Done.
+
+The provider needs `issues-read` and `transitions-read`; add `tracker-transition` and `mode: read-write-with-approval` for changes. Scope it to the recorded tracker/site and ticket as for delivery comments. The authenticated account needs permission to inspect the issue/workflow and perform the chosen transition. Comment capabilities and approvals remain separate. A comment and a status change can occur in either order, and both receipts are retained.
+
+Jira uses the available transition identity, which can differ from the destination status identity. Transitions requiring a screen or additional required fields stop for manual handling. Linear choices come from the ticket's team workflow states. Duplicate destination names are distinguished by their transition name and state type; indistinguishable choices stop for manual handling. If the provider lists the current state as a destination and you select it, Rivet reports a no-op without creating a write receipt. It does not invent a self-transition when Jira does not offer one. The command does not accept a replacement ticket or arbitrary field updates.
+
+Approval binds the source request, immutable issue identity, current issue revision and status, destination metadata, provider configuration and confirmed merge receipt. Rivet rechecks those facts before sending one change request and reads the issue afterward. These APIs do not provide a portable atomic condition on the original status; a concurrent change remains possible between the check and the write. See [Jira transitions](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/#api-rest-api-3-issue-issueidorkey-transitions-post) and [Linear's GraphQL API](https://linear.app/developers/graphql).
+
+A receipt confirms that the same ticket was observed in the approved destination state. It does not prove that Rivet was the only actor responsible for reaching that state. Timeout recovery only reads the ticket: the approved destination can satisfy the recorded requirement, while the original or another status remains indeterminate. An uncertain result never authorizes an automatic second transition. Earlier merge, deployment and comment results remain recorded.
+
+Live transition permissions, workflow behavior and outcome visibility still require qualification against the team's Jira/Linear sandbox resources.
+
 ## Separate delivery stages
 
 | Recorded stage | Meaning |
@@ -265,13 +287,14 @@ Jira/Linear adapters have contract and failure-path tests. Authorized live track
 | Merge approved | Exact delivery authority was accepted and dispatch intent was persisted. The merge outcome may still be unknown. |
 | Merged | A confirmed merge outcome and resulting commit are recorded. |
 | Deployed | A confirmed deployment outcome is recorded. |
-| Tracker updated | A confirmed tracker update is recorded. Inspect operation history for deployment status. |
+| Tracker updated | A confirmed tracker comment is recorded. Inspect operation history for other outcomes. |
+| Tracker status confirmed | The recorded ticket was observed in the approved destination status. |
 
 The service also records each operation separately. A failed deployment or tracker update preserves an earlier successful merge. An unknown outcome remains visible until reconciled. Completing a tracker update does not prevent a later deployment; already successful actions cannot be repeated in the same delivery record. Inspect operation history to see both outcomes regardless of their order.
 
 ## Executor and approval boundary
 
-The application service supports separate branch-publication, review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
+The application service supports separate branch-publication, review-request, merge, deployment, tracker-update and tracker-transition operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -294,7 +317,7 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket review creation/merge, tracker status transitions and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket review creation/merge and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 

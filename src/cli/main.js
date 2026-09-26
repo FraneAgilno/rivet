@@ -59,6 +59,8 @@ const removeEventListener = EventTarget.prototype.removeEventListener;
 
 const USAGE = `Usage:
   rivet delivery prepare|status|refresh|reconcile|recover [--run=<id>] [--project=<path>] [--json]
+  rivet delivery tracker-status [--run=<id>] [--provider=<id>] [--project=<path>] [--json]
+  rivet delivery tracker-transition [--run=<id>] [--provider=<id>] [--project=<path>]
   rivet delivery tracker-update [--run=<id>] [--provider=<id>] [--project=<path>]
   rivet delivery deploy [--run=<id>] [--project=<path>]
   rivet delivery publish [--run=<id>] [--provider=<id>] [--project=<path>]
@@ -200,12 +202,25 @@ async function defaultConfirmDelivery(preview) {
   let timer;
   try {
     const answer = await Promise.race([
-      readline.question(preview?.proposal?.action === 'branch-publish' ? 'Publish this exact commit to the new branch shown above? [y/N] ' : preview?.proposal?.action === 'review-request' ? 'Create this exact review request? [y/N] ' : preview?.proposal?.action === 'tracker-update' ? 'Post this exact delivery summary to the ticket shown above? [y/N] ' : preview?.proposal?.action === 'deploy' ? 'Deploy this exact commit to the environment shown above? [y/N] ' : 'Merge this exact commit using the method shown above? [y/N] '),
+      readline.question(preview?.proposal?.action === 'branch-publish' ? 'Publish this exact commit to the new branch shown above? [y/N] ' : preview?.proposal?.action === 'review-request' ? 'Create this exact review request? [y/N] ' : preview?.proposal?.action === 'tracker-transition' ? 'Apply this exact tracker status transition? [y/N] ' : preview?.proposal?.action === 'tracker-update' ? 'Post this exact delivery summary to the ticket shown above? [y/N] ' : preview?.proposal?.action === 'deploy' ? 'Deploy this exact commit to the environment shown above? [y/N] ' : 'Merge this exact commit using the method shown above? [y/N] '),
       new Promise(resolvePromise => { timer = setTimeout(() => resolvePromise(''), CONFIRMATION_TIMEOUT_MS); }),
     ]);
     return /^(?:y|yes)$/i.test(String(answer).trim());
   } catch { return false; }
   finally { clearTimeout(timer); readline.close(); }
+}
+
+async function defaultSelectTrackerDestination(choices) {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  let timer;
+  try {
+    const answer = String(await Promise.race([
+      readline.question('Choose a destination number (blank to cancel): '),
+      new Promise(resolve => { timer = setTimeout(() => resolve(''), CONFIRMATION_TIMEOUT_MS); }),
+    ])).trim();
+    const index = /^[1-9][0-9]*$/.test(answer) ? Number(answer)-1 : -1;
+    return Number.isSafeInteger(index) && index >= 0 && index < choices.length ? index : null;
+  } catch { return null; } finally { clearTimeout(timer); readline.close(); }
 }
 
 function resolveDependencies(overrides = {}) {
@@ -221,6 +236,7 @@ function resolveDependencies(overrides = {}) {
     models: overrides.models,
     support: overrides.support,
     confirmModelDelegation: overrides.confirmModelDelegation ?? defaultConfirmModelDelegation,
+    selectTrackerDestination: overrides.selectTrackerDestination ?? defaultSelectTrackerDestination,
     confirmDelivery: overrides.confirmDelivery ?? defaultConfirmDelivery,
     delivery: overrides.delivery,
     confirmOverwrite: overrides.confirmOverwrite ?? defaultConfirmOverwrite,

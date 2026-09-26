@@ -26,8 +26,9 @@ const inFlight = new Map();
 // terminal proof that no effect occurred or can later occur. An eventually
 // consistent absence check is not sufficient. Native transports are not qualified
 // by this constructor: mutation guarantees and reconciliation remain obligations
-// of the implementation supplied here. Review creation alone may explicitly use
-// post-creation verification instead of an atomic conditional-head mutation.
+// of the implementation supplied here. Review creation may explicitly verify
+// creation afterward; tracker transitions may verify the approved desired state.
+// These assurances do not claim atomic compare-and-swap or exclusive causation.
 export function createTrustedDeliveryExecutor(input) {
   ensure(input && typeof input === 'object');
   const { provider, capabilities } = input;
@@ -38,6 +39,9 @@ export function createTrustedDeliveryExecutor(input) {
     if (capability.action === 'review-request' && capability.conditionalHead === false) {
       exact(capability, ['action', 'conditionalHead', 'verifiesCreatedReview', 'reconcile']);
       ensure(capability.verifiesCreatedReview === true && capability.reconcile === true);
+    } else if (capability.action === 'tracker-transition' && capability.conditionalHead === false) {
+      exact(capability, ['action', 'conditionalHead', 'verifiesDesiredState', 'reconcile']);
+      ensure(capability.verifiesDesiredState === true && capability.reconcile === true);
     } else {
       exact(capability, ['action', 'conditionalHead', 'reconcile']);
       ensure(ACTIONS.includes(capability.action) && capability.conditionalHead === true && capability.reconcile === true);
@@ -114,7 +118,7 @@ export function createDeliveryService(config) {
     return result;
   }
   function observedStage(state, facts) {
-    if (['merged', 'deployed', 'tracker-updated'].includes(state.stage)) return state.stage;
+    if (['merged', 'deployed', 'tracker-updated', 'tracker-status-confirmed'].includes(state.stage)) return state.stage;
     return ready(facts)
       ? 'checks-passed'
       : facts.review ||
@@ -236,7 +240,7 @@ export function createDeliveryService(config) {
     const result = validateReceipt(receipt, operation);
     // Historical schema-v1 snapshots remain readable. New post-merge completion
     // must attest to the actual merge result, including squash/rebase commits.
-    if (['deploy', 'tracker-update'].includes(operation.action))
+    if (['deploy', 'tracker-update', 'tracker-transition'].includes(operation.action))
       ensure(result.commitSha === operation.mergeReceipt?.commitSha, 'invalid-receipt');
     return result;
   }
@@ -251,8 +255,9 @@ export function createDeliveryService(config) {
       merge: 'merged',
       deploy: 'deployed',
       'tracker-update': 'tracker-updated',
+      'tracker-transition': 'tracker-status-confirmed',
     }[operation.action];
-    return save(state, { operations, proposal: null, stage });
+    return save(state, { operations, proposal: null, stage: operations.some(op => op.action === 'tracker-transition' && op.state === 'succeeded') ? 'tracker-status-confirmed' : stage });
   }
   async function execute(input) {
     ensure(input && typeof input === 'object' && !Array.isArray(input));

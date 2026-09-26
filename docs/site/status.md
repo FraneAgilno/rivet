@@ -19,7 +19,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
 - Local delivery preparation/status from accepted host verification, plus a durable service for separately approved delivery operations. Native GitHub PR and GitLab MR creation is implemented for already published verified branches, with exact-content approval and read-only reconciliation. Merging is implemented for documented bounded policy subsets. Create-only HTTPS branch publication is implemented for GitHub, GitLab and Bitbucket, with separate approval and read-only reconciliation. Remaining native operations and live qualification remain pending. See [delivery lifecycle](./delivery.md).
 - Project-configured GitHub Actions deployment of a confirmed merge SHA, with separate approval, mandatory workflow verification and correlated status/run reconciliation. Live deployment qualification remains open.
-- Jira/Linear delivery-summary comments on the recorded source ticket, with separate approval, exact-content read-back and reconciliation without automatic reposting. Status transitions and live tracker qualification remain open.
+- Jira/Linear delivery-summary comments on the recorded source ticket, with separate approval, exact-content read-back and reconciliation without automatic reposting. Separately approved status transitions support provider-listed choices and desired-state readback; live tracker qualification remains open.
 - Explicit delivery lock recovery for stale same-machine dead owners, preserving operation evidence before read-only reconciliation. Broader crash/live recovery qualification remains open.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
@@ -37,7 +37,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Remaining repository delivery operations and live qualification of model executors and cross-harness routing.
 - External pilot, evaluations, and release qualification.
 
-The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native GitHub Actions deployment is implemented for a configured workflow; Jira/Linear delivery-summary comments are implemented; tracker status transitions and live delivery qualification remain pending.
+The delivery lifecycle also preserves independent deployment/tracker completion order, binds reconciliation to the approved provider, and requires new post-merge completion receipts to match the merge result. Native GitHub Actions deployment is implemented for a configured workflow; Jira/Linear delivery-summary comments are implemented; separately approved tracker status transitions are implemented; live delivery qualification remains pending.
 
 See the [roadmap](./roadmap.md) for the next milestones. Detailed implementation planning is maintained outside this repository.
 

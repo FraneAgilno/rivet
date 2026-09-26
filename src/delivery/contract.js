@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { containsSecretMaterial } from '../clients/contract.js';
 import { parseRepositoryRemote } from '../repositories/identity.js';
 
-export const ACTIONS = Object.freeze(['branch-publish', 'review-request', 'merge', 'deploy', 'tracker-update']);
+export const ACTIONS = Object.freeze(['branch-publish', 'review-request', 'merge', 'deploy', 'tracker-update', 'tracker-transition']);
 export const STAGES = Object.freeze([
   'locally-verified',
   'branch-published',
@@ -12,6 +12,7 @@ export const STAGES = Object.freeze([
   'merged',
   'deployed',
   'tracker-updated',
+  'tracker-status-confirmed',
 ]);
 export class DeliveryError extends Error {
   constructor(reason = 'invalid-input') {
@@ -238,7 +239,7 @@ export function validateReceipt(input, operation) {
   return value;
 }
 export function mergeReceiptFor(operations, action) {
-  if (!['deploy', 'tracker-update'].includes(action)) return null;
+  if (!['deploy', 'tracker-update', 'tracker-transition'].includes(action)) return null;
   const merge = operations.find(
     (operation) => operation.action === 'merge' && operation.state === 'succeeded'
   );
@@ -355,9 +356,10 @@ export function validateRecord(input) {
     );
   }
   const success = (action) => value.operations.some((op) => op.action === action && op.state === 'succeeded');
-  if (['merged', 'deployed', 'tracker-updated'].includes(value.stage)) ensure(success('merge'));
+  if (['merged', 'deployed', 'tracker-updated', 'tracker-status-confirmed'].includes(value.stage)) ensure(success('merge'));
   if (value.stage === 'branch-published') ensure(success('branch-publish'));
   if (value.stage === 'deployed') ensure(success('deploy'));
+  if (value.stage === 'tracker-status-confirmed') ensure(success('tracker-transition'));
   if (value.stage === 'tracker-updated') ensure(success('tracker-update'));
   if (value.stage === 'merge-approved')
     ensure(
