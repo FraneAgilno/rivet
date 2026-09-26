@@ -63,6 +63,7 @@ test('task status selects the sole project-local run without an ID or project fl
   await createRun(root, 'first-task');
   const messages = [];
   assert.equal(await main(['task', 'status'], overrides(root, messages)), EXIT_CODES.SUCCESS);
+  assert.match(messages.join('\n'), /^Run: first-task$/m);
   assert.match(messages.join('\n'), /Task: Complete first-task/);
   assert.match(messages.join('\n'), /Next: Review the proposal/);
 });
@@ -104,6 +105,7 @@ test('host resume gives guidance without launching a spawned worker', async t =>
     feature: { async resume() { throw new Error('must not spawn'); } },
   });
   assert.equal(await main(['task', 'resume'], services), EXIT_CODES.SUCCESS);
+  assert.match(messages.join('\n'), /^Run: host-task$/m);
   assert.match(messages.join('\n'), /Continue in the coding harness/);
 });
 
@@ -158,5 +160,16 @@ test('task status and host resume render Worker checkout guidance with visible e
     assert.match(output, /Inspect edits/);
     assert.ok(!output.includes('\u001b'));
     assert.ok(!output.includes('app/evil\nname.js'));
+  }
+});
+
+test('ambiguous automatic status and resume expose choices without choosing a continuation run', async t => {
+  const root=await fixture(t);await createRun(root,'host-one','host');await createRun(root,'host-two','host');
+  for(const command of ['status','resume']) {
+    const messages=[];let selected=0;
+    const code=await main(['task',command],overrides(root,messages,{work:{async status(){selected++;throw new Error('must not select');}}}));
+    assert.equal(code,EXIT_CODES.INVALID_INPUT);assert.equal(selected,0);
+    assert.match(messages.join('\n'),/host-one.*host-two/s);
+    assert.doesNotMatch(messages.join('\n'),/^Run:/m);
   }
 });

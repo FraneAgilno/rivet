@@ -1,8 +1,6 @@
 # Mandatory Skills
 
-These skills are required on all company projects. They cover the full development lifecycle —
-from planning a feature to shipping it — and must be installed in every project's `.claude/skills/`
-directory.
+This optional imported skill pack covers planning, implementation and delivery. The directory name preserves its original grouping; installing the pack is not required for Rivet's minimal entry point. Install selected skills for the project's supported Claude or Codex target.
 
 ---
 
@@ -11,9 +9,12 @@ directory.
 ### `/feature-workflow` — `feature-workflow.md`
 **Purpose:** Route an inline request, Markdown file, Jira issue, or Linear issue through the same governed Rivet feature lifecycle from Claude or Codex.
 
-Runs doctor and preflight, creates one immutable proposal through `rivet feature`, shows its exact version and digest, requires explicit human activation, monitors version-bound execution, summarizes evidence, and stops at the human final-delivery gate. It never substitutes direct MCP calls, private-state edits, or a second orchestration implementation.
+Defaults to the current harness through host preflight and `rivet work propose/prepare/next/submit/verify`. It discovers configured direct or harness-connected MCP sources, preserves source assurance, requires exact proposal activation, records verification and stops at the human final-delivery gate. The terminal `rivet run` and explicitly selected advanced spawned flows remain available. It never edits private state or recreates orchestration.
 
-> **Requires:** Reviewed `.rivet` policy and the installed Rivet CLI. Jira/Linear sources additionally require one configured read-capable provider and environment-referenced credentials. Missing or ambiguous source access stops rather than inventing ticket facts.
+> **Requires:** Reviewed `.rivet` policy, the installed Rivet CLI and the host's required tools/permissions. Jira/Linear sources require a configured scoped read-capable direct provider or an authenticated harness-connected tool. Direct credentials remain environment references. Missing or ambiguous source access stops rather than inventing ticket facts.
+
+### `/agentic-status` — `agentic-status.md`
+**Purpose:** Inspect the sole active project task using `rivet task status`, present bounded evidence and choices, and continue only when requested. Host continuation, spawned resume, abandoned-lock recovery and read-only delivery reconciliation retain their separate service contracts; advanced orchestration-instance inspection remains available for configured controllers.
 
 ### `/project-context` — `project-context.md`
 **Purpose:** Bootstraps or updates the project's `CLAUDE.md` and a matching Confluence page.

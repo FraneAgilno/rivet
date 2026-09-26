@@ -260,6 +260,35 @@ test('feature workflow skill routes natural-language requests through one govern
   assert.match(content, /never (?:push|merge|deploy|publish)|no push, merge, deploy/i);
 });
 
+test('imported entry-point skills use host and MCP contracts without forcing spawned execution', async () => {
+  const feature = await readFile(join(REPOSITORY_ROOT, 'mandatory', 'skills', 'feature-workflow.md'), 'utf8');
+  const status = await readFile(join(REPOSITORY_ROOT, 'mandatory', 'skills', 'agentic-status.md'), 'utf8');
+  const overview = await readFile(join(REPOSITORY_ROOT, 'mandatory', 'skills', 'README.md'), 'utf8');
+  assert.match(feature, /current (?:coding )?harness.*host mode/i);
+  assert.match(feature, /rivet preflight --project=.*--mode=host/);
+  assert.ok(feature.indexOf('rivet work propose') < feature.indexOf('rivet feature propose'));
+  for (const command of ['prepare', 'next', 'submit', 'verify', 'status']) assert.match(feature, new RegExp(`rivet work ${command}`));
+  assert.match(feature, /--host-context-json=/);
+  assert.match(feature, /harness-observed/);
+  assert.match(feature, /userAcceptanceCriteria/);
+  assert.match(feature, /kind:.*agilno\.feature-decomposition/);
+  assert.match(feature, /permission.*(?:separate|not).*activation|separate.*permission/i);
+  assert.doesNotMatch(feature, /authenticated and pinned|same selected client owns both phases/);
+  assert.match(feature, /feature resume.*not.*host|do not use.*feature resume.*host/i);
+  for (const content of [feature, status]) {
+    assert.match(content, /rivet task status/);
+    assert.match(content, /rivet task resume/);
+    assert.match(content, /sole active|one active/);
+    assert.match(content, /(?:never|not).*latest|(?:never|not).*guess/i);
+  }
+  assert.match(status, /rivet work status.*--json/);
+  assert.match(status, /rivet work next.*--expected-runtime-version=/);
+  assert.match(status, /waiting-for-result/);
+  assert.match(status, /rivet task recover/);
+  assert.match(status, /separate.*(?:request|authorization)|only.*(?:requested|authorized)/i);
+  assert.doesNotMatch(overview, /never substitutes direct MCP calls/);
+});
+
 test('normative protocol transition tables exactly match the graph reducer and reject invented lifecycle states', async () => {
   const schema = JSON.parse(await readFile(join(REPOSITORY_ROOT, 'schemas', 'goal-graph.schema.json'), 'utf8'));
   assert.deepEqual(schema.$defs.status.enum, GRAPH_STATUSES);
