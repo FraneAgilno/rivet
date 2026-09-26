@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Branch publication, Bitbucket writes, tracker status transitions and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket review/merge writes, tracker status transitions and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -24,9 +24,29 @@ Preparation requires an accepted integration commit, passing recorded verificati
 
 `status` reads the saved record. It does not refresh CI, reviews or remote delivery state. A locally verified record does not mean a pull request was created or the work was merged.
 
+## Publish the verified branch
+
+```sh
+rivet delivery prepare
+rivet delivery publish
+rivet delivery review
+```
+
+`publish` uploads the verified integration commit and its reachable Git history to the prepared repository. The preview shows the actual HTTPS destination, exact commit and destination branch before asking for approval. It creates one new branch with an explicit empty expected value in Git's lease check. It never overwrites, deletes or force-replaces an existing branch. If the destination already contains the exact verified commit, Rivet reports that no publication was dispatched.
+
+Configure the scoped repository provider with `repository-read` and `branch-publish` capabilities and `mode: read-write-with-approval`. Add `review-request` for subsequent GitHub/GitLab review creation; add `checks-read` and `merge` only when using the separate merge flow. Publication requires an interactive terminal and has no unattended confirmation or JSON-write option. Use `--run` or `--provider` only when selection is ambiguous.
+
+Publication uses the selected provider's token through a controlled HTTPS Git process. The token must permit Git pushes to the selected repository; provider-specific restrictions can also apply to protected branches or workflow files. It does not inherit SSH configuration or credential helpers. GitHub and GitLab can use the existing token environment references shown below. Bitbucket requires `credentials.accessTokenEnv` referencing a supported repository/project/workspace access token or OAuth access token; Atlassian user API tokens are not accepted by this publication path. Keep credential values outside tracked files and command arguments. As with other process credentials, privileged local inspection can read process memory/environment. See [GitHub app permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app), [GitLab token authentication](https://docs.gitlab.com/user/profile/personal_access_tokens/), [Bitbucket access tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-access-tokens/) and the distinct [Bitbucket API-token convention](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/).
+
+The transport runs from a temporary bare repository with hooks, redirects, inherited Git configuration and submodule pushes disabled. It reads the validated local object store without changing the project or integration checkout. Conflicting configured push URLs stop the command; Rivet never silently pushes to a different destination. The current transport supports macOS/Linux with a canonical native Git installation, a native HTTPS helper and a validated local object store. Unsafe object links or external object alternates require investigation; they are not followed automatically.
+
+Dispatch intent is recorded before the single push. A timeout or disconnect can leave an indeterminate result even if the server later creates the branch. Forced stops terminate the process group and bound finalization, but cannot prove that an escaped descendant stopped; cleanup remains uncertain. Use `rivet delivery reconcile`; it only reads the remote. An exact matching ref confirms that the approved publication requirement is satisfied, without claiming Rivet was the only possible creator. A missing or different ref after uncertainty does not trigger another push. Preserve the recorded result and investigate conflicts instead of deleting or replacing the remote branch.
+
+Review creation and merging remain separately approved operations. Publishing a branch does not establish passing remote CI, approved reviews or permission to deliver. Live authenticated publication on each provider remains unqualified.
+
 ## Create a GitHub pull request or GitLab merge request
 
-Publish the accepted integration branch through your normal repository tools first. The remote source branch must point to the exact locally verified commit. Rivet does not upload Git objects or push branches in this command.
+Publish the accepted integration branch with `rivet delivery publish` or your repository tools first. The remote source branch must point to the exact locally verified commit. Review creation itself does not upload Git objects or push branches.
 
 ```sh
 rivet delivery prepare
@@ -46,7 +66,7 @@ After a timeout or uncertain response, use `rivet delivery reconcile`. Reconcili
 
 ## Merge an existing GitHub pull request
 
-After host verification, publish the accepted integration branch and open its PR using `rivet delivery review` or your repository tools. Merging requires that PR to match the prepared source branch, target branch and exact commit. Rivet does not push branches in this flow.
+After host verification, publish the accepted integration branch with `rivet delivery publish` and open its PR using `rivet delivery review` or your repository tools. Merging requires that PR to match the prepared source branch, target branch and exact commit. Merging itself does not push or create the source branch.
 
 ```sh
 rivet delivery prepare
@@ -92,7 +112,7 @@ GitHub's merge API atomically checks the source SHA. Target refs, target SHA and
 
 ## Merge an existing GitLab merge request
 
-The same `prepare`, `refresh`, interactive `merge` and read-only `reconcile` commands support GitLab.com. Publish the verified integration branch, then create its merge request with `rivet delivery review` or your repository tools first. The MR must belong to the same project as the target and match the prepared branches and exact commit.
+The same `prepare`, `refresh`, interactive `merge` and read-only `reconcile` commands support GitLab.com. Publish the verified integration branch with `rivet delivery publish` or your repository tools, then create its merge request with `rivet delivery review` or your repository tools first. The MR must belong to the same project as the target and match the prepared branches and exact commit.
 
 Configure the provider before starting the feature run:
 
@@ -239,6 +259,7 @@ Jira/Linear adapters have contract and failure-path tests. Authorized live track
 | Recorded stage | Meaning |
 | --- | --- |
 | Locally verified | Accepted commit and verification evidence are recorded. |
+| Branch published | The approved publication operation confirmed the exact commit at the destination branch. |
 | Review requested | A review request was confirmed externally. |
 | Checks passed | A trusted executor observed known required-check and review policies satisfied for the candidate commit. |
 | Merge approved | Exact delivery authority was accepted and dispatch intent was persisted. The merge outcome may still be unknown. |
@@ -250,7 +271,7 @@ The service also records each operation separately. A failed deployment or track
 
 ## Executor and approval boundary
 
-The application service supports separate review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
+The application service supports separate branch-publication, review-request, merge, deployment and tracker-update operations through a trusted executor interface. A qualified executor must enforce the candidate commit, provide required-policy evidence, verify external results and reconcile uncertain outcomes. The common [repository inspection adapters](./repositories.md) remain read-only. Native GitHub and GitLab executors support merge; a separate GitHub Actions executor supports project-configured deployment.
 
 Each action has its own proposal and authority check. Approval binds the repository, source and target refs, commit, current facts, action and payload. Deployment and tracker proposals also bind the confirmed merge receipt and resulting commit, including squash/rebase merges. New completion receipts must attest to that exact resulting commit. Historical records remain readable. Changed facts or expired proposals require a new proposal. Unknown policy, missing required review or failed CI blocks merge.
 
@@ -273,8 +294,8 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Native review creation, Bitbucket delivery, tracker status transitions and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket review creation/merge, tracker status transitions and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 
-Bitbucket Cloud remains available for [read-only repository inspection](./repositories.md). A native executor that enforces the delivery contract has not yet been qualified. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
+Bitbucket Cloud supports [read-only repository inspection](./repositories.md) and the separately approved create-only branch publication described above. Native review creation and merging remain unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).

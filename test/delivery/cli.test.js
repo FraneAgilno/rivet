@@ -3,6 +3,10 @@ import test from 'node:test';
 import { main } from '../../src/cli/main.js';
 
 for (const args of [
+  ['delivery', 'publish'],
+  ['delivery', 'publish', '--force'],
+  ['delivery', 'publish', '--remote=other'],
+  ['delivery', 'publish', '--method=merge'],
   ['delivery', 'merge'],
   ['delivery', 'deploy'],
   ['delivery', 'tracker-update'],

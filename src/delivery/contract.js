@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import { containsSecretMaterial } from '../clients/contract.js';
 import { parseRepositoryRemote } from '../repositories/identity.js';
 
-export const ACTIONS = Object.freeze(['review-request', 'merge', 'deploy', 'tracker-update']);
+export const ACTIONS = Object.freeze(['branch-publish', 'review-request', 'merge', 'deploy', 'tracker-update']);
 export const STAGES = Object.freeze([
   'locally-verified',
+  'branch-published',
   'review-requested',
   'checks-passed',
   'merge-approved',
@@ -158,7 +159,12 @@ export function observation(input, target) {
     'checks',
     'reviews',
     'observedAt',
-  ]);
+  ], ['publication']);
+  if (value.publication !== undefined) {
+    const p = exact(value.publication, ['destinationUrl', 'ref', 'remoteSha']);
+    ensure(p.destinationUrl === target.repository.url + '.git' && p.ref === `refs/heads/${target.sourceBranch}`, 'changed-facts');
+    ensure(p.remoteSha === null || sha(p.remoteSha), 'changed-facts');
+  }
   timestamp(value.observedAt);
   sha(value.baseSha);
   ensure(
@@ -228,6 +234,7 @@ export function validateReceipt(input, operation) {
   );
   ensure(value.commitSha === null || sha(value.commitSha));
   if (operation.action === 'merge') sha(value.commitSha);
+  if (operation.action === 'branch-publish') ensure(value.commitSha === operation.candidate.headSha && value.resourceUrl === operation.candidate.repository.url, 'invalid-receipt');
   return value;
 }
 export function mergeReceiptFor(operations, action) {
@@ -237,6 +244,11 @@ export function mergeReceiptFor(operations, action) {
   );
   ensure(merge?.receipt?.commitSha, 'missing-merge-receipt');
   return merge.receipt;
+}
+
+function publicationPayload(value, target) {
+  exact(value, ['destinationUrl', 'ref', 'headSha']);
+  ensure(value.destinationUrl === target.repository.url + '.git' && value.ref === `refs/heads/${target.sourceBranch}` && value.headSha === target.headSha, 'invalid-publication');
 }
 
 export function validateRecord(input) {
@@ -285,6 +297,7 @@ export function validateRecord(input) {
         ),
       'merge-receipt-mismatch'
     );
+    if (operation.action === 'branch-publish') publicationPayload(operation.payload, value.candidate);
     digest(operation.digest);
     digest(operation.factsDigest);
     id(operation.approvalId);
@@ -319,6 +332,7 @@ export function validateRecord(input) {
       hash(p.mergeReceipt) === hash(mergeReceiptFor(value.operations, p.action)),
       'merge-receipt-mismatch'
     );
+    if (p.action === 'branch-publish') publicationPayload(p.payload, value.candidate);
     digest(p.digest);
     digest(p.factsDigest);
     timestamp(p.expiresAt);
@@ -342,6 +356,7 @@ export function validateRecord(input) {
   }
   const success = (action) => value.operations.some((op) => op.action === action && op.state === 'succeeded');
   if (['merged', 'deployed', 'tracker-updated'].includes(value.stage)) ensure(success('merge'));
+  if (value.stage === 'branch-published') ensure(success('branch-publish'));
   if (value.stage === 'deployed') ensure(success('deploy'));
   if (value.stage === 'tracker-updated') ensure(success('tracker-update'));
   if (value.stage === 'merge-approved')

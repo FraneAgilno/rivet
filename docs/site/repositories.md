@@ -57,6 +57,8 @@ Repository inspection requires `repository-read`; review inspection also require
 | Commit checks/status observations | Implemented | Implemented | Implemented |
 | Review observations | Implemented | Implemented | Implemented |
 | Common interface writes | Unavailable | Unavailable | Unavailable |
+| Separate HTTPS branch publication | Implemented, create-only | Implemented, create-only | Implemented, create-only |
+| Separate native review creation | Implemented | Pending | Implemented |
 | Full review/merge/deployment lifecycle | Planned | Planned | Planned |
 | Public repository/branch read smoke | Passed | Passed | Passed |
 | Public review inspection smoke | Passed on Rivet PR #14 | Pending | Pending |
@@ -66,7 +68,7 @@ Public smoke checks on 2026-09-25 read `FraneAgilno/rivet`, `atlassian/atlassian
 
 The existing lower-level GitHub adapter retains its governed operations. The common repository interface is read-only. MCP and local CLI repository execution, custom API hosts, GitHub Enterprise, Bitbucket Data Center and self-managed GitLab are not qualified through this interface.
 
-For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Separate delivery executors support GitHub PR and GitLab MR creation for already published verified branches, plus merges under documented bounded policy subsets. Native Bitbucket delivery and live qualification remain pending.
+For local delivery preparation and the governed service foundation, see [delivery lifecycle](./delivery.md). Separate delivery executors support GitHub PR and GitLab MR creation for already published verified branches, plus merges under documented bounded policy subsets. Create-only HTTPS branch publication is implemented separately for all three providers. Native Bitbucket review/merge delivery and live qualification remain pending.
 
 ## Interpreting results
 

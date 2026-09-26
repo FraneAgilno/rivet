@@ -122,14 +122,15 @@ export function createDeliveryService(config) {
             (operation) => operation.action === 'review-request' && operation.state === 'succeeded'
           )
         ? 'review-requested'
-        : 'locally-verified';
+        : state.operations.some(operation => operation.action === 'branch-publish' && operation.state === 'succeeded') ? 'branch-published' : 'locally-verified';
   }
   function allowed(state, action) {
     ensure(
       executor.capabilities.some((value) => value.action === action),
       'unsupported-action'
     );
-    if (action === 'merge')
+    if (action === 'branch-publish') ensure(state.observation?.publication?.remoteSha === null && ['locally-verified', 'branch-published'].includes(state.stage) && !state.operations.some(op => op.action === action && op.state === 'succeeded'), 'not-ready');
+    else if (action === 'merge')
       ensure(
         ready(state.observation) &&
           !state.operations.some((value) => value.action === 'merge' && value.state === 'succeeded'),
@@ -138,7 +139,7 @@ export function createDeliveryService(config) {
     else if (action === 'review-request')
       ensure(
         state.observation?.review === null &&
-          state.stage === 'locally-verified' &&
+          ['locally-verified', 'branch-published'].includes(state.stage) &&
           !state.operations.some(
             (operation) => operation.action === 'review-request' && operation.state === 'succeeded'
           ),
@@ -245,6 +246,7 @@ export function createDeliveryService(config) {
       item.digest === operation.digest ? { ...item, state: 'succeeded', receipt: success } : item
     );
     const stage = {
+      'branch-publish': 'branch-published',
       'review-request': 'review-requested',
       merge: 'merged',
       deploy: 'deployed',
