@@ -33,6 +33,8 @@ export default defineConfig({
       ] },
       { text: 'Project', items: [
         { text: 'Implementation status', link: '/status' },
+        { text: 'Compatibility', link: '/compatibility' },
+        { text: 'Release candidates', link: '/release' },
         { text: 'Roadmap', link: '/roadmap' },
         { text: 'Troubleshooting', link: '/troubleshooting' },
         { text: 'Evaluations and user trials', link: '/evaluations' },

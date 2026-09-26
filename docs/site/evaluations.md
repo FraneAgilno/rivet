@@ -39,4 +39,4 @@ Before a colleague's Monday trial, verify the documented installation command ag
 
 The implementation plan's pilot requires five people who did not build Rivet. At least four must reach a first valid plan within ten minutes after prerequisites and authentication. Also record total elapsed time, including authentication and setup delays. Each participant must finish a reviewable task.
 
-Two-user memory continuity and live repository-provider delivery require separate qualification. This fixture runner, a maintainer rehearsal, and a single colleague's trial cannot close those pilot requirements.
+Live repository-provider delivery requires separate qualification. Two-user memory continuity is a post-MVP requirement, to be evaluated after shared memory is implemented. This fixture runner, a maintainer rehearsal, and a single colleague's trial cannot close those pilot requirements.

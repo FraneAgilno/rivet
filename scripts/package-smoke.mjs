@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { parsePackageSmokeOptions } from './package-smoke-options.mjs';
+import { verifyReleaseArtifact } from './release-artifact.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const options = parsePackageSmokeOptions(process.argv.slice(2));
 const root = fileURLToPath(new URL('../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'rivet-package-'));
 // Keep npm, Git and Rivet away from the user's home, configuration and credentials.
@@ -25,7 +29,7 @@ const execute = (command, args, cwd = scratch, extraEnv = {}) => execFileSync(co
 const npm = (args, cwd = scratch) => execute('npm', args, cwd);
 const git = (args, cwd = scratch) => execute('git', args, cwd);
 
-function firstUse(label, source) {
+function firstUse(label, source, expectedPackage) {
   const prefix = join(scratch, `${label}-prefix`);
   // Explicit install-links also protects environments whose npm config defaults to false.
   npm(['install', '--global', '--prefix', prefix, '--install-links', '--ignore-scripts',
@@ -34,6 +38,8 @@ function firstUse(label, source) {
   assert(existsSync(installed), `${label}: installed package must not be a dangling link`);
   assert.equal(lstatSync(installed).isSymbolicLink(), false, `${label}: package must be materialized`);
   assert.notEqual(realpathSync(installed), realpathSync(root));
+  const installedPackage = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
+  if (expectedPackage) for (const [key, value] of Object.entries(expectedPackage)) assert.equal(installedPackage[key], value, `Installed ${key} differs from release manifest`);
   const bin = join(prefix, 'bin', 'rivet');
   assert.equal(realpathSync(bin), realpathSync(join(installed, 'bin', 'cli.js')));
   const cliEnv = { PATH: `${join(prefix, 'bin')}${delimiter}${env.PATH}` };
@@ -104,21 +110,45 @@ function firstUse(label, source) {
   assert.equal(JSON.parse(run(['uninstall', '--minimal', '--target=both', '--json'], project)).ok, true);
   for (const skill of skills) assert.equal(existsSync(skill), false);
   assert(existsSync(projectConfig), 'minimal uninstall preserves configuration');
+  const dependencyTree = JSON.parse(npm(['ls', '--global', '--prefix', prefix, '--all', '--json']));
+  const dependencies = [];
+  const collect = (tree, parent = '') => {
+    for (const [name, item] of Object.entries(tree.dependencies ?? {})) {
+      assert.equal(typeof item.version, 'string');
+      dependencies.push({ name, version: item.version, parent });
+      collect(item, name);
+    }
+  };
+  collect(dependencyTree);
   console.log(`Package smoke passed: ${label}; global executable, setup, Git host preflight and local checks.`);
+  return { package: {name: installedPackage.name, version: installedPackage.version}, dependencies, checks: ['global-command', 'models', 'setup-preview', 'setup-write', 'setup-preservation', 'host-preflight', 'project-build', 'project-test', 'nested-support', 'empty-task-status', 'uninstall-preservation'] };
 }
 
 try {
-  const [packed] = JSON.parse(npm(['pack', '--json', '--pack-destination', scratch], root));
-  const files = packed.files.map(file => file.path);
-  assert(files.includes('bin/cli.js'));
-  assert(files.includes('src/models/registry.js'));
-  assert(!files.some(path => /(?:^|\/)(?:demo|conference-planner|plans)(?:\/|$)/.test(path)));
-  assert(!files.some(path => path.startsWith('test/') || path.startsWith('node_modules/')));
-  firstUse('tarball', join(scratch, packed.filename));
-  // Local Git transport exercises npm's clone/install lifecycle without GitHub auth/network.
-  // It intentionally uses committed HEAD, as a fresh GitHub install would.
-  const revision = git(['rev-parse', 'HEAD'], root).trim();
-  firstUse('git', `git+${pathToFileURL(root).href}#${revision}`);
+  if (options.mode === 'artifact') {
+    const manifest = await verifyReleaseArtifact(options);
+    const bytes = readFileSync(join(options.directory, manifest.artifact.filename));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), options.expectedArtifactSha256);
+    const localArtifact = join(scratch, manifest.artifact.filename);
+    writeFileSync(localArtifact, bytes, {flag: 'wx'});
+    const result = firstUse('release-artifact', localArtifact, manifest.package);
+    const evidence = { schemaVersion: 1, source: manifest.source, artifact: manifest.artifact,
+      runtime: {node: process.version, npm: npm(['--version']).trim(), platform: process.platform, architecture: process.arch},
+      ...result, qualification: {installedArtifact: 'passed', liveHarness: 'not-tested', independentUser: 'not-tested', publishedChannel: 'not-established-by-this-check'} };
+    writeFileSync(options.report, JSON.stringify(evidence, null, 2) + '\n', {flag: 'wx', mode: 0o600});
+  } else {
+    const [packed] = JSON.parse(npm(['pack', '--json', '--pack-destination', scratch], root));
+    const files = packed.files.map(file => file.path);
+    assert(files.includes('bin/cli.js'));
+    assert(files.includes('src/models/registry.js'));
+    assert(!files.some(path => /(?:^|\/)(?:demo|conference-planner|plans)(?:\/|$)/.test(path)));
+    assert(!files.some(path => path.startsWith('test/') || path.startsWith('node_modules/')));
+    firstUse('tarball', join(scratch, packed.filename));
+    // Local Git transport exercises npm's clone/install lifecycle without GitHub auth/network.
+    // It intentionally uses committed HEAD, as a fresh GitHub install would.
+    const revision = git(['rev-parse', 'HEAD'], root).trim();
+    firstUse('git', `git+${pathToFileURL(root).href}#${revision}`);
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

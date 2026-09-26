@@ -1,0 +1,151 @@
+name: Rivet candidate artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing prerelease tag matching package.json (for example v0.1.0-alpha.0)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rivet-candidate-release
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+      artifact-sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate existing candidate tag
+        id: source
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          node --input-type=module -e 'if (!/^v\d+\.\d+\.\d+-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*$/.test(process.env.CANDIDATE_TAG)) process.exit(1)'
+          candidate_sha=$(git rev-parse --verify "refs/tags/$CANDIDATE_TAG^{commit}")
+          git merge-base --is-ancestor "$candidate_sha" "$GITHUB_SHA"
+          git checkout --detach "$candidate_sha"
+          printf 'sha=%s\ntag=%s\n' "$candidate_sha" "$CANDIDATE_TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run docs:build
+      - run: npm run evals -- --mode=fixture
+      - name: Check generated distribution
+        run: git diff --exit-code -- dist
+      - name: Pack the candidate once
+        id: pack
+        env:
+          CANDIDATE_TAG: ${{ steps.source.outputs.tag }}
+          CANDIDATE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          node scripts/release-artifact.mjs build --source="$GITHUB_WORKSPACE" --out="$RUNNER_TEMP/rivet-candidate" --tag="$CANDIDATE_TAG" --sha="$CANDIDATE_SHA"
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/rivet-candidate/release-manifest.json`));
+          appendFileSync(process.env.GITHUB_OUTPUT, `sha256=${manifest.artifact.sha256}\n`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: ${{ runner.temp }}/rivet-candidate/
+          if-no-files-found: error
+          retention-days: 30
+
+  installed-artifact:
+    needs: candidate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: ${{ runner.temp }}/rivet-candidate
+      - name: Verify and install the exact candidate bytes
+        env:
+          CANDIDATE_TAG: ${{ needs.candidate.outputs.tag }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          CANDIDATE_CHECKSUM: ${{ needs.candidate.outputs.artifact-sha256 }}
+        run: |
+          node scripts/package-smoke.mjs --artifact-dir="$RUNNER_TEMP/rivet-candidate" --tag="$CANDIDATE_TAG" --source-sha="$CANDIDATE_SHA" --artifact-sha256="$CANDIDATE_CHECKSUM" --report="$RUNNER_TEMP/install-evidence.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: install-evidence-${{ matrix.os }}-node${{ matrix.node }}
+          path: ${{ runner.temp }}/install-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  draft:
+    needs: [candidate, installed-artifact]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: ${{ runner.temp }}/rivet-candidate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: install-evidence-*
+          path: ${{ runner.temp }}/rivet-install-evidence
+      - name: Verify final assets and create a draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ needs.candidate.outputs.tag }}
+          CANDIDATE_SHA: ${{ needs.candidate.outputs.sha }}
+          CANDIDATE_CHECKSUM: ${{ needs.candidate.outputs.artifact-sha256 }}
+        run: |
+          test "$(git rev-parse --verify "refs/tags/$CANDIDATE_TAG^{commit}")" = "$CANDIDATE_SHA"
+          node scripts/release-artifact.mjs verify --directory="$RUNNER_TEMP/rivet-candidate" --tag="$CANDIDATE_TAG" --sha="$CANDIDATE_SHA" --artifact-sha256="$CANDIDATE_CHECKSUM"
+          for evidence in "$RUNNER_TEMP"/rivet-install-evidence/*/install-evidence.json; do
+            evidence_name=$(basename "$(dirname "$evidence")")
+            cp "$evidence" "$RUNNER_TEMP/$evidence_name.json"
+          done
+          cat > "$RUNNER_TEMP/release-notes.md" <<NOTES
+          Rivet candidate $CANDIDATE_TAG, source $CANDIDATE_SHA.
+
+          This draft contains one package, its SHA-256 checksums, source manifest and Linux/macOS Node 22/24 installation evidence. Dependencies are resolved during installation; their observed versions are recorded in the evidence files.
+
+          Candidate checks: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          Package remains private and UNLICENSED. No npm publication is performed. Publishing this draft requires a separate owner decision. Live harness/integration qualification, independent pilots and actual published-channel installation must be evaluated separately. See the compatibility and release runbooks before distribution.
+          NOTES
+          gh release create "$CANDIDATE_TAG" "$RUNNER_TEMP"/rivet-candidate/* "$RUNNER_TEMP"/install-evidence-*.json --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease --title "Rivet $CANDIDATE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"

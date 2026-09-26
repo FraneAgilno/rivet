@@ -23,6 +23,9 @@ The repository is being kept focused on the reusable framework. Retired conferen
 - Live qualification of the common GitHub, Bitbucket Cloud and GitLab.com read interface, followed by native executors for governed review/merge/deployment workflows. [Delivery preparation and the durable service](./delivery.md) are implemented; native GitHub and GitLab merge are implemented for bounded policy subsets, along with project-configured GitHub Actions deployment and Jira/Linear delivery-summary comments; remaining provider operations and live qualification remain open.
 - Live qualification of bounded API/local text execution and configured Claude/Codex worker routing; broader role/model routing remains planned.
 - Broader recovery and evaluation coverage. Explicit delivery lock recovery is implemented; interrupted-recovery markers and live-provider crash qualification remain open.
-- Shared project memory with an Obsidian-compatible provider, deferred to the final implementation lane.
 
 These remain planned until demonstrated. See [implementation status](./status.md) for current capability and [CI](https://github.com/FraneAgilno/rivet/actions/workflows/ci.yml) for platform verification.
+
+## Post-MVP
+
+- Shared project memory with an Obsidian-compatible provider, including synchronization and two-user continuity. It remains unimplemented and is not an MVP release requirement.
