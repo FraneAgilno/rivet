@@ -260,7 +260,7 @@ export function createRivetApplication(input = {}) {
     ])));
 
   const hostExecution = Object.freeze(Object.fromEntries(
-    ['prepare', 'nextAction', 'status', 'submitResult', 'verify'].map(method => [
+    ['prepare', 'nextAction', 'status', 'submitResult', 'verify', 'recover'].map(method => [
       method,
       async (...args) => {
         hostExecutionPromise ??= gitClient().then(client => createHostExecution({

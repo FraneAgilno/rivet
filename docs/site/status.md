@@ -13,7 +13,7 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Direct terminal task trials on macOS completed with Claude Code `2.1.274` and Codex CLI `0.155.0-alpha.16`; both reached final review with passing build, test, lint, and typecheck evidence.
 - Project protocol commands with draft, publish, revision, digest, import, validation, and live discovery controls.
 - Redacted support diagnostics with optional local harness capability probes.
-- Read-only Worker checkout recovery details, including branch locations, preserved edits and expired leases.
+- Read-only Worker checkout recovery details, including branch locations, preserved edits and expired leases. Explicit `rivet task recover` safely recovers abandoned host locks while preserving snapshots and worktrees; it does not resume Workers.
 - Extensible model registry, bounded text-only API/local delegation and explicit role selection. Terminal workflow worker roles can select Claude or Codex independently of the planning harness.
 - Integration registry with explicit transport/scope/readiness, bounded host inventory, and sourced Jira/Linear requests with linked Figma/Confluence context. Host observations remain labeled and digest-bound; live provider qualification remains open.
 - Common read-only repository inspection for GitHub.com, Bitbucket Cloud and GitLab.com, with explicit remote selection and commit-bound evidence. See the [repository capability matrix](./repositories.md); live qualification and delivery writes remain open.
@@ -24,10 +24,11 @@ This is a foundation alpha, not the finished MVP or a published npm release.
 - Imported workflow, worktree, evidence, provider, and quality modules.
 - GitHub CI and documentation workflows for FraneAgilno/rivet.
 - Searchable documentation source and a local build.
+- Deterministic fixture evaluations for six workflow areas, with named assertion evidence and bounded execution. Live model evaluations and independent user trials remain pending. See [evaluations](./evaluations.md).
 
 ## Still required
 
-- License selection and final package namespace.
+- Release licensing and final package namespace remain decisions for wider distribution; current metadata stays `UNLICENSED` and `@agilno/rivet`.
 - Versioned package distribution and discovery beyond bounded immediate child packages.
 - Conversational active-harness first-task demonstrations in real Claude and Codex sessions. Direct JSON inputs remove the temporary-file obstruction from earlier noninteractive trials; private Git state/worktree permissions and live lifecycle trials still need validation. Direct adapters check required capabilities without a version allowlist; Claude `2.1.274` and Codex `0.155.0-alpha.16` have local terminal trials on macOS. Desktop host lifecycle qualification remains open.
 - A fresh-user M1 trial that completes a small task without manual shell repair.

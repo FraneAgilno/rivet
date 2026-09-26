@@ -23,6 +23,7 @@ import {
 import { readSnapshotWithoutLock } from '../state/snapshot-store.js';
 import { createWorkAction, validateWorkAction } from './actions.js';
 import { createAcceptedIntegrationStore } from './accepted-integration.js';
+import { recoverHostRunLocks } from './host-lock-recovery.js';
 import { acquireHostRunLock } from './host-run-lock.js';
 import { createFeatureRunStore } from './run-store.js';
 import { createVerificationReportStore, verificationReport } from './verification-report.js';
@@ -249,7 +250,7 @@ export function createHostExecution(input) {
     return { instance, runtime, integration, config, planNodes };
   }
 
-  async function prepare(inputValue) {
+  async function prepareLocked(inputValue) {
     const value = request(inputValue, 'expectedRunVersion');
     const { store, run } = await runRecord(value.project, value.runId);
     if (!['approved', 'running'].includes(run.status) || run.version !== value.expectedRunVersion) fail('state-conflict');
@@ -269,6 +270,20 @@ export function createHostExecution(input) {
       });
     }
     return immutableJson({ status: 'ready', run: running, runtimeVersion: state.version });
+  }
+
+  async function prepare(inputValue) {
+    const value = request(inputValue, 'expectedRunVersion');
+    const paths = await resolveExistingFeatureRunPaths(value.project, value.runId);
+    if (paths === null) fail('run-missing');
+    const lock = await acquireHostRunLock(paths);
+    try { return await prepareLocked(inputValue); }
+    finally { await lock.release(); }
+  }
+
+  async function recover(inputValue) {
+    const value = request(inputValue);
+    return recoverHostRunLocks(value.project, value.runId);
   }
 
   async function nextAction(inputValue) {
@@ -604,5 +619,5 @@ export function createHostExecution(input) {
     return immutableJson({ run, runtime, verification, checkout, workerCheckouts, deliveryReady: deliverable, blockedNodes, nextAction });
   }
 
-  return Object.freeze({ prepare, nextAction, submitResult, verify, status });
+  return Object.freeze({ prepare, nextAction, submitResult, verify, status, recover });
 }

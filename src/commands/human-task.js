@@ -55,8 +55,10 @@ async function selectedRun(project, wanted, operation, output) {
     if (!exact) fail('No task with that run ID exists in this project.', 'REPOSITORY_CONFLICT');
     return exact;
   }
-  const eligible = records.filter(record => ACTIVE.has(record.status));
-  if (eligible.length === 0) fail('No active task exists in this project. Start one with rivet run "task".', 'REPOSITORY_CONFLICT');
+  const eligible = records.filter(record => ACTIVE.has(record.status)
+    && (operation !== 'recover' || record.featurePlan.client === 'host'));
+  if (eligible.length === 0) fail(operation === 'recover' ? 'No active host task exists in this project.'
+    : 'No active task exists in this project. Start one with rivet run "task".', 'REPOSITORY_CONFLICT');
   if (eligible.length > 1) {
     output.log('Several active tasks exist:');
     for (const record of eligible) output.log(`  ${summary(record)}`);
@@ -150,12 +152,22 @@ function renderWorkerCheckouts(status, output) {
 }
 
 export async function humanTaskCommand(parsed, dependencies) {
-  if (parsed.command !== 'task' || !['status', 'resume', 'deps'].includes(parsed.subcommand)
+  if (parsed.command !== 'task' || !['status', 'resume', 'deps', 'recover'].includes(parsed.subcommand)
     || parsed.operands.length !== 0 || Object.keys(parsed.flags).some(key => !['project', 'run'].includes(key))) {
-    fail('Use rivet task status|resume|deps [--project=<path>] [--run=<id>].');
+    fail('Use rivet task status|resume|deps|recover [--project=<path>] [--run=<id>].');
   }
   const project = await resolveConfiguredProject(dependencies.cwd(), parsed.flags.project, { env: dependencies.env });
   const record = await selectedRun(project.root, parsed.flags.run, parsed.subcommand, dependencies.output);
+  if (parsed.subcommand === 'recover') {
+    if (record.featurePlan.client !== 'host') fail('Lock recovery is only available for host tasks; a spawned worker must not be restarted by recovery.', 'REPOSITORY_CONFLICT');
+    if (typeof dependencies.work?.recover !== 'function') fail('Host recovery is unavailable.', 'MISSING_CONFIGURATION');
+    const result = await invokeFeature(dependencies.work, 'recover', { project: project.root, runId: record.runId });
+    dependencies.output.log(`Recovery: ${visible(result.status)}.`);
+    dependencies.output.log(`Recovered locks: ${result.recoveredLocks.map(visible).join(', ') || 'none'}.`);
+    if (result.blockedLock) dependencies.output.error(`Blocked lock: ${visible(result.blockedLock)}.`);
+    dependencies.output.log(visible(result.nextAction));
+    return result.status === 'recovered' ? EXIT_CODES.SUCCESS : EXIT_CODES.REPOSITORY_CONFLICT;
+  }
   if (parsed.subcommand === 'deps') return dependencyCommand(project, record, dependencies);
   if (parsed.subcommand === 'status') {
     if (typeof dependencies.work?.status !== 'function') fail('Task status is unavailable.', 'MISSING_CONFIGURATION');

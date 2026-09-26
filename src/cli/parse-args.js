@@ -223,10 +223,10 @@ export function parseArgs(argv) {
   if (command === 'protocols' && !['add', 'import', 'validate', 'find', 'show', 'update'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported protocol subcommand');
   }
-  if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify'].includes(positionals[0])) {
+  if (command === 'work' && !['propose', 'prepare', 'next', 'status', 'submit', 'verify', 'recover'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported work subcommand');
   }
-  if (command === 'task' && !['status', 'resume', 'deps'].includes(positionals[0])) {
+  if (command === 'task' && !['status', 'resume', 'deps', 'recover'].includes(positionals[0])) {
     throw new ArgumentError('Unsupported task subcommand');
   }
 

@@ -949,3 +949,218 @@ test('Worker status rejects excessive dirty-path output instead of returning an 
   await assert.rejects(execution.status({ project: root, runId: approved.runId }), { code: 'ERR_HOST_EXECUTION_STATE_CONFLICT' });
   assert.equal(await readFile(join(path, 'untracked-256'), 'utf8'), 'preserved');
 });
+
+async function abandonedHostLock(path, overrides = {}) {
+  const { hostname } = await import('node:os');
+  const { randomUUID } = await import('node:crypto');
+  await writeFile(path, JSON.stringify({ pid: 2147483647, host: hostname(), timestamp: '2000-01-01T00:00:00.000Z', ownerId: randomUUID(), ...overrides }), { mode: 0o600 });
+}
+
+test('explicit host recovery removes all four abandoned locks without changing saved state or files', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const runtime = await resolveStatePaths(root, approved.runId);
+  const before = await Promise.all([readFile(paths.snapshotPath), readFile(runtime.snapshotPath)]);
+  const worktrees = await git(root, 'worktree', 'list', '--porcelain');
+  await writeFile(join(root, 'uncommitted.txt'), 'preserve me');
+  for (const path of [join(paths.runDir, 'host-operation.lock'), paths.lockPath, runtime.runtimeLockPath, runtime.lockPath]) await abandonedHostLock(path);
+  const recovered = await execution.recover({ project: root, runId: approved.runId });
+  assert.equal(recovered.status, 'recovered');
+  assert.deepEqual(recovered.recoveredLocks, ['host-operation', 'run', 'runtime', 'state']);
+  assert.deepEqual(await Promise.all([readFile(paths.snapshotPath), readFile(runtime.snapshotPath)]), before);
+  assert.equal(await readFile(join(root, 'uncommitted.txt'), 'utf8'), 'preserve me');
+  assert.equal(await git(root, 'worktree', 'list', '--porcelain'), worktrees);
+  assert.deepEqual((await execution.recover({ project: root, runId: approved.runId })).recoveredLocks, []);
+});
+
+test('host recovery reports partial progress and preserves a live inner owner', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  await abandonedHostLock(join(paths.runDir, 'host-operation.lock'));
+  await abandonedHostLock(paths.lockPath, { pid: process.pid });
+  const before = await readFile(paths.lockPath);
+  const result = await execution.recover({ project: root, runId: approved.runId });
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(result.recoveredLocks, ['host-operation']);
+  assert.equal(result.blockedLock, 'run');
+  assert.deepEqual(await readFile(paths.lockPath), before);
+});
+
+test('host recovery validates corrupt snapshots before removing an abandoned outer lock', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const outer = join(paths.runDir, 'host-operation.lock');
+  await abandonedHostLock(outer);
+  const before = await readFile(outer);
+  await writeFile(paths.snapshotPath, '{}', { mode: 0o600 });
+  await assert.rejects(createHostExecution({ gitClient }).recover({ project: root, runId: approved.runId }));
+  assert.deepEqual(await readFile(outer), before);
+});
+
+test('task recover selects a sole active host run and work recover reports blocked progress as failure', async t => {
+  const { root, approved } = await fixture(t);
+  const calls = [];
+  const messages = [];
+  const output = { log: x => messages.push(x), error: x => messages.push(x), json: x => messages.push(x) };
+  const work = { recover: async value => { calls.push(value); return { status: 'recovered', recoveredLocks: ['run'], nextAction: 'Read task status.' }; } };
+  assert.equal(await main(['task', 'recover'], { cwd: () => root, work, output }), EXIT_CODES.SUCCESS);
+  assert.deepEqual(calls[0], { project: root, runId: approved.runId });
+  assert.match(messages.join('\n'), /run/);
+  const blocked = { recover: async () => ({ status: 'blocked', recoveredLocks: ['host-operation'], blockedLock: 'run', nextAction: 'Inspect remaining owner.' }) };
+  messages.length = 0;
+  assert.equal(await main(['work', 'recover', approved.runId, `--project=${root}`, '--json'], { work: blocked, output }), EXIT_CODES.REPOSITORY_CONFLICT);
+  assert.equal(messages[0].ok, false);
+  assert.deepEqual(messages[0].result.recoveredLocks, ['host-operation']);
+  assert.equal(await main(['task', 'recover', '--force'], { cwd: () => root, work, output }), EXIT_CODES.INVALID_INPUT);
+});
+
+test('host recovery permits interrupted initialization without inventing a runtime snapshot', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const runtime = await resolveStatePaths(root, approved.runId);
+  await abandonedHostLock(runtime.runtimeLockPath);
+  await abandonedHostLock(runtime.lockPath);
+  const result = await createHostExecution({ gitClient }).recover({ project: root, runId: approved.runId });
+  assert.equal(result.status, 'recovered');
+  assert.equal(result.runtimeVersion, null);
+  assert.deepEqual(result.recoveredLocks, ['runtime', 'state']);
+  await assert.rejects(access(runtime.snapshotPath), { code: 'ENOENT' });
+});
+
+test('host recovery rejects substituted runtime objectives before removing locks', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const runtime = await resolveStatePaths(root, approved.runId);
+  const saved = JSON.parse(await readFile(runtime.snapshotPath, 'utf8'));
+  saved.data.graph.nodes.find(node => node.owner.role === 'worker').objective = 'Implement an unrelated task with different ownership.';
+  await writeFile(runtime.snapshotPath, `${JSON.stringify(saved)}\n`);
+  const lock = join(paths.runDir, 'host-operation.lock');
+  await abandonedHostLock(lock);
+  const before = await readFile(lock);
+  await assert.rejects(execution.recover({ project: root, runId: approved.runId }));
+  assert.deepEqual(await readFile(lock), before);
+});
+
+test('host recovery fails closed for young live foreign corrupt and previously claimed owners', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const outer = join(paths.runDir, 'host-operation.lock');
+  const execution = createHostExecution({ gitClient });
+  for (const [name, overrides] of [
+    ['young', { timestamp: new Date().toISOString() }],
+    ['live', { pid: process.pid }],
+    ['foreign', { host: 'another-host.invalid' }],
+    ['corrupt', {}],
+    ['claimed', {}],
+  ]) {
+    await abandonedHostLock(outer, overrides);
+    if (name === 'corrupt') await writeFile(outer, '{}');
+    if (name === 'claimed') {
+      const owner = JSON.parse(await readFile(outer, 'utf8'));
+      await writeFile(`${outer}.recovered-${owner.ownerId}`, 'prior recovery claim', { mode: 0o600 });
+    }
+    const before = await readFile(outer);
+    const result = await execution.recover({ project: root, runId: approved.runId });
+    assert.equal(result.status, 'blocked', name);
+    assert.equal(result.blockedLock, 'host-operation', name);
+    assert.deepEqual(result.recoveredLocks, [], name);
+    assert.deepEqual(await readFile(outer), before, name);
+  }
+});
+
+test('host prepare respects recovery outer lock and never initializes state while another owner holds it', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const outer = await acquireLock(join(paths.runDir, 'host-operation.lock'));
+  const before = await readFile(paths.snapshotPath);
+  try {
+    await assert.rejects(createHostExecution({ gitClient }).prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version }), { code: 'ERR_HOST_RUN_BUSY' });
+    assert.deepEqual(await readFile(paths.snapshotPath), before);
+  } finally { await outer.release(); }
+});
+
+test('concurrent host recoverers preserve snapshots and do not remove an active acquired lock', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const before = await readFile(paths.snapshotPath);
+  await abandonedHostLock(join(paths.runDir, 'host-operation.lock'));
+  const results = await Promise.all([
+    execution.recover({ project: root, runId: approved.runId }),
+    execution.recover({ project: root, runId: approved.runId }),
+  ]);
+  assert.ok(results.some(result => result.status === 'recovered'));
+  assert.equal(results.filter(result => result.recoveredLocks.includes('host-operation')).length, 1);
+  assert.deepEqual(await readFile(paths.snapshotPath), before);
+});
+
+test('host recovery refuses a running run with a missing runtime snapshot', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const runtime = await resolveStatePaths(root, approved.runId);
+  await rm(runtime.snapshotPath);
+  const lock = join(paths.runDir, 'host-operation.lock');
+  await abandonedHostLock(lock);
+  const before = await readFile(lock);
+  await assert.rejects(execution.recover({ project: root, runId: approved.runId }));
+  assert.deepEqual(await readFile(lock), before);
+});
+
+test('task recover requires a selector for multiple host runs and refuses explicit spawned runs', async t => {
+  const { root, gitClient, approved, workflow } = await fixture(t);
+  const second = await workflow.propose({ project: root, client: 'host',
+    source: { kind: 'inline', value: '# Another task\n\n## Acceptance criteria\n\n- Add another agenda item.\n' },
+    decomposition: { schemaVersion: 1, kind: 'agilno.feature-decomposition', workItems: [{ objective: 'Add another agenda item.', ownedPaths: ['app/second.js'], acceptanceCriterionIndexes: [1] }] },
+  });
+  const calls = [];
+  const messages = [];
+  const output = { log: value => messages.push(value), error: value => messages.push(value), json: value => messages.push(value) };
+  const work = { recover: async value => { calls.push(value); return { status: 'recovered', recoveredLocks: [], nextAction: 'Read task status.' }; } };
+  assert.equal(await main(['task', 'recover'], { cwd: () => root, work, output }), EXIT_CODES.INVALID_INPUT);
+  assert.equal(calls.length, 0);
+  assert.equal(await main(['task', 'recover', `--run=${second.runId}`], { cwd: () => root, work, output }), EXIT_CODES.SUCCESS);
+  assert.equal(calls[0].runId, second.runId);
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const saved = JSON.parse(await readFile(paths.snapshotPath, 'utf8'));
+  saved.data.featurePlan.client = 'codex';
+  const canonical = value => value === null || typeof value !== 'object' ? JSON.stringify(value)
+    : Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
+      : `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  const { createHash } = await import('node:crypto');
+  saved.data.proposalDigest = createHash('sha256').update(canonical(saved.data.featurePlan)).digest('hex');
+  saved.data.activation.proposalDigest = saved.data.proposalDigest;
+  await writeFile(paths.snapshotPath, `${JSON.stringify(saved)}\n`);
+  assert.equal(await main(['task', 'recover', `--run=${approved.runId}`], { cwd: () => root, work, output }), EXIT_CODES.REPOSITORY_CONFLICT);
+  assert.equal(calls.length, 1);
+  await assert.rejects(createHostExecution({ gitClient }).recover({ project: root, runId: approved.runId }), { code: 'ERR_HOST_RUN_RECOVERY_STATE' });
+  assert.equal(await main(['task', 'recover'], { cwd: () => root, work, output }), EXIT_CODES.SUCCESS);
+  assert.equal(calls.at(-1).runId, second.runId);
+});
+
+test('host recovery rejects missing runtime directories for started runs even without their expected runtime reference', async t => {
+  const { root, gitClient, approved } = await fixture(t);
+  const execution = createHostExecution({ gitClient, now: () => NOW });
+  await execution.prepare({ project: root, runId: approved.runId, expectedRunVersion: approved.version });
+  const paths = await resolveFeatureRunPaths(root, approved.runId);
+  const runtime = await resolveStatePaths(root, approved.runId);
+  await rm(runtime.instanceDir, { recursive: true });
+  const saved = JSON.parse(await readFile(paths.snapshotPath, 'utf8'));
+  const lock = join(paths.runDir, 'host-operation.lock');
+  await abandonedHostLock(lock);
+  const before = await readFile(lock);
+  for (const status of ['running', 'blocked', 'completed']) {
+    for (const refs of [[], ['runtime:unrelated-run']]) {
+      saved.data.status = status;
+      saved.data.runtimeRefs = refs;
+      await writeFile(paths.snapshotPath, `${JSON.stringify(saved)}\n`);
+      await assert.rejects(execution.recover({ project: root, runId: approved.runId }), { code: 'ERR_HOST_RUN_RECOVERY_STATE' });
+      assert.deepEqual(await readFile(lock), before);
+    }
+  }
+});
