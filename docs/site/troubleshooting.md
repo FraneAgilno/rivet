@@ -45,7 +45,7 @@ An interrupted host operation can leave a private host lock. Rivet will report t
 
 ## No compatible CLI was found
 
-Read the reported reason. `missing-options` lists required features the CLI does not advertise. Inspect `claude --help` or `codex exec --help`, update or select an installation providing those options, then retry. `capability-probe-failed` means a bounded version/help probe failed, timed out, or produced invalid output. Rivet does not require a specific release and does not drop safety or output flags to force compatibility. Script installations still need a canonical native interpreter as described by the error.
+Read the reported reason. `missing-options` lists required features the CLI does not advertise. Inspect `claude --help` or `codex exec --help`, update or select an installation providing those options, then retry. `capability-probe-failed` means a bounded version/help probe failed, timed out, or produced invalid output. Rivet does not require a specific release and does not drop safety or output flags to force compatibility. Exact `#!/usr/bin/env node` launchers use Rivet's own canonical native Node executable automatically. Other script installations need a canonical compatible interpreter as described by the error; invalid explicit overrides are rejected.
 
 If the CLI changes after discovery, retry to discover it again. A help probe can pass while authentication, model access, or output compatibility fails later; retain the failure report when diagnosing that case.
 

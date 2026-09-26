@@ -53,15 +53,15 @@ export async function discoverGit(projectRoot, options = {}) {
   ]);
   const currentBranch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null;
   const remoteHead = defaultResult.code === 0 ? defaultResult.stdout.trim() : '';
-  const defaultBranch = remoteHead.replace(/^origin\//, '')
-    || (currentBranch === 'main' || currentBranch === 'master' ? currentBranch : 'main');
-  const defaultBranchSource = remoteHead
+  const defaultBranch = options.defaultBranch ?? (remoteHead.replace(/^origin\//, '')
+    || (currentBranch === 'main' || currentBranch === 'master' ? currentBranch : 'main'));
+  const defaultBranchSource = options.defaultBranch !== undefined ? 'configuration' : remoteHead
     ? 'remote_tracking' : (currentBranch === 'main' || currentBranch === 'master') ? 'current_branch' : 'default';
   const freshnessResult = await git(runner, cwd, [
     'rev-list', '--left-right', '--count', `${defaultBranch}...refs/remotes/origin/${defaultBranch}`,
   ]);
   let baseFreshness = 'not_checked';
-  if (freshnessResult.code === 0) {
+  if (freshnessResult.code === 0 && /^\d+\s+\d+$/.test(freshnessResult.stdout.trim())) {
     const [ahead = 0, behind = 0] = freshnessResult.stdout.trim().split(/\s+/).map(Number);
     baseFreshness = behind > 0 ? 'behind' : ahead > 0 ? 'ahead' : 'fresh';
   }

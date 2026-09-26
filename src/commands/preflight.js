@@ -61,6 +61,7 @@ export async function preflight(parsed, dependencies = {}) {
     const [git, tools, goalState] = await Promise.all([
       (dependencies.gitDiscovery ?? discoverGit)(projectRoot, {
         runner: dependencies.runner,
+        ...(mode === 'host' ? { defaultBranch: config.project.repository.defaultBranch } : {}),
         candidatePaths: dependencies.candidatePaths ?? [join(projectRoot, '.worktrees', 'next')],
       }),
       (dependencies.toolDiscovery ?? discoverTools)({ packageManager }, {
@@ -76,6 +77,9 @@ export async function preflight(parsed, dependencies = {}) {
       check('repository', git.repository === true, 'Run preflight inside a Git repository.'),
       check('worktree-clean', git.dirty === false, 'Commit or stash worktree changes.'),
       check('head-attached', git.detached === false, 'Switch to a local branch.'),
+      ...(mode === 'host' ? [check('configured-branch', git.currentBranch === config.project.repository.defaultBranch
+        && git.defaultBranch === config.project.repository.defaultBranch,
+      'Review repository.defaultBranch in .rivet/project.yaml and switch to that local branch before starting a task.')] : []),
       check('base-freshness', git.baseFreshness === 'fresh' || git.baseFreshness === 'ahead', 'Update the local default branch from its existing remote-tracking ref.'),
       check('worktree-discovery', git.worktreeCheck?.checked === true, 'Resolve local Git worktree discovery before retrying.'),
       ...(mode === 'host' ? [] : [check('worktree-paths', (git.occupiedCandidatePaths ?? []).length === 0, 'Select an unoccupied worktree path.', {

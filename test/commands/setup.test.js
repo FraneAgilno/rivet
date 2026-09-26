@@ -448,3 +448,24 @@ test('parser accepts minimal project-scoped install/uninstall and rejects invali
   assert.throws(() => parseArgs(['install', '--minimal', '--global', '--project=/repo']), /--global and --project cannot be combined/);
   assert.throws(() => parseArgs(['setup', '--global', '--project=/repo']), /--global and --project cannot be combined/);
 });
+
+test('written setup gives runnable readiness commands and review/commit guidance', async t => {
+  const root = await createProject(t);
+  const { result } = await runSetup(t, root, { write: true });
+  const steps = result.nextSteps.join('\n');
+  assert.match(steps, /Review and commit/);
+  assert.match(steps, /defaultBranch/);
+  assert.match(steps, /Run rivet doctor to/);
+  assert.match(steps, /Run rivet preflight --mode=host/);
+  assert.doesNotMatch(steps, /<path>/);
+});
+
+test('external project setup quotes its actual project path in readiness guidance', async t => {
+  const root = await createProject(t);
+  const capture = captureOutput();
+  const { dependencies } = makeDependencies(root, capture);
+  await setupCommand(parsedSetup(root, { write: true }), { ...dependencies, cwd: () => tmpdir() });
+  const steps = capture.writes.at(-1).value.nextSteps.join('\n');
+  assert.ok(steps.includes(`rivet doctor --project='${root}'`));
+  assert.ok(steps.includes(`rivet preflight --mode=host --project='${root}'`));
+});

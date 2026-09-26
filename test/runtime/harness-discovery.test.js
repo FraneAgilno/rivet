@@ -66,16 +66,6 @@ test('missing capabilities are ineligible and a missing interpreter is reported'
     runner: async () => ({ code: 0, stdout: 'new but untested version\n', truncated: {} }),
   });
   assert.equal(badVersion.find(item => item.kind === 'codex').reason, 'missing-options: --ephemeral, --ignore-user-config, --color, --sandbox');
-  const noInterpreter = await discoverHarnesses({
-    env: { RIVET_CODEX_EXECUTABLE: codex, PATH: '' }, projectRoot: '/private/tmp/project',
-    runner: async () => { throw new Error('unsafe script must not be probed'); },
-  });
-  assert.equal(noInterpreter.find(item => item.kind === 'codex').reason, 'interpreter-required');
-  const discoveredFromPath = await discoverHarnesses({
-    env: { PATH: parent }, projectRoot: '/private/tmp/project',
-    runner: async () => { throw new Error('PATH script must not be probed without a pinned interpreter'); },
-  });
-  assert.equal(discoveredFromPath.find(item => item.kind === 'codex').reason, 'interpreter-required');
   const missingInterpreter = await discoverHarnesses({
     env: { ...base, RIVET_CODEX_INTERPRETER: join(parent, 'missing-node') }, projectRoot: '/private/tmp/project',
     runner: async () => { throw new Error('probe must not run'); },
@@ -121,4 +111,43 @@ test('failed, truncated, oversized, and malformed probes cannot qualify an insta
       runner: async (_command, args) => args.includes('--help') ? output : { code: 0, stdout: 'codex-cli 99' } });
     assert.equal(result.find(item => item.kind === 'codex').reason, 'capability-probe-failed');
   }
+});
+
+test('installed npm Node wrappers discover without interpreter exports or PATH node', async t => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-auto-node-')));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const projectRoot = join(parent, 'project');
+  await mkdir(projectRoot);
+  for (const kind of ['codex', 'claude']) {
+    await writeFile(join(parent, kind), `#!/usr/bin/env node\nconsole.log(process.argv.includes('--help') ? ${JSON.stringify(help(kind))} : '${kind} 99.0.0');\n`, { mode: 0o700 });
+  }
+  const found = await discoverHarnesses({ env: { PATH: parent }, projectRoot });
+  for (const result of found) {
+    assert.equal(result.interpreter, await realpath(process.execPath));
+    assert.equal(result.executable, join(parent, result.kind));
+  }
+});
+
+test('automatic Node selection stays fail-closed for other shebangs and unsafe explicit interpreters', async t => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-auto-node-safety-')));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const projectRoot = join(parent, 'project');
+  await mkdir(projectRoot);
+  const script = join(parent, 'codex');
+  const localInterpreter = join(projectRoot, 'node');
+  await writeFile(localInterpreter, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  for (const shebang of ['#!/bin/sh', '#!/usr/bin/env node --inspect', '#!/usr/bin/env -S node', '#!/usr/bin/env node\r']) {
+    await writeFile(script, `${shebang}\n`, { mode: 0o700 });
+    const found = await discoverHarnesses({ env: { PATH: parent }, projectRoot, runner: async () => assert.fail('unsafe wrapper must not launch') });
+    assert.equal(found.find(item => item.kind === 'codex').reason, 'interpreter-required');
+  }
+  await writeFile(script, '#!/usr/bin/env node\n', { mode: 0o700 });
+  for (const interpreter of [localInterpreter, '', '/missing/node']) {
+    const found = await discoverHarnesses({ env: { PATH: parent, RIVET_CODEX_INTERPRETER: interpreter }, projectRoot, runner: async () => assert.fail('invalid override must not fall back') });
+    assert.equal(found.find(item => item.kind === 'codex').reason, 'interpreter-unavailable');
+  }
+  const native = await discoverHarnesses({ env: { PATH: '', RIVET_CODEX_EXECUTABLE: process.execPath }, projectRoot,
+    runner: async (_cmd, args) => ({ code: 0, stdout: args.includes('--help') ? help('codex') : '99.0.0' }) });
+  assert.equal(native.find(item => item.kind === 'codex').interpreter, undefined);
+  assert.equal(native.find(item => item.kind === 'codex').executable, await realpath(process.execPath));
 });
