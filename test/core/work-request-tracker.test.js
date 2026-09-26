@@ -124,3 +124,30 @@ test('rejects unknown providers, malformed ticket IDs, and unbranded adapters be
     { provider: 'linear', ticketId: 'DEMO-123', adapter: { provider: 'linear', read } },
   ]) await assert.rejects(() => resolveTrackerWorkRequest(input), WorkRequestError);
 });
+
+test('direct tracker supplements preserve source provenance and bind the exact source-first criteria union', async () => {
+  for (const provider of ['jira', 'linear']) {
+    for (const sourceCriteria of [[], ['Source criterion']]) {
+      const source = envelope(provider, { id: 'DEMO-42', summary: 'Feature', description: 'Description', acceptanceCriteria: sourceCriteria, revision: NOW, links: [], comments: [] });
+      const input = { provider, ticketId: 'DEMO-42', adapter: adapter(provider, source), userAcceptanceCriteria: ['User criterion', ...(sourceCriteria.length ? ['Source criterion'] : [])] };
+      const request = await resolveTrackerWorkRequest(input);
+      assert.deepEqual(request.acceptanceCriteria, [...new Set([...sourceCriteria, ...input.userAcceptanceCriteria])]);
+      assert.deepEqual(request.criteriaProvenance, { sourceAcceptanceCriteria: sourceCriteria, userAcceptanceCriteria: input.userAcceptanceCriteria });
+      assert.equal(request.source.revision, `${NOW}#sha256:${source.digest}`);
+      assert.equal(validateWorkRequest(JSON.parse(JSON.stringify(request))).digest, request.digest);
+      const changed = structuredClone(request); changed.criteriaProvenance.userAcceptanceCriteria[0] = 'Changed';
+      assert.throws(() => validateWorkRequest(changed));
+      input.userAcceptanceCriteria[0] = 'Later edit';
+      assert.equal(request.criteriaProvenance.userAcceptanceCriteria[0], 'User criterion');
+    }
+  }
+});
+test('missing direct criteria gives an actionable user-input remedy; invalid supplements do not read the tracker', async () => {
+  const source = envelope('jira', { id: 'DEMO-42', summary: 'Feature', description: 'Description', acceptanceCriteria: [], revision: NOW, links: [], comments: [] });
+  await assert.rejects(resolveTrackerWorkRequest({provider:'jira',ticketId:'DEMO-42',adapter:adapter('jira',source)}), error => /Ask the user/.test(error.safeMessage) && /--acceptance-criteria/.test(error.safeMessage));
+  for (const userAcceptanceCriteria of [[], [''], [' '], ...Array.from({length:32},(_,index)=>['valid'+String.fromCharCode(index)+'text']), ['valid'+String.fromCharCode(127)+'text'], ['x\nsecond'], ['x'.repeat(4097)], Array(257).fill('x'), ['authorization: Bearer abcdefghijklmnop']]) {
+    const calls=[];
+    await assert.rejects(resolveTrackerWorkRequest({provider:'jira',ticketId:'DEMO-42',adapter:adapter('jira',source,calls),userAcceptanceCriteria}));
+    assert.equal(calls.length,0);
+  }
+});

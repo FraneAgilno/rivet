@@ -6,7 +6,7 @@ import { containsSecretMaterial, immutableJson } from '../clients/contract.js';
 const INPUT_KEYS = new Set([
   'source', 'title', 'description', 'acceptanceCriteria', 'contextRefs', 'capturedAt',
 ]);
-const OPTIONAL_KEYS = ['context'];
+const OPTIONAL_KEYS = ['context', 'criteriaProvenance'];
 const REQUEST_KEYS = new Set(['schemaVersion', ...INPUT_KEYS, 'digest']);
 const SOURCE_KEYS = new Set(['kind', 'ref', 'revision', 'url']);
 const SOURCE_KINDS = new Set(['inline', 'markdown', 'jira', 'linear', 'host-observation']);
@@ -80,6 +80,31 @@ function list(value, { maximum, itemMaximum }) {
   }
   if (new Set(output).size !== output.length) fail();
   return Object.freeze(output);
+}
+
+// User additions remain explicit, bounded data, never inferred tracker content.
+export function userAcceptanceCriteria(input) {
+  const values = list(input, { maximum: 256, itemMaximum: 4096 });
+  if (!values.length || Buffer.byteLength(JSON.stringify(values), 'utf8') > 64 * 1024
+    || values.some(value => !value.trim() || /[\u0000-\u001f\u007f]/.test(value))) fail();
+  return values;
+}
+
+export function parseAcceptanceCriteriaText(input) {
+  if (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > 64 * 1024
+    || /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/.test(input)) fail();
+  const normalized = input.replaceAll('\r\n', '\n');
+  if (normalized.includes('\r')) fail();
+  return userAcceptanceCriteria(normalized.split('\n').map(value => value.trim()));
+}
+
+function criteriaProvenance(input, output) {
+  const value = captureRecord(input, new Set(['sourceAcceptanceCriteria', 'userAcceptanceCriteria']));
+  if (!['jira', 'linear'].includes(output.source.kind)) fail();
+  const sourceAcceptanceCriteria = list(value.sourceAcceptanceCriteria, { maximum: 256, itemMaximum: 4096 });
+  const additions = userAcceptanceCriteria(value.userAcceptanceCriteria);
+  if (JSON.stringify([...new Set([...sourceAcceptanceCriteria, ...additions])]) !== JSON.stringify(output.acceptanceCriteria)) fail();
+  return Object.freeze({ sourceAcceptanceCriteria, userAcceptanceCriteria: additions });
 }
 
 function safeRelativePath(value) {
@@ -183,6 +208,7 @@ function capturedInput(input, request = false) {
     capturedAt: timestamp(value.capturedAt),
   };
   if (value.context !== undefined) output.context = context(value.context);
+  if (value.criteriaProvenance !== undefined) output.criteriaProvenance = criteriaProvenance(value.criteriaProvenance, output);
   if (output.source.kind === 'host-observation') {
     const primary = output.context?.sources[0];
     if (!primary || output.source.ref !== `${primary.providerId}:${primary.resourceId}`
@@ -202,6 +228,7 @@ function digestPayload(value) {
     contextRefs: value.contextRefs,
     capturedAt: value.capturedAt,
     ...(value.context === undefined ? {} : { context: value.context }),
+    ...(value.criteriaProvenance === undefined ? {} : { criteriaProvenance: value.criteriaProvenance }),
   };
 }
 

@@ -1,3 +1,4 @@
+import { parseAcceptanceCriteriaText } from '../work-request/contract.js';
 import { isAbsolute } from 'node:path';
 
 import { immutableJson } from '../clients/contract.js';
@@ -9,6 +10,11 @@ const TICKET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SUBCOMMANDS = new Set(['propose', 'start', 'run', 'status', 'resume', 'cancel']);
 
 function fail(message, code = 'INVALID_INPUT') { throw new CliError(message, code); }
+
+function supplementalCriteria(value) {
+  try { return parseAcceptanceCriteriaText(value); }
+  catch { fail('Acceptance criteria must be nonempty bounded text, one criterion per line, without duplicates, control characters or credentials.'); }
+}
 
 function service(dependencies, method) {
   const feature = dependencies?.feature;
@@ -85,7 +91,7 @@ function lifecycleInput(parsed, allowed, { mutation = false, digest = false } = 
 
 function sourceInput(parsed) {
   const options = flags(parsed, [
-    'project', 'request', 'request-text', 'ticket', 'tracker', 'client', 'json',
+    'project', 'request', 'request-text', 'ticket', 'tracker', 'client', 'json', 'acceptance-criteria',
   ]);
   if (!Array.isArray(parsed.operands) || parsed.operands.length !== 0) fail('Feature proposal commands do not accept a run ID.');
   const selectors = ['request', 'request-text', 'ticket'].filter(key => options[key] !== undefined);
@@ -107,6 +113,7 @@ function sourceInput(parsed) {
     if (typeof options.ticket !== 'string' || !TICKET.test(options.ticket)) fail("Feature option 'ticket' is invalid.");
     source = Object.freeze({ kind: 'ticket', value: options.ticket });
   }
+  if (selected !== 'ticket' && options['acceptance-criteria'] !== undefined) fail('--acceptance-criteria requires --ticket.');
   if (selected !== 'ticket' && options.tracker !== undefined) fail("Feature option 'tracker' requires '--ticket'.");
   if (options.tracker !== undefined && !['jira', 'linear'].includes(options.tracker)) fail("Feature option 'tracker' is invalid.");
   if (options.client !== undefined && !['claude', 'codex'].includes(options.client)) fail("Feature option 'client' is invalid.");
@@ -114,6 +121,7 @@ function sourceInput(parsed) {
   return Object.freeze({
     project: projectPath,
     source,
+    ...(options['acceptance-criteria'] === undefined ? {} : { userAcceptanceCriteria: supplementalCriteria(options['acceptance-criteria']) }),
     ...(options.client === undefined ? {} : { client: options.client }),
     ...(options.tracker === undefined ? {} : { tracker: options.tracker }),
   });
@@ -142,7 +150,17 @@ function emit(parsed, dependencies, result) {
   return EXIT_CODES.SUCCESS;
 }
 
+function displayCriteria(dependencies, request) {
+  if (!request?.criteriaProvenance) return;
+  dependencies.output.log('Tracker acceptance criteria:');
+  for (const item of request.criteriaProvenance.sourceAcceptanceCriteria) dependencies.output.log(`  - ${JSON.stringify(item)}`);
+  if (!request.criteriaProvenance.sourceAcceptanceCriteria.length) dependencies.output.log('  (none supplied by tracker)');
+  dependencies.output.log('User-supplied acceptance criteria:');
+  for (const item of request.criteriaProvenance.userAcceptanceCriteria) dependencies.output.log(`  - ${JSON.stringify(item)}`);
+}
+
 function displayProposal(dependencies, proposal) {
+  displayCriteria(dependencies, proposal.workRequest);
   const summary = proposal.summary === undefined ? 'Ready for activation review.' : proposal.summary;
   dependencies.output.log(`Feature proposal ${proposal.runId} (version ${proposal.version}, digest ${proposal.proposalDigest}): ${summary}`);
 }
@@ -152,6 +170,7 @@ export async function featureCommand(parsed, dependencies) {
   if (parsed.subcommand === 'propose') {
     const feature = service(dependencies, 'propose');
     const result = proposalResult(await invoke(feature, 'propose', sourceInput(parsed)));
+    if (!parsed.flags.json) displayCriteria(dependencies, result.workRequest);
     return emit(parsed, dependencies, result);
   }
   if (parsed.subcommand === 'run') {

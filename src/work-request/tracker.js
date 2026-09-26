@@ -1,5 +1,5 @@
 import { validateAdapter } from '../adapters/contract.js';
-import { createWorkRequest, WorkRequestError } from './contract.js';
+import { createWorkRequest, WorkRequestError, userAcceptanceCriteria } from './contract.js';
 
 const PROVIDERS = new Set(['jira', 'linear']);
 const TICKET = /^[A-Z][A-Z0-9]{0,31}-[1-9][0-9]{0,15}$/;
@@ -12,8 +12,8 @@ function captureInput(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)
       || (Object.getPrototypeOf(input) !== Object.prototype && Object.getPrototypeOf(input) !== null)) fail();
     const keys = Reflect.ownKeys(input);
-    if (keys.length > 4 || keys.some(key => typeof key !== 'string'
-      || !['provider', 'ticketId', 'adapter', 'signal'].includes(key))) fail();
+    if (keys.length > 5 || keys.some(key => typeof key !== 'string'
+      || !['provider', 'ticketId', 'adapter', 'signal', 'userAcceptanceCriteria'].includes(key))) fail();
     if (!['provider', 'ticketId', 'adapter'].every(key => keys.includes(key))) fail();
     const result = Object.create(null);
     for (const key of keys) {
@@ -57,12 +57,18 @@ function linkedContextRefs(provider, normalized) {
   return [...new Set(refs)];
 }
 
-function requestFromEnvelope(provider, expectedId, envelope) {
+function requestFromEnvelope(provider, expectedId, envelope, additions) {
   try {
     if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)
       || envelope.provider !== provider || envelope.source?.id !== expectedId
       || envelope.normalized?.id !== expectedId || typeof envelope.source?.url !== 'string') fail();
     const normalized = envelope.normalized;
+    if (!Array.isArray(normalized.acceptanceCriteria)) fail();
+    if (!normalized.acceptanceCriteria.length && !additions) {
+      const error = new WorkRequestError();
+      error.safeMessage = 'The tracker has no acceptance criteria. Ask the user for explicit acceptance criteria, then retry the ticket proposal with --acceptance-criteria "criterion text" (one criterion per line).';
+      throw error;
+    }
     return createWorkRequest({
       source: {
         kind: provider,
@@ -72,7 +78,8 @@ function requestFromEnvelope(provider, expectedId, envelope) {
       },
       title: normalized.summary,
       description: normalized.description,
-      acceptanceCriteria: normalized.acceptanceCriteria,
+      acceptanceCriteria: additions ? [...new Set([...normalized.acceptanceCriteria, ...additions])] : normalized.acceptanceCriteria,
+      ...(additions ? { criteriaProvenance: { sourceAcceptanceCriteria: normalized.acceptanceCriteria, userAcceptanceCriteria: additions } } : {}),
       contextRefs: linkedContextRefs(provider, normalized),
       capturedAt: envelope.fetchedAt,
     });
@@ -84,6 +91,7 @@ function requestFromEnvelope(provider, expectedId, envelope) {
 
 export async function resolveTrackerWorkRequest(input) {
   const request = captureInput(input);
+  const additions = request.userAcceptanceCriteria === undefined ? undefined : userAcceptanceCriteria(request.userAcceptanceCriteria);
   const provider = providerName(request.provider);
   const id = ticketId(request.ticketId);
   if (!validateAdapter(request.adapter) || request.adapter.provider !== provider
@@ -93,5 +101,5 @@ export async function resolveTrackerWorkRequest(input) {
     id,
     ...(request.signal === undefined ? {} : { signal: request.signal }),
   });
-  return requestFromEnvelope(provider, id, envelope);
+  return requestFromEnvelope(provider, id, envelope, additions);
 }

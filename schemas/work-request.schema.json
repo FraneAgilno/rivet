@@ -193,6 +193,61 @@
           }
         }
       }
+    },
+    "criteriaProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAcceptanceCriteria",
+        "userAcceptanceCriteria"
+      ],
+      "properties": {
+        "sourceAcceptanceCriteria": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "userAcceptanceCriteria": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 1
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "criteriaProvenance"
+        ]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "jira",
+                  "linear"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    }
+  ]
 }

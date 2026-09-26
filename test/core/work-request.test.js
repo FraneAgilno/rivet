@@ -112,3 +112,19 @@ test('host context is bound to request digest without claiming direct verificati
     sources: [{ ...context.sources[0], assurance: 'provider-verified' }] } }));
   assert.throws(() => createWorkRequest({ ...BASE, source }));
 });
+
+test('tracker criteria provenance is schema compatible, union checked and digest bound without changing legacy requests', async () => {
+  const {default:Ajv}=await import('ajv');const {readFile}=await import('node:fs/promises');
+  const schema=JSON.parse(await readFile(new URL('../../schemas/work-request.schema.json',import.meta.url),'utf8'));
+  const validate=new Ajv({strict:false,validateFormats:false}).compile(schema);
+  const source={kind:'jira',ref:'DEMO-42',revision:'r1',url:'https://example.atlassian.net/browse/DEMO-42'};
+  const provenance={sourceAcceptanceCriteria:['Source'],userAcceptanceCriteria:['User','Source']};
+  const request=createWorkRequest({...BASE,source,acceptanceCriteria:['Source','User'],criteriaProvenance:provenance});
+  assert.equal(validate(request),true,JSON.stringify(validate.errors));
+  assert.equal(validate(createWorkRequest(BASE)),true);
+  assert.throws(()=>createWorkRequest({...BASE,criteriaProvenance:provenance}));
+  assert.throws(()=>createWorkRequest({...BASE,source,acceptanceCriteria:['User','Source'],criteriaProvenance:provenance}));
+  const changed=createWorkRequest({...BASE,source,acceptanceCriteria:['Source','User'],criteriaProvenance:{sourceAcceptanceCriteria:['Source','User'],userAcceptanceCriteria:['User']}});
+  assert.notEqual(changed.digest,request.digest);
+  const forged=structuredClone(request);forged.criteriaProvenance=changed.criteriaProvenance;assert.throws(()=>validateWorkRequest(forged));
+});

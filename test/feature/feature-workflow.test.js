@@ -290,3 +290,26 @@ test('direct ticket inference ignores harness and out-of-project providers', asy
     assert.equal(selected,'jira');
   }
 });
+
+test('direct missing criteria stops before planning or run storage, while explicit additions survive protocol augmentation and reopen', async () => {
+  const target=await fixture();const {stdout:gitPath}=await execFile('which',['git']);
+  const gitClient=await createGitClient({gitExecutable:await realpath(gitPath.trim())});
+  const {readdir}=await import('node:fs/promises');
+  const privateBefore=await readdir(join(target.root,'.git'));
+  let planningCalls=0,reads=0;
+  const source=createSourceEnvelope({provider:'jira',sourceId:'DEMO-42',sourceUrl:'https://example.atlassian.net/browse/DEMO-42',fetchedAt:NOW,fixtureSource:false,raw:{id:'DEMO-42'},normalized:{id:'DEMO-42',summary:'Feature',description:'Description',acceptanceCriteria:[],revision:NOW,links:[],comments:[]},retryClassification:'none',capabilities:{read:['issue'],write:[]}});
+  const adapter=createAdapter({provider:'jira',fixtureSource:false,capabilities:{read:['issue'],write:[]},async read(){reads++;return source;},async write(){throw new Error('no writes');}});
+  const workflow=createFeatureWorkflow({gitClient,now:()=>NOW,trackerAdapterFor:async()=>adapter,protocolsFor:async()=>['protocol:team-guide:1:sha256:'+'a'.repeat(64)],planningClientFor:async()=>{planningCalls++;return {async propose(contract){return proposal(contract);}};},async executeFeature(){throw new Error('no execution');}});
+  const input={project:target.root,source:{kind:'ticket',value:'DEMO-42'},tracker:'jira',client:'claude'};
+  await assert.rejects(workflow.propose(input),error=>/Ask the user/.test(error.safeMessage));assert.equal(planningCalls,0);assert.equal(reads,1);assert.deepEqual(await readdir(join(target.root,'.git')),privateBefore);
+  await assert.rejects(workflow.propose({...input,userAcceptanceCriteria:['']}));assert.equal(reads,1);
+  for(let code=1;code<=7;code++){
+    await assert.rejects(workflow.propose({...input,userAcceptanceCriteria:['User'+String.fromCharCode(code)+'criterion']}));
+    assert.equal(reads,1);assert.equal(planningCalls,0);assert.deepEqual(await readdir(join(target.root,'.git')),privateBefore);
+  }
+  const result=await workflow.propose({...input,userAcceptanceCriteria:['User criterion']});
+  assert.equal(planningCalls,1);assert.deepEqual(JSON.parse(JSON.stringify(result.workRequest.criteriaProvenance)),{sourceAcceptanceCriteria:[],userAcceptanceCriteria:['User criterion']});
+  assert.match(result.workRequest.contextRefs[0],/^protocol:/);
+  const reopened=await workflow.status({project:target.root,runId:result.runId});
+  assert.deepEqual(reopened.workRequest.criteriaProvenance,result.workRequest.criteriaProvenance);assert.equal(reopened.workRequest.digest,result.workRequest.digest);
+});
