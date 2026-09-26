@@ -13,6 +13,25 @@ The source branch is a moving alpha, not a versioned npm release. For reproducib
 
 Keep `--install-links` in the source install command. A tested npm 10 installation without it reported success but linked the package to a deleted temporary Git clone, leaving `rivet` unavailable. Verify `rivet --help` succeeds before setup. This flag requests a packaged installation rather than a directory link; see [npm installation options](https://docs.npmjs.com/cli/v10/commands/npm-install/#install-links).
 
+## Install a verified candidate tarball
+
+When a maintainer supplies an approved candidate tarball and its trusted SHA-256 checksum, use the thin bootstrap from a reviewed Rivet checkout:
+
+```sh
+sh /path/to/rivet/scripts/install.sh \
+  --artifact "/path/to/agilno-rivet-0.1.0-alpha.0.tgz" \
+  --sha256 "<trusted-64-character-sha256>" \
+  --prefix "$HOME/.local"
+```
+
+Use the checksum from the approved release record. A checksum supplied only beside an untrusted download does not establish authenticity. A published candidate channel is still pending; the source installation above remains available.
+
+The bootstrap requires Node 22 or newer, npm 10 or newer, Git, and tar on PATH. It copies the local tarball into a private temporary directory and checks that copy and its Rivet package identity before invoking npm. It then installs those verified bytes with lifecycle scripts disabled, verifies the installed Rivet command, and prints PATH and project setup instructions. Registry access may be needed for dependencies, which are resolved separately from the checksummed Rivet tarball.
+
+Omit `--prefix` to use your current npm global prefix. Use a user-owned prefix or runtime manager. The bootstrap keeps your existing PATH, does not modify shell profiles, and removes its temporary copy on completion or failure. A failed npm installation can leave partial content in the selected prefix; inspect the reported location before retrying.
+
+See the [candidate checklist](./release.md) for artifact creation, qualification and release decisions.
+
 ## Project or global instructions
 
 `setup` defaults to the current directory and both supported harness targets. It previews by default. `--write` applies the setup. Global setup installs instructions without writing project policy:

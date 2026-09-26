@@ -28,5 +28,5 @@ export const catalog = {
       ['reject-unsupported', 'invalid profiles, prompts, credentials, spend limits and unsupported providers fail before network'],
     ]),
   ],
-  deferred: [{ id: 'memory-continuity', status: 'not-implemented', reason: 'Shared memory is deferred to the final implementation lane.' }],
+  deferred: [{ id: 'memory-continuity', status: 'not-implemented', reason: 'Shared memory and two-user continuity are post-MVP.' }],
 };
