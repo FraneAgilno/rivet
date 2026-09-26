@@ -73,6 +73,8 @@ export async function setupCommand(parsed, dependencies) {
   const fs = dependencies.fs ?? filesystem;
   const root = resolve(dependencies.cwd(), flags.project ?? '.');
   const target = flags.target ?? 'both';
+  const projectArgument = root === resolve(dependencies.cwd()) ? ''
+    : ` --project='${root.replaceAll("'", "'\"'\"'")}'`;
   const installer = { command: 'install', subcommand: null, operands: [], flags: {
     minimal: true, target, ...(flags.global ? { global: true } : { project: root }),
   } };
@@ -94,7 +96,7 @@ export async function setupCommand(parsed, dependencies) {
       if (preview.code !== 0) return emit(parsed, dependencies, {
         ok: false, status: 'blocked', message: 'Project discovery failed. No setup files were written.',
         configuration: preview.value,
-        nextSteps: ['Run rivet init --project=<path> --json for configuration diagnostics.'],
+        nextSteps: [`Run rivet init${projectArgument} --json for configuration diagnostics.`],
       }, preview.code);
       configuration = { ...preview.value, status: 'proposed' };
     }
@@ -152,7 +154,11 @@ export async function setupCommand(parsed, dependencies) {
         ...warnings,
         'Reload your harness so it discovers the Rivet skill.',
         'Ask your harness: "Read the Rivet skill and report this project\'s configured checks."',
-        ...(flags.global ? ['Run rivet setup --project=<path> to configure each project.'] : ['Run rivet doctor --project=<path> to inspect configured readiness.']),
+        ...(flags.global ? ['Run rivet setup from each project root to configure that project.'] : [
+          'Review and commit the generated setup files. Confirm repository.defaultBranch in .rivet/project.yaml and switch to that branch before starting a task.',
+          `Run rivet doctor${projectArgument} to inspect configured readiness.`,
+          `Run rivet preflight --mode=host${projectArgument} before starting a task.`,
+        ]),
         'This configures instructions and policy; model authentication and active-harness execution are separate.',
       ],
     });

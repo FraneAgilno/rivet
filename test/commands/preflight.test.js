@@ -33,6 +33,7 @@ const readyGit = {
   dirty: false,
   detached: false,
   defaultBranch: 'main',
+  currentBranch: 'main',
   baseFreshness: 'fresh',
   occupiedCandidatePaths: [],
   worktreeCheck: { checked: true },
@@ -251,4 +252,21 @@ test('distinguishes an internal discovery failure from missing configuration wit
   assert.equal(exitCode, EXIT_CODES.INTERNAL_ERROR);
   assert.doesNotMatch(result.writes[0][1], /internal-details/);
   assert.equal(JSON.parse(result.writes[0][1]).error.code, 'INTERNAL_ERROR');
+});
+
+test('host readiness requires the attached configured branch and discovers its freshness', async () => {
+  const root = await project();
+  const configPath = join(root, '.rivet', 'project.yaml');
+  await writeFile(configPath, (await readFile(configPath, 'utf8')).replace('defaultBranch: main', 'defaultBranch: develop'));
+  for (const branch of ['feature/work', 'develop']) {
+    const result = capture();
+    let options;
+    const code = await preflight({ flags: { project: root, mode: 'host', json: true } }, {
+      output: result.output, env: {}, toolDiscovery: async () => readyTools,
+      gitDiscovery: async (_root, received) => { options = received; return { ...readyGit, currentBranch: branch, defaultBranch: 'develop' }; },
+    });
+    assert.equal(options.defaultBranch, 'develop');
+    assert.equal(code, branch === 'develop' ? EXIT_CODES.SUCCESS : EXIT_CODES.FAILED_GATE);
+    assert.equal(JSON.parse(result.writes[0][1]).checks.find(item => item.id === 'configured-branch').status, branch === 'develop' ? 'pass' : 'fail');
+  }
 });

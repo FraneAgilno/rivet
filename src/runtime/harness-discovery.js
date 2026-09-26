@@ -50,7 +50,7 @@ async function launchForm(executable, interpreter) {
     const newline = header.indexOf(0x0a);
     if (newline < 3 || newline > 256 || newline >= bytesRead) return 'executable-unsafe';
     const firstLine = new TextDecoder('utf-8', { fatal: true }).decode(header.subarray(0, newline));
-    if (interpreter === null) return 'interpreter-required';
+    if (interpreter === null) return firstLine === '#!/usr/bin/env node' ? 'node-interpreter-required' : 'interpreter-required';
     if (firstLine === `#!${interpreter}`
       || (firstLine === '#!/usr/bin/env node' && basename(interpreter) === 'node')) return 'eligible';
     return 'interpreter-incompatible';
@@ -79,9 +79,14 @@ export async function discoverHarnesses({ env, projectRoot, runner, signal }) {
     let reason = paths.length === 0 ? 'not-installed' : 'capability-probe-failed';
     for (const executable of paths) {
       const interpreterName = env[`RIVET_${kind.toUpperCase()}_INTERPRETER`];
-      const interpreter = interpreterName === undefined ? null : await usable(interpreterName, projectRoot);
+      let interpreter = interpreterName === undefined ? null : await usable(interpreterName, projectRoot);
       if (interpreterName !== undefined && interpreter === null) { reason = 'interpreter-unavailable'; continue; }
-      const form = await launchForm(executable, interpreter);
+      let form = await launchForm(executable, interpreter);
+      if (interpreterName === undefined && form === 'node-interpreter-required') {
+        interpreter = await usable(process.execPath, projectRoot);
+        if (interpreter === null) { reason = 'interpreter-unavailable'; continue; }
+        form = await launchForm(executable, interpreter);
+      }
       if (form !== 'eligible') { reason = form; continue; }
       try {
         const processRunner = runner ? null : await createProcessRunner({

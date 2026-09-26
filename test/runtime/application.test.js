@@ -118,6 +118,30 @@ test('pins a selected newly qualified harness version for Worker launch', async 
   assert.equal((await application.feature.createAgentClient('codex').launch(launch)).status, 'success');
 });
 
+test('launches an installed npm Node harness Worker without interpreter exports', async () => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'rivet-selected-version-')));
+  const root = join(parent, 'project');
+  await mkdir(root);
+  const executable = join(parent, 'codex');
+  const result = JSON.stringify({ version: 1, status: 'success', output: { summary: 'done', evidence: ['tests'] }, usage: { tokens: 1, costUsd: 0 } });
+  await writeFile(executable, `#!/usr/bin/env node\nif (process.argv.includes('--version')) console.log('codex-cli 0.155.0-alpha.16'); else if (process.argv.includes('--help')) console.log('--ephemeral\\n--ignore-user-config\\n--color\\n--sandbox'); else { process.stdin.resume(); process.stdin.on('end', () => console.log(${JSON.stringify(result)})); }\n`, { mode: 0o700 });
+  const application = createRivetApplication({
+    cwd: () => root,
+    env: { PATH: parent },
+  });
+  assert.equal((await application.harnesses.select('codex', root)).version, 'codex-cli 0.155.0-alpha.16');
+  const identity = await lstat(root, { bigint: true });
+  const launch = {
+    nodeId: 'worker-one', parentId: 'manager-one', objective: 'Finish a small task.',
+    ownedPaths: ['src/task.js'], authority: { actions: ['code.write'], providers: [] },
+    commands: ['test.unit'], evidence: ['tests'],
+    budget: { maxTokens: 12000, maxRuntimeMs: 30000, maxCostUsd: 2 },
+    worktree: { path: root, dev: identity.dev.toString(), ino: identity.ino.toString(), reservationId: 'lease-one' },
+    contextRefs: [], heartbeatInterval: 5000, stopConditions: ['objective-complete'],
+  };
+  assert.equal((await application.feature.createAgentClient('codex').launch(launch)).status, 'success');
+});
+
 test('opens a private run beneath Git identity without constructing worker or external effects', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rivet-application-'));
   const { execFile } = await import('node:child_process');
