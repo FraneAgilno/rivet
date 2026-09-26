@@ -219,13 +219,13 @@ function wireValue(write) {
   }
   else if (write.provider === 'github' && write.action === 'comment') value = { body: payload.body };
   else if (write.provider === 'github' && write.action === 'pr') value = payload;
-  else if (['github', 'gitlab'].includes(write.provider) && write.action === 'review-request') {
-    const github = write.provider === 'github';
+  else if (['github', 'gitlab', 'bitbucket'].includes(write.provider) && write.action === 'review-request') {
+    const github = write.provider === 'github', bitbucket = write.provider === 'bitbucket';
     const keys = github ? ['title', 'body', 'head', 'base', 'draft', 'maintainer_can_modify']
-      : ['title', 'description', 'source_branch', 'target_branch', 'remove_source_branch', 'squash'];
+      : bitbucket ? ['title','description','source','destination','draft','close_source_branch'] : ['title', 'description', 'source_branch', 'target_branch', 'remove_source_branch', 'squash'];
     const body = github ? payload?.body : payload?.description;
-    const source = github ? payload?.head : payload?.source_branch;
-    const target = github ? payload?.base : payload?.target_branch;
+    const source = github ? payload?.head : bitbucket ? payload?.source?.branch?.name : payload?.source_branch;
+    const target = github ? payload?.base : bitbucket ? payload?.destination?.branch?.name : payload?.target_branch;
     const branch = value => typeof value === 'string' && /^[A-Za-z0-9_][A-Za-z0-9._/-]{0,254}$/.test(value)
       && !value.includes('..') && !value.includes('//');
     if (!payload || Object.keys(payload).length !== keys.length || !keys.every(key => Object.hasOwn(payload, key))
@@ -233,7 +233,7 @@ function wireValue(write) {
       || typeof payload.title !== 'string' || payload.title.length < 1 || payload.title.length > 256 || /[\u0000-\u001f\u007f]/.test(payload.title)
       || typeof body !== 'string' || body.length > 32100 || !body.endsWith(`\n\n<!-- rivet-review-operation:${write.idempotencyKey} -->`)
       || !branch(source) || !branch(target) || source === target
-      || (github ? payload.draft !== false || payload.maintainer_can_modify !== false : payload.remove_source_branch !== false || payload.squash !== false))
+      || (github ? payload.draft !== false || payload.maintainer_can_modify !== false : bitbucket ? payload.draft !== false || payload.close_source_branch !== false || ![payload.source,payload.destination].every(part => part && Object.keys(part).length === 1 && part.branch && Object.keys(part.branch).length === 1 && Object.hasOwn(part.branch,'name')) : payload.remove_source_branch !== false || payload.squash !== false))
       failProvider('invalid-request', { provider: write.provider });
     value = payload;
   }

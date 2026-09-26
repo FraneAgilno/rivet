@@ -1,6 +1,6 @@
 # Delivery lifecycle
 
-Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com and GitLab.com executors can create a review request for an already published verified branch, then merge it under the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket review/merge writes and live qualification remain pending.
+Rivet can prepare a delivery record from a verified active-harness run. Native GitHub.com, GitLab.com and Bitbucket Cloud executors can create a review request for an already published verified branch. GitHub/GitLab merging uses the supported policies below. Project-configured GitHub Actions deployment is also implemented. Jira/Linear delivery-summary comments and separately approved status transitions are supported after a confirmed merge. Create-only branch publication is implemented for configured GitHub.com, GitLab.com and Bitbucket Cloud HTTPS destinations. Bitbucket merging and live qualification remain pending.
 
 ## Prepare verified work
 
@@ -34,7 +34,7 @@ rivet delivery review
 
 `publish` uploads the verified integration commit and its reachable Git history to the prepared repository. The preview shows the actual HTTPS destination, exact commit and destination branch before asking for approval. It creates one new branch with an explicit empty expected value in Git's lease check. It never overwrites, deletes or force-replaces an existing branch. If the destination already contains the exact verified commit, Rivet reports that no publication was dispatched.
 
-Configure the scoped repository provider with `repository-read` and `branch-publish` capabilities and `mode: read-write-with-approval`. Add `review-request` for subsequent GitHub/GitLab review creation; add `checks-read` and `merge` only when using the separate merge flow. Publication requires an interactive terminal and has no unattended confirmation or JSON-write option. Use `--run` or `--provider` only when selection is ambiguous.
+Configure the scoped repository provider with `repository-read` and `branch-publish` capabilities and `mode: read-write-with-approval`. Add `review-request` for subsequent review creation; add `checks-read` and `merge` only when using the separate merge flow. Publication requires an interactive terminal and has no unattended confirmation or JSON-write option. Use `--run` or `--provider` only when selection is ambiguous.
 
 Publication uses the selected provider's token through a controlled HTTPS Git process. The token must permit Git pushes to the selected repository; provider-specific restrictions can also apply to protected branches or workflow files. It does not inherit SSH configuration or credential helpers. GitHub and GitLab can use the existing token environment references shown below. Bitbucket requires `credentials.accessTokenEnv` referencing a supported repository/project/workspace access token or OAuth access token; Atlassian user API tokens are not accepted by this publication path. Keep credential values outside tracked files and command arguments. As with other process credentials, privileged local inspection can read process memory/environment. See [GitHub app permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app), [GitLab token authentication](https://docs.gitlab.com/user/profile/personal_access_tokens/), [Bitbucket access tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-access-tokens/) and the distinct [Bitbucket API-token convention](https://support.atlassian.com/bitbucket-cloud/docs/using-api-tokens/).
 
@@ -44,7 +44,7 @@ Dispatch intent is recorded before the single push. A timeout or disconnect can 
 
 Review creation and merging remain separately approved operations. Publishing a branch does not establish passing remote CI, approved reviews or permission to deliver. Live authenticated publication on each provider remains unqualified.
 
-## Create a GitHub pull request or GitLab merge request
+## Create a pull request or merge request
 
 Publish the accepted integration branch with `rivet delivery publish` or your repository tools first. The remote source branch must point to the exact locally verified commit. Review creation itself does not upload Git objects or push branches.
 
@@ -54,15 +54,38 @@ rivet delivery review
 rivet delivery status
 ```
 
-The configured repository API provider needs `repository-read` and `review-request` capabilities, scoped to this project and repository, with `mode: read-write-with-approval`. Use the GitHub or GitLab endpoint and token configuration shown below. Creation does not require `checks-read`; merging later still requires it and the supported repository policy.
+The configured repository API provider needs `repository-read` and `review-request` capabilities, scoped to this project and repository, with `mode: read-write-with-approval`. Use the matching GitHub, GitLab or Bitbucket endpoint and token configuration shown below. Creation does not require `checks-read`; merging later still requires it and the supported repository policy.
 
 `review` selects the prepared run and shows its repository, source/target branches, verified SHA, generated title and exact body before asking for approval. The body includes verification identity and a correlation marker. Review creation requires an interactive terminal; `--json` and unattended approval flags are unavailable. Use `--run=<id>` or `--provider=<id>` only when selection is ambiguous.
 
 The operation creates a same-repository, non-draft review without merging or deleting the source branch. Rivet records dispatch before the write, performs one creation request, then reads the created object to verify repository identity, branches, source SHA, title, body and URL. Existing or ambiguous reviews prevent another creation request. Repeating a confirmed operation returns its saved result.
 
-These creation APIs accept branch names rather than an atomic source-SHA condition. Rivet checks before dispatch and verifies the result afterward. A concurrent branch change can still create an external review for changed content; Rivet records no successful creation receipt if readback differs. Approval for creation never grants permission to merge. See [GitHub creation](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request) and [GitLab creation](https://docs.gitlab.com/api/merge_requests/#create-a-merge-request).
+These creation APIs accept branch names rather than an atomic source-SHA condition. Rivet checks before dispatch and verifies the result afterward. A concurrent branch change can still create an external review for changed content; Rivet records no successful creation receipt if readback differs. Approval for creation never grants permission to merge. See [GitHub creation](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request), [GitLab creation](https://docs.gitlab.com/api/merge_requests/#create-a-merge-request) and [Bitbucket Cloud creation](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
 
 After a timeout or uncertain response, use `rivet delivery reconcile`. Reconciliation only reads provider state and requires one review with the exact operation marker and approved content. It does not repost, edit, reopen or close reviews. An absent or ambiguous result remains indeterminate because absence cannot prove that an earlier request will never complete. A matching closed review can establish that creation happened only while the approved repository and branch facts still match; changed or deleted source/target branches leave the outcome unknown. Closure still blocks subsequent merging.
+
+### Bitbucket Cloud creation configuration
+
+```yaml
+- id: team-bitbucket
+  kind: git-ci
+  transport: direct-api
+  mode: read-write-with-approval
+  endpoint: https://api.bitbucket.org/2.0
+  projectIds: [your-project-id]
+  resourceIds: [your-workspace/your-repository]
+  capabilities: [repository-read, review-request]
+  credentials:
+    accessTokenEnv: RIVET_BITBUCKET_ACCESS_TOKEN
+```
+
+Use a repository/project/workspace access token or OAuth access token that permits repository reads and pull-request creation. Add `branch-publish` and repository-write permission only when using Rivet to publish the branch. REST requests use Bearer authentication; Git publication uses the corresponding access-token Git convention. Atlassian user API tokens use a different authentication scheme and are not accepted by this path. See [Bitbucket access tokens](https://support.atlassian.com/bitbucket-cloud/docs/using-access-tokens/).
+
+The executor binds repository and workspace UUIDs, repository path/URL, exact source/destination refs and commits. Creation is same-repository with source-branch deletion disabled. Readback checks the exact title, description, operation marker and identities before recording success.
+
+Existing matching reviews in open, merged, declined or superseded states block another creation. Reconciliation searches those states with bounded pagination and rejects altered pagination destinations, ambiguous markers or changed repository/branch facts. It never sends another creation request. A matching closed review can establish creation only; it is not a merge receipt. Concurrent external creation remains possible between discovery and the POST, so an ambiguous result stays indeterminate.
+
+Bitbucket pull-request creation does not enable `delivery merge`; the missing qualified source-SHA merge precondition remains a separate limitation. Authenticated Bitbucket creation and recovery still require live sandbox qualification.
 
 ## Merge an existing GitHub pull request
 
@@ -317,8 +340,8 @@ An exclusive private recovery marker is retained for each recovered owner. This 
 
 Recovery leaves delivery stages, approval records and operation receipts unchanged. Reconciliation is a separate read-only provider step; a crashed request may already have succeeded remotely. A real subprocess-crash fixture covers lock recovery followed by reconciliation without repeating dispatch. Broader crash scenarios and live-provider recovery qualification remain open.
 
-The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket review creation/merge and live sandbox qualification remain open delivery work.
+The CLI does not accept supplied success receipts or raw verification JSON. Bitbucket merging and live sandbox qualification remain open delivery work.
 
 ## Bitbucket delivery boundary
 
-Bitbucket Cloud supports [read-only repository inspection](./repositories.md) and the separately approved create-only branch publication described above. Native review creation and merging remain unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
+Bitbucket Cloud supports [read-only repository inspection](./repositories.md), create-only branch publication and separately approved pull-request creation. Native merging remains unavailable. Rivet does not send an unconditional merge request as a substitute. A verified conditional execution approach is still required before adding native merge writes. See the [Bitbucket pull request API](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/).
